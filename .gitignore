@@ -1,0 +1,64 @@
+# TicketShield - Git Ignore Configuration
+
+# Security & Local Context
+.context/
+
+# Non-code Documents & Research (Local only)
+docs/
+scripts/
+FA26SE261_Student_Research_Checklist.md
+TicketShield - Antigravity Agent Context (Core & KI) V2.md
+ACTIVITY_LOG.md
+
+# Build artifacts (.NET)
+**/bin/
+**/obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Visual Studio / VS Code / JetBrains Rider
+.vs/
+.idea/
+*.DotSettings.user
+.vscode/
+
+# Python / FastAPI
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment & Secrets
+.env
+.env.*
+!.env.example
+
+# Docker / Volumes
+postgres_data/
