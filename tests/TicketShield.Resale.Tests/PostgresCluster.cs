@@ -9,8 +9,30 @@ namespace TicketShield.Resale.Tests;
 // A disposable native PostgreSQL cluster. Never connects to or resets a developer database.
 public sealed class PostgresCluster : IAsyncDisposable
 {
-    private readonly string bin = Environment.GetEnvironmentVariable("TICKETSHIELD_TEST_POSTGRES_BIN") ?? @"C:\Program Files\PostgreSQL\17\bin";
+    private readonly string bin = ResolvePostgresBin();
     private readonly string root = Path.Combine(Path.GetTempPath(), "ticketshield-resale-test-" + Guid.NewGuid().ToString("N"));
+
+    private static string ResolvePostgresBin()
+    {
+        var env = Environment.GetEnvironmentVariable("TICKETSHIELD_TEST_POSTGRES_BIN");
+        if (!string.IsNullOrEmpty(env) && Directory.Exists(env)) return env;
+
+        var candidates = new[]
+        {
+            @"C:\Program Files\PostgreSQL\18\bin",
+            @"C:\Program Files\PostgreSQL\17\bin",
+            @"C:\Program Files\PostgreSQL\16\bin",
+            @"C:\Program Files\PostgreSQL\15\bin"
+        };
+
+        foreach (var dir in candidates)
+        {
+            if (File.Exists(Path.Combine(dir, OperatingSystem.IsWindows() ? "initdb.exe" : "initdb")))
+                return dir;
+        }
+
+        return @"C:\Program Files\PostgreSQL\18\bin";
+    }
     private bool started;
     public string CoreConnection { get; private set; } = "";
     public string MockConnection { get; private set; } = "";
