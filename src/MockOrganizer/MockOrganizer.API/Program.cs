@@ -9,12 +9,29 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
-    ?? "Host=localhost;Port=5432;Database=organizer_db;Username=postgres;Password=postgres";
+    ?? "Host=localhost;Port=5432;Database=organizer_db;Username=postgres;Password=12345";
 
 builder.Services.AddDbContext<OrganizerDbContext>(options =>
     options.UseNpgsql(connectionString));
 
 var app = builder.Build();
+
+// Auto-migrate and seed database on startup (Zero-CLI needed for teammates)
+using (var scope = app.Services.CreateScope())
+{
+    var services = scope.ServiceProvider;
+    var logger = services.GetRequiredService<ILogger<Program>>();
+    try
+    {
+        var dbContext = services.GetRequiredService<OrganizerDbContext>();
+        await OrganizerDatabaseSeeder.SeedOrganizerAsync(dbContext);
+        logger.LogInformation("Organizer database auto-migrated and verified successfully.");
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "An error occurred while auto-migrating Organizer database.");
+    }
+}
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
