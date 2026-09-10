@@ -1,0 +1,208 @@
+syntax = "proto3";
+
+package ticketshield.organizer.v1;
+option csharp_namespace = "TicketShield.Contracts.Organizer.V1";
+import "google/protobuf/timestamp.proto";
+
+// Internal Core -> Organizer contract. All money is whole VND, never minor units.
+// Every mutation requires durable idempotency scoped by authenticated caller + RPC + operation_id.
+// Caller identity comes from transport authentication, never from requester_ref.
+service OrganizerResaleService {
+  rpc RequestTicketOtp(RequestTicketOtpRequest) returns (ChallengeView);
+  rpc ResendTicketOtp(ResendTicketOtpRequest) returns (ChallengeView);
+  rpc ConfirmOtpAndLock(ConfirmOtpAndLockRequest) returns (VerificationReceipt);
+  rpc GetVerification(GetVerificationRequest) returns (VerificationView);
+  rpc GetOperation(GetOperationRequest) returns (OperationView);
+  rpc GetResaleLock(GetResaleLockRequest) returns (ResaleLockView);
+  rpc ReleaseResaleLock(ReleaseResaleLockRequest) returns (ReleaseResaleLockResponse);
+  rpc CloseVerification(CloseVerificationRequest) returns (VerificationView);
+}
+
+message OperationContext {
+  string operation_id = 1; // Core-generated UUID, persisted before network I/O. Never change on retry.
+  string verification_id = 2; // Core-generated UUID; binds every challenge/lock to one seller session.
+  string requester_ref = 3; // Authenticated Core user's UUID; not an email address.
+}
+
+message VerificationReference {
+  string verification_id = 1;
+  string requester_ref = 2;
+}
+
+message TicketReference {
+  string organizer_id = 1; // Configured partner identity, validated by the receiving Organizer.
+  string ticket_code = 2; // Case-sensitive opaque code; no implicit trim/case conversion.
+}
+
+message RequestTicketOtpRequest {
+  OperationContext operation = 1;
+  TicketReference ticket = 2;
+}
+
+message ResendTicketOtpRequest {
+  OperationContext operation = 1;
+  string challenge_id = 2;
+  uint32 expected_generation = 3;
+}
+
+message ConfirmOtpAndLockRequest {
+  OperationContext operation = 1;
+  string challenge_id = 2;
+  uint32 expected_generation = 3;
+  string otp = 4; // Secret: must never appear in logs, traces, stored requests or responses.
+}
+
+message GetVerificationRequest { VerificationReference verification = 1; }
+message GetOperationRequest {
+  VerificationReference verification = 1;
+  string operation_id = 2;
+  OperationKind kind = 3;
+}
+message GetResaleLockRequest {
+  VerificationReference verification = 1;
+  string lock_id = 2;
+}
+message ReleaseResaleLockRequest {
+  OperationContext operation = 1;
+  string lock_id = 2;
+  uint64 expected_lock_generation = 3;
+  ReleaseReason reason = 4;
+}
+message CloseVerificationRequest {
+  OperationContext operation = 1;
+  // Close must durably fence late request/resend/confirm, even if session creation hasn't arrived.
+  // Does not release a lock. Return any existing lock for Core reconciliation.
+}
+
+message ChallengeView {
+  string verification_id = 1;
+  string challenge_id = 2;
+  uint32 generation = 3;
+  ChallengeState state = 4;
+  google.protobuf.Timestamp expires_at = 5;
+  google.protobuf.Timestamp resend_after = 6;
+  DeliveryState delivery_state = 7;
+  // No OTP or owner contact, including masked contact until disclosure policy is approved.
+}
+
+message TicketSnapshot {
+  TicketReference ticket = 1;
+  string ticket_id = 2;
+  string owner_revision = 3;
+  string ticket_revision = 4;
+  optional int64 original_price = 5; // Whole VND. Presence required; zero is not "missing".
+  string external_event_id = 6; // Stable partner ID; Core maps to its EventId.
+  string external_tier_id = 7; // Stable partner ID; Core maps to its TierId.
+  string event_name = 8; // Display only, never used for identity mapping.
+  string seat_zone = 9;
+}
+
+message LockReference {
+  string lock_id = 1;
+  uint64 generation = 2; // Nonzero fencing token; stale release cannot unlock a newer acquisition.
+}
+
+message VerificationReceipt {
+  string receipt_id = 1;
+  OperationContext operation = 2;
+  string challenge_id = 3;
+  uint32 challenge_generation = 4;
+  TicketSnapshot ticket = 5;
+  LockReference resale_lock = 6;
+  google.protobuf.Timestamp verified_at = 7;
+  // Immutable historical proof, not a statement that the lock is STILL held. Read current lock.
+}
+
+message ResaleLockView {
+  LockReference resale_lock = 1;
+  VerificationReference verification = 2;
+  TicketReference ticket = 3;
+  LockState state = 4;
+  google.protobuf.Timestamp acquired_at = 5;
+  google.protobuf.Timestamp released_at = 6;
+}
+
+message VerificationView {
+  VerificationReference verification = 1;
+  VerificationState state = 2;
+  ChallengeView challenge = 3;
+  VerificationReceipt receipt = 4;
+  ResaleLockView current_lock = 5;
+}
+
+message ReleaseResaleLockResponse {
+  ReleaseOutcome outcome = 1;
+  ResaleLockView resale_lock = 2;
+}
+
+message OperationView {
+  OperationContext operation = 1;
+  OperationKind kind = 2;
+  OperationState state = 3;
+  oneof result {
+    ChallengeView challenge = 4;
+    VerificationReceipt receipt = 5;
+    ReleaseResaleLockResponse release = 6;
+    VerificationView closed_verification = 7;
+    BusinessError rejection = 8;
+  }
+  // PENDING has no result. SUCCEEDED has the result corresponding to kind.
+  // REJECTED has rejection. NOT_FOUND is a gRPC error, not proof a late request cannot arrive.
+}
+
+// Also encoded in binary response trailer "ticketshield-error-bin" for gRPC failures.
+message BusinessError {
+  string code = 1; // Stable allowlisted code, never an exception message or user input.
+  google.protobuf.Timestamp retry_after = 2;
+}
+
+enum ChallengeState {
+  CHALLENGE_STATE_UNSPECIFIED = 0;
+  CHALLENGE_STATE_ACTIVE = 1;
+  CHALLENGE_STATE_CONSUMED = 2;
+  CHALLENGE_STATE_EXPIRED = 3;
+  CHALLENGE_STATE_SUPERSEDED = 4;
+  CHALLENGE_STATE_BLOCKED = 5;
+}
+enum DeliveryState {
+  DELIVERY_STATE_UNSPECIFIED = 0;
+  DELIVERY_STATE_PENDING = 1;
+  DELIVERY_STATE_SMTP_ACCEPTED = 2;
+  DELIVERY_STATE_FAILED = 3;
+  DELIVERY_STATE_UNKNOWN = 4;
+}
+enum LockState {
+  LOCK_STATE_UNSPECIFIED = 0;
+  LOCK_STATE_HELD = 1;
+  LOCK_STATE_RELEASED = 2;
+}
+enum VerificationState {
+  VERIFICATION_STATE_UNSPECIFIED = 0;
+  VERIFICATION_STATE_PENDING_OTP = 1;
+  VERIFICATION_STATE_VERIFIED = 2;
+  VERIFICATION_STATE_CLOSED = 3;
+}
+enum OperationKind {
+  OPERATION_KIND_UNSPECIFIED = 0;
+  OPERATION_KIND_REQUEST_OTP = 1;
+  OPERATION_KIND_RESEND_OTP = 2;
+  OPERATION_KIND_CONFIRM_AND_LOCK = 3;
+  OPERATION_KIND_RELEASE_LOCK = 4;
+  OPERATION_KIND_CLOSE_VERIFICATION = 5;
+}
+enum OperationState {
+  OPERATION_STATE_UNSPECIFIED = 0;
+  OPERATION_STATE_PENDING = 1;
+  OPERATION_STATE_SUCCEEDED = 2;
+  OPERATION_STATE_REJECTED = 3;
+}
+enum ReleaseReason {
+  RELEASE_REASON_UNSPECIFIED = 0;
+  RELEASE_REASON_LISTING_CANCELLED = 1;
+  RELEASE_REASON_VERIFICATION_ABANDONED = 2;
+}
+enum ReleaseOutcome {
+  RELEASE_OUTCOME_UNSPECIFIED = 0;
+  RELEASE_OUTCOME_RELEASED = 1;
+  RELEASE_OUTCOME_ALREADY_RELEASED = 2;
+}

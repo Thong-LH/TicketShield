@@ -1,7 +1,15 @@
 using Microsoft.EntityFrameworkCore;
 using MockOrganizer.API.Data;
+using MockOrganizer.API.Resale;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
 
 var builder = WebApplication.CreateBuilder(args);
+var resaleEnabled = builder.Services.AddOrganizerResale(builder.Configuration);
+if (resaleEnabled && builder.Environment.IsDevelopment())
+{
+    var grpcPort = builder.Configuration.GetValue("OrganizerResale:DevelopmentGrpcPort", 5002);
+    builder.WebHost.ConfigureKestrel(k => k.ListenLocalhost(grpcPort, endpoint => endpoint.Protocols = HttpProtocols.Http2));
+}
 
 // Add services to the container.
 builder.Services.AddControllers();
@@ -15,6 +23,12 @@ builder.Services.AddDbContext<OrganizerDbContext>(options =>
     options.UseNpgsql(connectionString));
 
 var app = builder.Build();
+if (resaleEnabled)
+{
+    using var resaleScope = app.Services.CreateScope();
+    await resaleScope.ServiceProvider.GetRequiredService<ResaleStore>().Database.MigrateAsync();
+    app.MapGrpcService<OrganizerResaleGrpcService>();
+}
 
 // Auto-migrate and seed database on startup (Zero-CLI needed for teammates)
 using (var scope = app.Services.CreateScope())
