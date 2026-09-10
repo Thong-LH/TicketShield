@@ -43,6 +43,7 @@ public sealed class CoreSession
     public string? ChallengeJson { get; set; }
     public string? ReceiptJson { get; set; }
     public Guid? ListingId { get; set; }
+    public string? PrivateAccessToken { get; set; }
     public long? Price { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
 }

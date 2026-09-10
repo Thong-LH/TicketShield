@@ -6,7 +6,7 @@ The authoritative wire contract is `src/TicketShield.Contracts/Protos/Organizer/
 
 - Money is positive whole VND. `int64` values are dong, not minor units. Publish rejects zero, negatives, fractions and values above the current `numeric(15,2)` database boundary.
 - OTP is six decimal digits, expires after five minutes, permits resend after 60 seconds, has at most five failed attempts and at most three resends per verification.
-- Only public listings are enabled. Private requests return `PRIVATE_POLICY_NOT_ENABLED`.
+- Both public and private listings are enabled. Private requests generate a cryptographically secure access token and are hidden from the public marketplace.
 - OTP success and the current ticket-valid/unredeemed/unchanged checks occur in the same MockOrganizer transaction that acquires the durable resale lock.
 - OTP expiry, abandoned-verification expiry, lock lifecycle and listing lifecycle are separate concepts.
 

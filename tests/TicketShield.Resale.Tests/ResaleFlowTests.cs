@@ -60,7 +60,9 @@ public sealed class ResaleFlowTests(ResaleFixture f) : IClassFixture<ResaleFixtu
         foreach (var price in new long[] { 0, -1, VndAmount.MaxDatabaseValue + 1 })
             Assert.Equal(HttpStatusCode.UnprocessableEntity, (await f.Post("api/resale-listings", new { verificationId = id, resalePrice = price })).Status);
         Assert.Equal(HttpStatusCode.BadRequest, (await f.Post("api/resale-listings", new { verificationId = id, resalePrice = 10.5 })).Status);
-        Assert.Equal(HttpStatusCode.UnprocessableEntity, (await f.Post("api/resale-listings", new { verificationId = id, resalePrice = 100, isPrivate = true })).Status);
+        var privateRes = await f.Post("api/resale-listings", new { verificationId = id, resalePrice = 100, isPrivate = true });
+        Assert.Equal(HttpStatusCode.OK, privateRes.Status);
+        Assert.False(string.IsNullOrEmpty(privateRes.Body.GetProperty("data").GetProperty("privateAccessToken").GetString()));
         using var unauth = f.Grpc.RequestTicketOtpAsync(new RequestTicketOtpRequest());
         Assert.Equal(StatusCode.Unauthenticated, (await Assert.ThrowsAsync<RpcException>(async () => await unauth.ResponseAsync)).StatusCode);
     }

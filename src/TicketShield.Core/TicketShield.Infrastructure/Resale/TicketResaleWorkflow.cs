@@ -22,11 +22,18 @@ public sealed class TicketResaleWorkflow(CoreResaleStore db, OrganizerGateway ga
     {
         if (!Guid.TryParseExact(id, "D", out var guid) || guid == Guid.Empty || guid.ToString("D") != id) throw Error("INVALID_REFERENCE", 400);
     }
-    private async Task<T> Transaction<T>(Func<Task<T>> action, CancellationToken ct)
+    private static long ComputeLockKey(string? target)
+    {
+        if (string.IsNullOrEmpty(target)) return 84722002L;
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes("ts:resale:" + target));
+        return BitConverter.ToInt64(hash, 0);
+    }
+    private async Task<T> Transaction<T>(Func<Task<T>> action, CancellationToken ct, string? lockTarget = null)
     {
         db.ChangeTracker.Clear();
         await using var tx = await db.Database.BeginTransactionAsync(ct);
-        await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock(84722002)", ct);
+        long lockKey = ComputeLockKey(lockTarget);
+        await db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock({lockKey})", ct);
         var result = await action();
         await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); return result;
     }
@@ -47,7 +54,7 @@ public sealed class TicketResaleWorkflow(CoreResaleStore db, OrganizerGateway ga
         var receipt = s.ReceiptJson is null ? null : Receipt(s);
         var state = s.State == "OtpReady" && challenge?.ExpiresAt?.ToDateTimeOffset() <= clock.GetUtcNow() ? "OtpExpired" : s.State;
         return new(s.Id, state, s.PendingOperationId?.Split(':').Last(), challenge?.ExpiresAt?.ToDateTimeOffset(),
-            challenge?.ResendAfter?.ToDateTimeOffset(), challenge?.DeliveryState.ToString(), receipt?.Ticket?.HasOriginalPrice == true ? receipt.Ticket.OriginalPrice : null, s.ListingId);
+            challenge?.ResendAfter?.ToDateTimeOffset(), challenge?.DeliveryState.ToString(), receipt?.Ticket?.HasOriginalPrice == true ? receipt.Ticket.OriginalPrice : null, s.ListingId, s.PrivateAccessToken);
     }
     private async Task<(CoreSession Session, CoreOperation Operation)> Begin(string seller, string operationId, string kind, string? sessionId, object payload, string? ticket, CancellationToken ct)
     {
@@ -84,7 +91,7 @@ public sealed class TicketResaleWorkflow(CoreResaleStore db, OrganizerGateway ga
             session.State = kind + "Pending"; session.PendingOperationId = key; session.UpdatedAt = clock.GetUtcNow();
             await db.Put(key, op, ct); await db.Put(SessionKey(session.Id), session, ct);
             return (session, op);
-        }, ct);
+        }, ct, ticket ?? sessionId);
     }
     public async Task<VerificationResult> Request(string seller, string key, string ticket, CancellationToken ct)
     {
@@ -137,7 +144,7 @@ public sealed class TicketResaleWorkflow(CoreResaleStore db, OrganizerGateway ga
         fresh.State = op.Kind switch { "Request" => "Rejected", "Confirm" or "Resend" => "OtpReady", "Publish" => "Verified", "Cancel" => "Published", _ => "NeedsReview" };
         fresh.PendingOperationId = null;
         await db.Put(key, op, ct); await db.Put(SessionKey(fresh.Id), fresh, ct); return true;
-    }, ct);
+    }, ct, s.Id);
     private async Task<VerificationResult> Complete(CoreSession s, CoreOperation op, IMessage response, CancellationToken ct) => await Transaction(async () => {
         var fresh = await Owned(s.Seller, s.Id, ct);
         var key = OpKey(s.Seller, op.Kind, op.Id);
@@ -154,7 +161,7 @@ public sealed class TicketResaleWorkflow(CoreResaleStore db, OrganizerGateway ga
         } else throw Error("INVALID_ORGANIZER_RESPONSE", 502);
         op.State = "Succeeded"; fresh.PendingOperationId = null; fresh.UpdatedAt = clock.GetUtcNow();
         await db.Put(key, op, ct); await db.Put(SessionKey(fresh.Id), fresh, ct); return Result(fresh);
-    }, ct);
+    }, ct, s.Id);
     public async Task<VerificationResult> Get(string seller, string id, CancellationToken ct)
     {
         var s = await Owned(seller, id, ct);
@@ -166,7 +173,7 @@ public sealed class TicketResaleWorkflow(CoreResaleStore db, OrganizerGateway ga
     private async Task<VerificationResult> Recover(CoreSession s, CoreOperation op, CancellationToken ct)
     {
         if (op.Kind is "Close" or "Cancel") return await Release(s, op, ct);
-        if (op.Kind == "Publish") return await PublishClaimed(s, op, s.Price!.Value, ct);
+        if (op.Kind == "Publish") return await PublishClaimed(s, op, s.Price!.Value, s.PrivateAccessToken != null, ct);
         var kind = op.Kind switch { "Request" => OperationKind.RequestOtp, "Resend" => OperationKind.ResendOtp, _ => OperationKind.ConfirmAndLock };
         try {
             var result = await gateway.Operation(new GetOperationRequest { Verification = Reference(s), OperationId = op.Id, Kind = kind }, ct);
@@ -185,7 +192,6 @@ public sealed class TicketResaleWorkflow(CoreResaleStore db, OrganizerGateway ga
     }
     public async Task<VerificationResult> Publish(string seller, string key, PublishBody body, CancellationToken ct)
     {
-        if (body.IsPrivate) throw Error("PRIVATE_POLICY_NOT_ENABLED", 422);
         if (body.ResalePrice <= 0 || body.ResalePrice > VndAmount.MaxDatabaseValue) throw Error("INVALID_VND_PRICE", 422);
         var (s, op) = await Begin(seller, key, "Publish", body.VerificationId, body, null, ct);
         if (op.State == "Succeeded") return Result(s);
@@ -194,10 +200,10 @@ public sealed class TicketResaleWorkflow(CoreResaleStore db, OrganizerGateway ga
             var fresh = await Owned(seller, s.Id, ct);
             if (fresh.PendingOperationId == OpKey(seller, "Publish", key)) { fresh.Price = body.ResalePrice; await db.Put(SessionKey(fresh.Id), fresh, ct); }
             return fresh;
-        }, ct);
-        return await PublishClaimed(s, op, body.ResalePrice, ct);
+        }, ct, s.Id);
+        return await PublishClaimed(s, op, body.ResalePrice, body.IsPrivate, ct);
     }
-    private async Task<VerificationResult> PublishClaimed(CoreSession s, CoreOperation op, long price, CancellationToken ct)
+    private async Task<VerificationResult> PublishClaimed(CoreSession s, CoreOperation op, long price, bool isPrivate, CancellationToken ct)
     {
         try {
             var receipt = Receipt(s);
@@ -215,11 +221,12 @@ public sealed class TicketResaleWorkflow(CoreResaleStore db, OrganizerGateway ga
                 if (!await db.Database.SqlQuery<int>($"SELECT 1 AS \"Value\" FROM ticket_tiers t JOIN events e ON e.id=t.event_id WHERE t.id={mapping.TierId} AND e.id={mapping.EventId} AND e.organizer_id={organizer} AND e.resale_deadline>{now} AND e.status='UPCOMING'").AnyAsync(ct)) throw Error("EVENT_NOT_AVAILABLE");
                 var id = Guid.NewGuid(); var seller = Guid.Parse(s.Seller);
                 var original = VndAmount.ToDatabase(receipt.Ticket.OriginalPrice); var resale = VndAmount.ToDatabase(price);
-                await db.Database.ExecuteSqlInterpolatedAsync($"INSERT INTO resale_listings (id,event_id,tier_id,seller_id,original_ticket_code,original_price,resale_price,is_private,private_access_token,verification_status,listing_status,created_at,updated_at) VALUES ({id},{mapping.EventId},{mapping.TierId},{seller},{s.TicketCode},{original},{resale},false,NULL,'Verified','Verified',{now},{now})", ct);
-                fresh.State = "Published"; fresh.ListingId = id; fresh.PendingOperationId = null; fresh.Price = price;
+                string? privateToken = isPrivate ? Convert.ToHexString(RandomNumberGenerator.GetBytes(16)).ToLowerInvariant() : null;
+                await db.Database.ExecuteSqlInterpolatedAsync($"INSERT INTO resale_listings (id,event_id,tier_id,seller_id,original_ticket_code,original_price,resale_price,is_private,private_access_token,verification_status,listing_status,created_at,updated_at) VALUES ({id},{mapping.EventId},{mapping.TierId},{seller},{s.TicketCode},{original},{resale},{isPrivate},{privateToken},'Verified','Verified',{now},{now})", ct);
+                fresh.State = "Published"; fresh.ListingId = id; fresh.PendingOperationId = null; fresh.Price = price; fresh.PrivateAccessToken = privateToken;
                 op.State = "Succeeded"; await db.Put(SessionKey(fresh.Id), fresh, ct); await db.Put(OpKey(s.Seller, op.Kind, op.Id), op, ct);
                 return Result(fresh);
-            }, ct);
+            }, ct, s.Id);
         } catch (RpcException ex) when (Uncertain(ex)) { return Result(s); }
         catch (RpcException ex) { await Reject(s, op, SafeCode(ex), ct); throw Error(SafeCode(ex)); }
         catch (ResaleWorkflowException ex) { await Reject(s, op, ex.Code, ct); throw; }
@@ -238,7 +245,7 @@ public sealed class TicketResaleWorkflow(CoreResaleStore db, OrganizerGateway ga
                 s.PendingOperationId = null; s.State = "Rejected"; await db.Put(SessionKey(id), s, ct);
             }
             return true;
-        }, ct);
+        }, ct, id);
         var (session, op) = await Begin(seller, key, "Close", id, new { }, null, ct);
         return op.State == "Succeeded" ? Result(session) : await Release(session, op, ct);
     }
@@ -257,7 +264,7 @@ public sealed class TicketResaleWorkflow(CoreResaleStore db, OrganizerGateway ga
                     // Future reserve/transfer code must share this workflow guard (documented contract).
                     if (!await db.Database.SqlQuery<int>($"SELECT 1 AS \"Value\" FROM resale_listings WHERE id={s.ListingId} AND listing_status='Verified'").AnyAsync(ct)) throw Error("LISTING_NOT_CANCELLABLE");
                     return true;
-                }, ct);
+                }, ct, s.Id);
             }
             var closed = await gateway.Close(new CloseVerificationRequest { Operation = Context(s, op) }, ct);
             if (!closed.Verification.Equals(Reference(s)) || closed.State != VerificationState.Closed) throw Error("INVALID_ORGANIZER_RESPONSE", 502);
@@ -278,7 +285,7 @@ public sealed class TicketResaleWorkflow(CoreResaleStore db, OrganizerGateway ga
                 }
                 fresh.State = "Closed"; fresh.PendingOperationId = null; op.State = "Succeeded";
                 await db.Put(SessionKey(fresh.Id), fresh, ct); await db.Put(OpKey(s.Seller, op.Kind, op.Id), op, ct); return Result(fresh);
-            }, ct);
+            }, ct, s.Id);
         } catch (RpcException ex) when (Uncertain(ex)) { return Result(s); }
         // Retain the claim on a known release conflict for operator review; never reactivate the listing.
         catch (RpcException) { return Result(s); }
@@ -306,7 +313,7 @@ public sealed class TicketResaleWorkflow(CoreResaleStore db, OrganizerGateway ga
                 if (current.State != "Pending") return false;
                 current.Attempts++; current.NextAttemptAt = now.AddSeconds(Math.Min(300, 5 * Math.Pow(2, Math.Min(current.Attempts, 6))));
                 await db.Put(row.Id, current, ct); return true;
-            }, ct);
+            }, ct, row.Id);
             try { await Recover(s, op, ct); }
             catch (Exception) when (!ct.IsCancellationRequested) { /* No secret-bearing exceptions logged. Next persisted attempt will reconcile. */ }
         }
