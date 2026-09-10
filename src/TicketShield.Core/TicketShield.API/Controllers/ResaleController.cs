@@ -10,11 +10,14 @@ namespace TicketShield.API.Controllers;
 [ApiController]
 [Authorize]
 [Route("api/ticket-verifications")]
+[Route("api/v1/ticket-verifications")]
 [ResaleErrors]
 public sealed class ResaleController(IServiceProvider services) : ControllerBase
 {
     private TicketResaleWorkflow Workflow => services.GetService<TicketResaleWorkflow>() ?? throw new ResaleWorkflowException("RESALE_NOT_CONFIGURED", 503);
-    private string Seller => User.FindFirst("sub")?.Value ?? throw new ResaleWorkflowException("MISSING_SUBJECT", 401);
+    private string Seller => User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+                          ?? User.FindFirst("sub")?.Value
+                          ?? throw new ResaleWorkflowException("MISSING_SUBJECT", 401);
     private IActionResult WorkflowResponse(VerificationResult result) => StatusCode(result.Status.EndsWith("Pending", StringComparison.Ordinal) ? 202 : 200,
         ApiResponse<VerificationResult>.SuccessResponse(result, result.Status));
     [HttpPost]
@@ -33,6 +36,7 @@ public sealed class ResaleController(IServiceProvider services) : ControllerBase
     public async Task<IActionResult> Cancel(string id, [FromHeader(Name = "Idempotency-Key")] string key, CancellationToken ct) => WorkflowResponse(await Workflow.Cancel(Seller, id, key, ct));
     [AllowAnonymous]
     [HttpGet("/api/resale-listings")]
+    [HttpGet("/api/v1/resale-listings")]
     public async Task<IActionResult> Marketplace(CancellationToken ct, int page = 1, int size = 20) => Ok(ApiResponse<List<ListingResult>>.SuccessResponse(await Workflow.Marketplace(page, size, ct)));
 }
 
