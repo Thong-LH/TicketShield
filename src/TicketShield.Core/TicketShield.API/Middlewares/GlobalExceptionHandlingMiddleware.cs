@@ -36,6 +36,16 @@ public class GlobalExceptionHandlingMiddleware
 
         var (statusCode, message, errors) = exception switch
         {
+            NotFoundException nfEx => (
+                (int)HttpStatusCode.NotFound,
+                nfEx.Message,
+                null as List<string>),
+
+            ForbiddenAccessException faEx => (
+                (int)HttpStatusCode.Forbidden,
+                faEx.Message,
+                null as List<string>),
+
             BusinessRuleViolationException brEx => (
                 (int)HttpStatusCode.UnprocessableEntity,
                 brEx.Message,

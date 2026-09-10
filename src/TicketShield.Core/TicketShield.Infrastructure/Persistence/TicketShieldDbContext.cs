@@ -1,10 +1,11 @@
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
+using TicketShield.Application.Common.Interfaces;
 using TicketShield.Domain.Entities;
 
 namespace TicketShield.Infrastructure.Persistence;
 
-public class TicketShieldDbContext : DbContext
+public class TicketShieldDbContext : DbContext, ITicketShieldDbContext
 {
     public TicketShieldDbContext(DbContextOptions<TicketShieldDbContext> options) : base(options)
     {

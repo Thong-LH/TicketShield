@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using TicketShield.Application.Common.Interfaces;
 using TicketShield.Infrastructure.Persistence;
 
 namespace TicketShield.Infrastructure;
@@ -14,6 +15,9 @@ public static class DependencyInjection
 
         services.AddDbContext<TicketShieldDbContext>(options =>
             options.UseNpgsql(connectionString));
+
+        services.AddScoped<ITicketShieldDbContext>(provider =>
+            provider.GetRequiredService<TicketShieldDbContext>());
 
         return services;
     }
