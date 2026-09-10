@@ -32,9 +32,9 @@ public static class ResaleRegistration
         services.AddScoped<OrganizerGateway>();
 
         // Đăng ký Service qua Interface Application Layer theo chuẩn Clean Architecture
-        services.AddScoped<ITicketVerificationService, TicketResaleWorkflow>();
-        services.AddScoped<ITicketResaleWorkflow, TicketResaleWorkflow>();
-        services.AddScoped<TicketResaleWorkflow>();
+        services.AddScoped<ITicketVerificationService, TicketVerificationService>();
+        services.AddScoped<ITicketResaleWorkflow, TicketVerificationService>();
+        services.AddScoped<TicketVerificationService>();
 
         services.AddDbContext<CoreResaleStore>(b => b.UseNpgsql(
             configuration.GetConnectionString("DefaultConnection"),
