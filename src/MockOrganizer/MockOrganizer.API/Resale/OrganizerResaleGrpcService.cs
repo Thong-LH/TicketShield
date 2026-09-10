@@ -23,6 +23,12 @@ public sealed class OrganizerResaleGrpcService(ResaleStore db, ResaleOptions opt
     private static string SessionKey(string id) => "session:" + id;
     private static string LockKey(string id) => "lock:" + id;
     private static string OpKey(OperationKind kind, string id) => $"op:{Caller}:{kind}:{id}";
+    private static long ComputeLockKey(string? target)
+    {
+        if (string.IsNullOrEmpty(target)) return 84722001L;
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes("mo:resale:" + target));
+        return BitConverter.ToInt64(hash, 0);
+    }
     private static void Uuid(string? value)
     {
         if (!Guid.TryParseExact(value, "D", out var id) || id == Guid.Empty || value != id.ToString("D"))
@@ -73,8 +79,8 @@ public sealed class OrganizerResaleGrpcService(ResaleStore db, ResaleOptions opt
         Authenticate(context); Validate(op);
         var ct = context.CancellationToken;
         await using var tx = await db.Database.BeginTransactionAsync(ct);
-        // Low-throughput Mock deliberately serializes workflow mutations. Never held over email/network I/O.
-        await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock(84722001)", ct);
+        long lockKey = ComputeLockKey(op.VerificationId ?? op.OperationId);
+        await db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock({lockKey})", ct);
         var key = OpKey(kind, op.OperationId);
         var fingerprint = Hash(Convert.ToBase64String(request.ToByteArray()));
         var previous = await db.Read<OperationRecord>(key, ct);
@@ -89,7 +95,7 @@ public sealed class OrganizerResaleGrpcService(ResaleStore db, ResaleOptions opt
         try { result = await action(); }
         catch (RpcException ex) { failure = ex; }
         await db.Put(key, new OperationRecord {
-            Fingerprint = fingerprint, SessionId = op.VerificationId, Requester = op.RequesterRef,
+            Fingerprint = fingerprint, SessionId = op.VerificationId ?? string.Empty, Requester = op.RequesterRef ?? string.Empty,
             ResponseJson = result is null ? "" : JsonFormatter.Default.Format(result),
             Error = failure?.Status.Detail, Status = (int)(failure?.StatusCode ?? StatusCode.OK)
         }, ct);

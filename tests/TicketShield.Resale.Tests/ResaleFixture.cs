@@ -101,7 +101,7 @@ public sealed class ResaleFixture : IAsyncLifetime
         coreBuilder.Services.AddDbContext<TicketShieldDbContext>(o => o.UseNpgsql(Database.CoreConnection));
         coreBuilder.Services.AddCoreResale(coreBuilder.Configuration, coreBuilder.Environment);
         coreBuilder.Services.AddResaleAuthentication(coreBuilder.Configuration);
-        coreBuilder.Services.AddControllers().AddApplicationPart(typeof(ResaleController).Assembly);
+        coreBuilder.Services.AddControllers().AddApplicationPart(typeof(TicketVerificationsController).Assembly);
         Core = coreBuilder.Build();
         using (var scope = Core.Services.CreateScope()) {
             await DatabaseSeeder.SeedTicketShieldAsync(scope.ServiceProvider.GetRequiredService<TicketShieldDbContext>());
