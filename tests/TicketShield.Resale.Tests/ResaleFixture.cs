@@ -23,6 +23,8 @@ using TicketShield.API.Controllers;
 using TicketShield.API.Resale;
 using TicketShield.Contracts.Organizer.V1;
 using TicketShield.Infrastructure.Persistence;
+using TicketShield.Infrastructure.Persistence.Resale;
+using TicketShield.Infrastructure.ExternalServices.Organizer;
 using TicketShield.Infrastructure.Resale;
 using Xunit;
 

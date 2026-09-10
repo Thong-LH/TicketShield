@@ -9,6 +9,7 @@ using TicketShield.Application;
 using TicketShield.Application.Common.Interfaces;
 using TicketShield.Infrastructure;
 using TicketShield.Infrastructure.Persistence;
+using TicketShield.Infrastructure.Persistence.Resale;
 using TicketShield.Infrastructure.Resale;
 using TicketShield.API.Resale;
 using Microsoft.EntityFrameworkCore;

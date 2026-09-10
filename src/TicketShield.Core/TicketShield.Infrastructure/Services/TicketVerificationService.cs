@@ -10,8 +10,10 @@ using TicketShield.Application.Common.Models;
 using TicketShield.Application.Resale;
 using TicketShield.Contracts;
 using TicketShield.Contracts.Organizer.V1;
+using TicketShield.Infrastructure.ExternalServices.Organizer;
+using TicketShield.Infrastructure.Persistence.Resale;
 
-namespace TicketShield.Infrastructure.Resale;
+namespace TicketShield.Infrastructure.Services;
 
 /// <summary>
 /// Triển khai dịch vụ xác thực vé qua gRPC và quản lý tin bán lại (Ticket Verification & Lock Saga).
@@ -19,13 +21,13 @@ namespace TicketShield.Infrastructure.Resale;
 public class TicketVerificationService : ITicketVerificationService, ITicketResaleWorkflow
 {
     private readonly CoreResaleStore _db;
-    private readonly OrganizerGateway _gateway;
+    private readonly IOrganizerGateway _gateway;
     private readonly OrganizerConnectionOptions _options;
     private readonly TimeProvider _clock;
 
     public TicketVerificationService(
         CoreResaleStore db,
-        OrganizerGateway gateway,
+        IOrganizerGateway gateway,
         OrganizerConnectionOptions options,
         TimeProvider clock)
     {

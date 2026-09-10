@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using MockOrganizer.API.Resale;
 using TicketShield.Application.Common.Models;
 using TicketShield.Contracts.Organizer.V1;
+using TicketShield.Infrastructure.Persistence.Resale;
 using TicketShield.Infrastructure.Resale;
 using Xunit;
 

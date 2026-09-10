@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\TicketShield.Domain\TicketShield.Domain.csproj" />
+    <ProjectReference Include="..\..\TicketShield.Contracts\TicketShield.Contracts.csproj" />
   </ItemGroup>
 
   <ItemGroup>

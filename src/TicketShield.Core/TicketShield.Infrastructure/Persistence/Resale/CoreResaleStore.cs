@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 
-namespace TicketShield.Infrastructure.Resale;
+namespace TicketShield.Infrastructure.Persistence.Resale;
 
 /// <summary>
 /// DbContext chuyên biệt quản lý lưu trữ trạng thái phân tán (Saga state machine)

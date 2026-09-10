@@ -1,4 +1,4 @@
-namespace TicketShield.Infrastructure.Resale;
+namespace TicketShield.Infrastructure.Persistence.Resale;
 
 /// <summary>
 /// Bảng lưu trữ trạng thái phi cấu trúc (Document Store JSONB) của các phiên xác thực vé

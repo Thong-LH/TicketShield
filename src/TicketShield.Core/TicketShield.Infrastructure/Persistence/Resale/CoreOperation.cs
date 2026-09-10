@@ -1,4 +1,4 @@
-namespace TicketShield.Infrastructure.Resale;
+namespace TicketShield.Infrastructure.Persistence.Resale;
 
 /// <summary>
 /// Trạng thái tác vụ Idempotent (Idempotent Operation) chống gọi trùng lặp và phục hồi lỗi mạng

@@ -5,6 +5,9 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using TicketShield.Application.Common.Interfaces;
 using TicketShield.Contracts.Organizer.V1;
+using TicketShield.Infrastructure.ExternalServices.Organizer;
+using TicketShield.Infrastructure.Persistence.Resale;
+using TicketShield.Infrastructure.Services;
 
 namespace TicketShield.Infrastructure.Resale;
 
@@ -29,17 +32,22 @@ public static class ResaleRegistration
         services.AddSingleton(options);
         services.TryAddSingleton(TimeProvider.System);
         services.AddGrpcClient<OrganizerResaleService.OrganizerResaleServiceClient>(c => c.Address = uri);
+
+        // Đăng ký External Gateway
+        services.AddScoped<IOrganizerGateway, OrganizerGateway>();
         services.AddScoped<OrganizerGateway>();
 
-        // Đăng ký Service qua Interface Application Layer theo chuẩn Clean Architecture
+        // Đăng ký Application Service
         services.AddScoped<ITicketVerificationService, TicketVerificationService>();
         services.AddScoped<ITicketResaleWorkflow, TicketVerificationService>();
         services.AddScoped<TicketVerificationService>();
 
+        // Đăng ký Persistence Store
         services.AddDbContext<CoreResaleStore>(b => b.UseNpgsql(
             configuration.GetConnectionString("DefaultConnection"),
             pg => pg.MigrationsHistoryTable("__CoreResaleMigrationsHistory")));
 
+        // Đăng ký Background Reconciliation Worker
         services.AddHostedService<ResaleRecoveryWorker>();
         return true;
     }

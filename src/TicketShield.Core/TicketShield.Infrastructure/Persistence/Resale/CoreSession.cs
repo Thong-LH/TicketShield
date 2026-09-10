@@ -1,4 +1,4 @@
-namespace TicketShield.Infrastructure.Resale;
+namespace TicketShield.Infrastructure.Persistence.Resale;
 
 /// <summary>
 /// Trạng thái phiên xác thực vé (Verification Session) trong máy trạng thái phân tán (Saga)
