@@ -6,15 +6,6 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace TicketShield.Infrastructure.Resale;
 
 /// <summary>
-/// Bảng lưu trữ trạng thái phi cấu trúc (Saga state) của các phiên xác thực vé
-/// </summary>
-public sealed class CoreResaleRow
-{
-    public string Id { get; set; } = string.Empty;
-    public string Json { get; set; } = "{}";
-}
-
-/// <summary>
 /// DbContext chuyên biệt quản lý lưu trữ trạng thái phân tán (Saga state machine)
 /// </summary>
 public sealed class CoreResaleStore(DbContextOptions<CoreResaleStore> options) : DbContext(options)
@@ -69,41 +60,4 @@ public sealed class CoreResaleRecords : Migration
     {
         m.DropTable("core_resale_records");
     }
-}
-
-/// <summary>
-/// Trạng thái phiên xác thực vé (Verification Session)
-/// </summary>
-public sealed class CoreSession
-{
-    public string Id { get; set; } = string.Empty;
-    public string Seller { get; set; } = string.Empty;
-    public string TicketCode { get; set; } = string.Empty;
-    public string State { get; set; } = "RequestPending";
-    public string? PendingOperationId { get; set; }
-    public string? ChallengeJson { get; set; }
-    public string? ReceiptJson { get; set; }
-    public Guid? ListingId { get; set; }
-    public string? PrivateAccessToken { get; set; }
-    public long? Price { get; set; }
-    public DateTimeOffset UpdatedAt { get; set; }
-}
-
-/// <summary>
-/// Trạng thái tác vụ Idempotent (Idempotent Operation)
-/// </summary>
-public sealed class CoreOperation
-{
-    public string Id { get; set; } = string.Empty;
-    public string SessionId { get; set; } = string.Empty;
-    public string Seller { get; set; } = string.Empty;
-    public string Kind { get; set; } = string.Empty;
-    public string Fingerprint { get; set; } = string.Empty;
-    public string State { get; set; } = "Pending";
-    public string? Error { get; set; }
-    public string? Step { get; set; }
-    public string? LockId { get; set; }
-    public ulong LockGeneration { get; set; }
-    public int Attempts { get; set; }
-    public DateTimeOffset NextAttemptAt { get; set; }
 }
