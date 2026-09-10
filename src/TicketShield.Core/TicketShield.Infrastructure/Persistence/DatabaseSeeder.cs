@@ -8,8 +8,17 @@ public static class DatabaseSeeder
 {
     public static async Task SeedTicketShieldAsync(TicketShieldDbContext context)
     {
-        // 1. Auto-apply any pending migrations on startup (code-first auto-init)
+        // 1. Auto-apply any pending migrations and ensure auth columns exist
         await context.Database.MigrateAsync();
+
+        await context.Database.ExecuteSqlRawAsync(@"
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255);
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id VARCHAR(255);
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS password_reset_otp VARCHAR(20);
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS password_reset_otp_expires_at TIMESTAMPTZ;
+        ");
+
+        var defaultPasswordHash = BCrypt.Net.BCrypt.HashPassword("123456");
 
         // 2. Seed Users
         if (!await context.Users.AnyAsync())
@@ -20,6 +29,7 @@ public static class DatabaseSeeder
                 Email = "seller@ticketshield.vn",
                 FullName = "Nguyen Van Seller",
                 PhoneNumber = "0901234567",
+                PasswordHash = defaultPasswordHash,
                 Role = UserRole.User,
                 IsActive = true
             };
@@ -30,6 +40,7 @@ public static class DatabaseSeeder
                 Email = "buyer@ticketshield.vn",
                 FullName = "Tran Thi Buyer",
                 PhoneNumber = "0987654321",
+                PasswordHash = defaultPasswordHash,
                 Role = UserRole.User,
                 IsActive = true
             };
@@ -40,11 +51,28 @@ public static class DatabaseSeeder
                 Email = "admin@ticketshield.vn",
                 FullName = "System Administrator",
                 PhoneNumber = "0999999999",
+                PasswordHash = defaultPasswordHash,
                 Role = UserRole.Admin,
                 IsActive = true
             };
 
             await context.Users.AddRangeAsync(seller, buyer, admin);
+        }
+        else
+        {
+            // Backfill default password hash for existing seed users if null
+            var usersWithoutPassword = await context.Users
+                .Where(u => u.PasswordHash == null)
+                .ToListAsync();
+
+            if (usersWithoutPassword.Any())
+            {
+                foreach (var u in usersWithoutPassword)
+                {
+                    u.PasswordHash = defaultPasswordHash;
+                }
+                await context.SaveChangesAsync();
+            }
         }
 
         // 3. Seed Organizer & Concert Events

@@ -19,6 +19,12 @@ public static class DependencyInjection
         services.AddScoped<ITicketShieldDbContext>(provider =>
             provider.GetRequiredService<TicketShieldDbContext>());
 
+        // Auth & Security Services
+        services.AddSingleton<IPasswordHasher, Services.BcryptPasswordHasher>();
+        services.AddScoped<IJwtTokenGenerator, Services.JwtTokenGenerator>();
+        services.AddScoped<IEmailService, Services.MockEmailService>();
+        services.AddScoped<IGoogleAuthService, Services.GoogleAuthService>();
+
         return services;
     }
 }

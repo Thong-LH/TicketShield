@@ -9,6 +9,10 @@ public class User : BaseEntity
     public string FullName { get; set; } = string.Empty;
     public string? PhoneNumber { get; set; }
     public string? IdCardNumber { get; set; }
+    public string? PasswordHash { get; set; }
+    public string? GoogleId { get; set; }
+    public string? PasswordResetOtp { get; set; }
+    public DateTimeOffset? PasswordResetOtpExpiresAt { get; set; }
     public UserRole Role { get; set; } = UserRole.User;
     public bool IsActive { get; set; } = true;
 

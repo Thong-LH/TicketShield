@@ -12,16 +12,18 @@ namespace TicketShield.Application.Features.ResaleListings.Commands.CreateResale
 public class CreateResaleListingCommandHandler : IRequestHandler<CreateResaleListingCommand, ApiResponse<CreateResaleListingResponse>>
 {
     private readonly ITicketShieldDbContext _dbContext;
+    private readonly ICurrentUserService? _currentUserService;
 
-    public CreateResaleListingCommandHandler(ITicketShieldDbContext dbContext)
+    public CreateResaleListingCommandHandler(ITicketShieldDbContext dbContext, ICurrentUserService? currentUserService = null)
     {
         _dbContext = dbContext;
+        _currentUserService = currentUserService;
     }
 
     public async Task<ApiResponse<CreateResaleListingResponse>> Handle(CreateResaleListingCommand request, CancellationToken cancellationToken)
     {
-        // 1. Resolve SellerId (fallback to first user if not supplied in dev mode)
-        var sellerId = request.SellerId ?? Guid.Empty;
+        // 1. Resolve SellerId (from JWT authenticated user, or request, or fallback to first user in dev mode)
+        var sellerId = _currentUserService?.UserId ?? request.SellerId ?? Guid.Empty;
         if (sellerId == Guid.Empty)
         {
             var defaultSeller = await _dbContext.Users
