@@ -44,6 +44,12 @@ public interface ITicketVerificationService
     Task<VerificationResult> Cancel(string seller, string id, string key, CancellationToken ct);
 
     /// <summary>
+    /// Hủy tin đăng bán vé qua ListingId: tra cứu phiên gRPC và gọi unlock nếu tồn tại.
+    /// Dùng cho REST endpoint SCRUM-33 (POST /api/v1/resale-listings/{id}/cancel).
+    /// </summary>
+    Task CancelByListingId(string seller, Guid listingId, string key, CancellationToken ct);
+
+    /// <summary>
     /// Lấy danh sách vé công khai đang niêm yết trên thị trường.
     /// </summary>
     Task<List<ListingResult>> Marketplace(int page, int size, CancellationToken ct);

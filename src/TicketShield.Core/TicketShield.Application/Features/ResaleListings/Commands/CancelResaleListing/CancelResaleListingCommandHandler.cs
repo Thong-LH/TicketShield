@@ -62,23 +62,25 @@ public class CancelResaleListingCommandHandler : IRequestHandler<CancelResaleLis
                 $"Tin đăng bán vé hiện đang ở trạng thái '{listing.ListingStatus}'. Chỉ có thể hủy tin đăng khi vé chưa bị người mua đặt hoặc mua.");
         }
 
-        // 5. Step 2 of Jira: Change listing status to CANCELLED in DB
-        listing.ListingStatus = ListingStatus.Cancelled;
-        await _dbContext.SaveChangesAsync(cancellationToken);
-
-        // 6. Step 3 of Jira: Call MockOrganizer to unlock original ticket back to VALID
+        // 5. Step 3 of Jira: Call MockOrganizer via verification service to unlock original ticket if gRPC session exists
         if (_verificationService != null)
         {
             try
             {
                 var idempotencyKey = $"cancel-listing-{listing.Id}";
-                await _verificationService.Cancel(sellerId.ToString("D"), listing.Id.ToString("D"), idempotencyKey, cancellationToken);
+                // CancelByListingId looks up the verificationId via listing index in core_resale_records
+                // If no gRPC session exists (e.g. seeded data), this is a no-op - safe to ignore
+                await _verificationService.CancelByListingId(sellerId.ToString("D"), listing.Id, idempotencyKey, cancellationToken);
             }
             catch (Exception)
             {
-                // DB listing status is already saved as Cancelled
+                // Verification session may not exist for seeded listings or may be handled by direct DB update
             }
         }
+
+        // 6. Step 2 of Jira: Change listing status to CANCELLED in DB and save
+        listing.ListingStatus = ListingStatus.Cancelled;
+        await _dbContext.SaveChangesAsync(cancellationToken);
 
         var response = new CancelResaleListingResponse
         {

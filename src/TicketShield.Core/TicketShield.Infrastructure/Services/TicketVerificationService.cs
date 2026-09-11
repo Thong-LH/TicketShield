@@ -99,6 +99,8 @@ public class TicketVerificationService : ITicketVerificationService, ITicketResa
         return session;
     }
 
+    private static string ListingIndexKey(Guid listingId) => $"listing:{listingId:D}";
+
     private static OperationContext Context(CoreSession s, CoreOperation op) => new()
     {
         OperationId = op.Id,
@@ -619,6 +621,8 @@ public class TicketVerificationService : ITicketVerificationService, ITicketResa
 
                 await _db.Put(SessionKey(fresh.Id), fresh, ct);
                 await _db.Put(OpKey(s.Seller, op.Kind, op.Id), op, ct);
+                // Store reverse index: listingId → verificationId for fast lookup by REST cancel endpoint
+                await _db.Put(ListingIndexKey(id), new ListingIndex { VerificationId = fresh.Id, Seller = fresh.Seller }, ct);
                 return Result(fresh);
             }, ct, s.Id);
         }
@@ -846,5 +850,27 @@ public class TicketVerificationService : ITicketVerificationService, ITicketResa
         public Guid EventId { get; set; }
         public Guid TierId { get; set; }
         public decimal Price { get; set; }
+    }
+
+    private sealed class ListingIndex
+    {
+        public string VerificationId { get; set; } = string.Empty;
+        public string Seller { get; set; } = string.Empty;
+    }
+
+    /// <summary>
+    /// Hủy tin đăng bán vé qua listingId: Tra cứu verificationId từ index, rồi gọi Cancel workflow.
+    /// Được dùng bởi REST endpoint POST /api/v1/resale-listings/{id}/cancel (SCRUM-33).
+    /// </summary>
+    public async Task CancelByListingId(string seller, Guid listingId, string key, CancellationToken ct)
+    {
+        var index = await _db.Read<ListingIndex>(ListingIndexKey(listingId), ct);
+        if (index == null || index.Seller != seller)
+        {
+            // No gRPC session found for this listing (e.g. seeded data) - skip gRPC unlock gracefully
+            return;
+        }
+
+        await Cancel(seller, index.VerificationId, key, ct);
     }
 }
