@@ -5,6 +5,7 @@ using TicketShield.Application.Common.Interfaces;
 using TicketShield.Application.Common.Models;
 using TicketShield.Application.Features.ResaleListings.Commands.CancelResaleListing;
 using TicketShield.Application.Features.ResaleListings.Commands.CreateResaleListing;
+using TicketShield.Application.Features.ResaleListings.Queries.GetResaleListingByPrivateToken;
 using TicketShield.Application.Features.ResaleListings.Queries.GetResaleListingDetail;
 using TicketShield.Application.Features.ResaleListings.Queries.GetSellerListings;
 using TicketShield.Application.Resale;
@@ -89,6 +90,21 @@ public class ResaleListingsController(
     public async Task<IActionResult> GetListingDetail([FromRoute] Guid id, [FromQuery] string? token = null)
     {
         var query = new GetResaleListingDetailQuery(id, token);
+        var result = await Mediator.Send(query);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// SCRUM-30: Get private resale listing detail by private share token
+    /// </summary>
+    /// <param name="shareToken">Private share token from URL /p/{shareToken}</param>
+    /// <returns>Private resale listing preview details</returns>
+    [HttpGet("private/{shareToken}")]
+    [ProducesResponseType(typeof(ApiResponse<ResaleListingDetailDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetPrivateListingDetail([FromRoute] string shareToken)
+    {
+        var query = new GetResaleListingByPrivateTokenQuery(shareToken);
         var result = await Mediator.Send(query);
         return Ok(result);
     }

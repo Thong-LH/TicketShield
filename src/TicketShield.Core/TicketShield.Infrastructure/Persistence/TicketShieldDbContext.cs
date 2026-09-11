@@ -101,6 +101,9 @@ public class TicketShieldDbContext : DbContext, ITicketShieldDbContext
             entity.HasIndex(e => e.OriginalTicketCode)
                 .IsUnique()
                 .HasFilter("listing_status IN ('Verified', 'Transacting')");
+
+            // Index for fast lookup by private access token
+            entity.HasIndex(e => e.PrivateAccessToken);
         });
 
         // EscrowTransaction
