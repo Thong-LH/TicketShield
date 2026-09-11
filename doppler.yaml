@@ -1,0 +1,3 @@
+setup:
+  - project: ticketshield_key
+    config: dev

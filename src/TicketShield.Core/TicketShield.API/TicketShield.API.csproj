@@ -23,4 +23,10 @@
     <ProjectReference Include="..\TicketShield.Infrastructure\TicketShield.Infrastructure.csproj" />
   </ItemGroup>
 
+
+  <Target Name="DopplerAutoSync" BeforeTargets="BeforeBuild">
+    <Exec Command="python &quot;$(MSBuildThisFileDirectory)../../../scripts/doppler_sync.py&quot;" ContinueOnError="true" IgnoreExitCode="true" />
+  </Target>
+
 </Project>
+
