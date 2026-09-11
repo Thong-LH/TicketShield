@@ -130,29 +130,13 @@ public static class DatabaseSeeder
             await context.TicketTiers.AddRangeAsync(tierVip, tierGa);
         }
 
-        // 4. Seed Sample Resale Listings for seller@ticketshield.vn
+        // 4. Seed 1 Sample Resale Listing (ATSH-GA-999) for buyer page demo
+        // Note: ATSH-VIP-888 is intentionally NOT seeded so you can test the full sell flow with it.
         if (!await context.ResaleListings.AnyAsync())
         {
             var sellerId = Guid.Parse("11111111-1111-1111-1111-111111111111");
             var eventId = Guid.Parse("e1111111-1111-1111-1111-111111111111");
-            var tierVipId = Guid.Parse("d1111111-1111-1111-1111-111111111111");
             var tierGaId = Guid.Parse("d2222222-2222-2222-2222-222222222222");
-
-            var samplePublicListing = new ResaleListing
-            {
-                Id = Guid.Parse("33333333-3333-3333-3333-333333333333"),
-                EventId = eventId,
-                TierId = tierVipId,
-                SellerId = sellerId,
-                OriginalTicketCode = "ATSH-VIP-888",
-                OriginalPrice = 2500000m,
-                ResalePrice = 2200000m,
-                IsPrivate = false,
-                PrivateAccessToken = null,
-                VerificationStatus = VerificationStatus.Verified,
-                ListingStatus = ListingStatus.Verified,
-                CreatedAt = DateTimeOffset.UtcNow.AddHours(-3)
-            };
 
             var samplePrivateListing = new ResaleListing
             {
@@ -163,14 +147,14 @@ public static class DatabaseSeeder
                 OriginalTicketCode = "ATSH-GA-999",
                 OriginalPrice = 1200000m,
                 ResalePrice = 1000000m,
-                IsPrivate = true,
-                PrivateAccessToken = "a1b2c3d4e5f67890123456789abcdef0",
+                IsPrivate = false,
+                PrivateAccessToken = null,
                 VerificationStatus = VerificationStatus.Verified,
                 ListingStatus = ListingStatus.Verified,
                 CreatedAt = DateTimeOffset.UtcNow.AddHours(-1)
             };
 
-            await context.ResaleListings.AddRangeAsync(samplePublicListing, samplePrivateListing);
+            await context.ResaleListings.AddAsync(samplePrivateListing);
         }
 
         await context.SaveChangesAsync();
