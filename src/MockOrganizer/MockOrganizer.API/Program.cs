@@ -4,6 +4,7 @@ using MockOrganizer.API.Resale;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
 var resaleEnabled = builder.Services.AddOrganizerResale(builder.Configuration);
 if (resaleEnabled && builder.Environment.IsDevelopment())
 {
