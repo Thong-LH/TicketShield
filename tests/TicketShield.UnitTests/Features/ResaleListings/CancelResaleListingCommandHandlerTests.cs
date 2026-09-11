@@ -195,4 +195,51 @@ public class CancelResaleListingCommandHandlerTests
         await Assert.ThrowsAsync<NotFoundException>(
             () => handler.Handle(command, CancellationToken.None));
     }
+
+    private class MockFailingVerificationService : ITicketVerificationService
+    {
+        public Task CancelByListingId(string seller, Guid listingId, string key, CancellationToken ct)
+        {
+            throw new InvalidOperationException("Failed to reach MockOrganizer gateway to unlock ticket.");
+        }
+
+        public Task<List<TicketShield.Application.Resale.ListingResult>> Marketplace(int page, int size, CancellationToken ct) => throw new NotImplementedException();
+    }
+
+    [Fact]
+    public async Task Handle_WhenVerificationServiceUnlockFails_ShouldThrowAndNotCancelInDb()
+    {
+        // Arrange
+        var (dbContext, seller1, _) = CreateInMemoryDbContext();
+        var testEvent = await dbContext.Events.FirstAsync();
+        var testTier = await dbContext.TicketTiers.FirstAsync();
+
+        var listing = new ResaleListing
+        {
+            Id = Guid.NewGuid(),
+            EventId = testEvent.Id,
+            TierId = testTier.Id,
+            SellerId = seller1.Id,
+            OriginalTicketCode = "TCK-UNLOCK-FAIL-009",
+            OriginalPrice = 2_000_000m,
+            ResalePrice = 1_800_000m,
+            ListingStatus = ListingStatus.Verified
+        };
+        dbContext.ResaleListings.Add(listing);
+        await dbContext.SaveChangesAsync();
+
+        var currentUserService = new MockCurrentUserService(seller1.Id);
+        var failingService = new MockFailingVerificationService();
+        var handler = new CancelResaleListingCommandHandler(dbContext, currentUserService, failingService);
+        var command = new CancelResaleListingCommand(listing.Id);
+
+        // Act & Assert
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => handler.Handle(command, CancellationToken.None));
+
+        // Verify database listing status remains Verified (not Cancelled)
+        var dbListing = await dbContext.ResaleListings.FindAsync(listing.Id);
+        Assert.NotNull(dbListing);
+        Assert.Equal(ListingStatus.Verified, dbListing.ListingStatus);
+    }
 }
