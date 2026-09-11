@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using TicketShield.API.Filters;
 using TicketShield.Application.Common.Interfaces;
 using TicketShield.Application.Common.Models;
+using TicketShield.Application.Features.ResaleListings.Commands.CancelResaleListing;
 using TicketShield.Application.Features.ResaleListings.Commands.CreateResaleListing;
 using TicketShield.Application.Features.ResaleListings.Queries.GetResaleListingDetail;
 using TicketShield.Application.Features.ResaleListings.Queries.GetSellerListings;
@@ -105,6 +106,24 @@ public class ResaleListingsController(
     {
         var query = new GetSellerListingsQuery(status);
         var result = await Mediator.Send(query);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// SCRUM-33: BE-CORE-2.4.2 Cancel resale listing api (US-2.4)
+    /// </summary>
+    /// <param name="id">Listing ID to cancel</param>
+    /// <returns>Cancelled listing details</returns>
+    [Authorize]
+    [HttpPost("{id:guid}/cancel")]
+    [ProducesResponseType(typeof(ApiResponse<CancelResaleListingResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> CancelListing([FromRoute] Guid id)
+    {
+        var command = new CancelResaleListingCommand(id);
+        var result = await Mediator.Send(command);
         return Ok(result);
     }
 }

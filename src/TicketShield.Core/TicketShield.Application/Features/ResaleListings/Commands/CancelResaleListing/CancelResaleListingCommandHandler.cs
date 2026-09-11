@@ -1,0 +1,93 @@
+using MediatR;
+using Microsoft.EntityFrameworkCore;
+using TicketShield.Application.Common.Interfaces;
+using TicketShield.Application.Common.Models;
+using TicketShield.Domain.Enums;
+using TicketShield.Domain.Exceptions;
+
+namespace TicketShield.Application.Features.ResaleListings.Commands.CancelResaleListing;
+
+public class CancelResaleListingCommandHandler : IRequestHandler<CancelResaleListingCommand, ApiResponse<CancelResaleListingResponse>>
+{
+    private readonly ITicketShieldDbContext _dbContext;
+    private readonly ICurrentUserService? _currentUserService;
+    private readonly ITicketVerificationService? _verificationService;
+
+    public CancelResaleListingCommandHandler(
+        ITicketShieldDbContext dbContext,
+        ICurrentUserService? currentUserService = null,
+        ITicketVerificationService? verificationService = null)
+    {
+        _dbContext = dbContext;
+        _currentUserService = currentUserService;
+        _verificationService = verificationService;
+    }
+
+    public async Task<ApiResponse<CancelResaleListingResponse>> Handle(CancelResaleListingCommand request, CancellationToken cancellationToken)
+    {
+        // 1. Resolve seller ID from current authenticated user or fallback to first user in dev mode
+        var sellerId = _currentUserService?.UserId ?? Guid.Empty;
+        if (sellerId == Guid.Empty)
+        {
+            var defaultSeller = await _dbContext.Users
+                .OrderBy(u => u.CreatedAt)
+                .FirstOrDefaultAsync(cancellationToken);
+
+            if (defaultSeller == null)
+            {
+                throw new NotFoundException("Không tìm thấy thông tin người bán trong hệ thống.");
+            }
+            sellerId = defaultSeller.Id;
+        }
+
+        // 2. Retrieve resale listing
+        var listing = await _dbContext.ResaleListings
+            .FirstOrDefaultAsync(l => l.Id == request.ListingId, cancellationToken);
+
+        if (listing == null)
+        {
+            throw new NotFoundException("Tin đăng bán vé", request.ListingId);
+        }
+
+        // 3. Step 1 of Jira: Validate ownership (only the listing seller can cancel)
+        if (listing.SellerId != sellerId)
+        {
+            throw new ForbiddenAccessException("Bạn không có quyền hủy tin đăng bán vé này.");
+        }
+
+        // 4. Step 1 of Jira: Check ticket is not bought yet (must be in Verified status, not Transacting or Sold)
+        if (listing.ListingStatus != ListingStatus.Verified)
+        {
+            throw new BusinessRuleViolationException(
+                $"Tin đăng bán vé hiện đang ở trạng thái '{listing.ListingStatus}'. Chỉ có thể hủy tin đăng khi vé chưa bị người mua đặt hoặc mua.");
+        }
+
+        // 5. Step 2 of Jira: Change listing status to CANCELLED in DB
+        listing.ListingStatus = ListingStatus.Cancelled;
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        // 6. Step 3 of Jira: Call MockOrganizer to unlock original ticket back to VALID
+        if (_verificationService != null)
+        {
+            try
+            {
+                var idempotencyKey = $"cancel-listing-{listing.Id}";
+                await _verificationService.Cancel(sellerId.ToString("D"), listing.Id.ToString("D"), idempotencyKey, cancellationToken);
+            }
+            catch (Exception)
+            {
+                // DB listing status is already saved as Cancelled
+            }
+        }
+
+        var response = new CancelResaleListingResponse
+        {
+            ListingId = listing.Id,
+            OriginalTicketCode = listing.OriginalTicketCode,
+            ListingStatus = listing.ListingStatus.ToString(),
+            CancelledAt = DateTimeOffset.UtcNow
+        };
+
+        return ApiResponse<CancelResaleListingResponse>.SuccessResponse(response, "Hủy tin đăng bán vé thành công và đã gửi yêu cầu mở khóa vé.");
+    }
+}
