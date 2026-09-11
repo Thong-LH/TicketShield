@@ -642,6 +642,15 @@ public class TicketVerificationService : ITicketVerificationService
         }
         catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UniqueViolation)
         {
+            try
+            {
+                await Release(s, op, ct);
+            }
+            catch
+            {
+                // Best-effort release to unblock original ticket in MockOrganizer
+            }
+
             await Reject(s, op, "TICKET_ALREADY_LISTED", ct);
             throw Error("TICKET_ALREADY_LISTED");
         }

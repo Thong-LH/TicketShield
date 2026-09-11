@@ -59,6 +59,10 @@ yarn-error.log*
 .env
 .env.*
 !.env.example
+appsettings.Local.json
+appsettings.*.Local.json
+*.Secret.json
 
 # Docker / Volumes
 postgres_data/
+
