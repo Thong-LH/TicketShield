@@ -5,7 +5,9 @@ using TicketShield.Application.Common.Interfaces;
 using TicketShield.Application.Common.Models;
 using TicketShield.Application.Features.ResaleListings.Commands.CreateResaleListing;
 using TicketShield.Application.Features.ResaleListings.Queries.GetResaleListingDetail;
+using TicketShield.Application.Features.ResaleListings.Queries.GetSellerListings;
 using TicketShield.Application.Resale;
+using TicketShield.Domain.Enums;
 
 namespace TicketShield.API.Controllers;
 
@@ -89,5 +91,22 @@ public class ResaleListingsController(
         var result = await Mediator.Send(query);
         return Ok(result);
     }
+
+    /// <summary>
+    /// SCRUM-32: BE-CORE-2.4.1 Get seller listings api (US-2.4)
+    /// </summary>
+    /// <param name="status">Optional status filter (e.g. Verified, Transacting, Sold, Cancelled)</param>
+    /// <returns>List of seller's resale ticket listings</returns>
+    [Authorize]
+    [HttpGet("my-listings")]
+    [ProducesResponseType(typeof(ApiResponse<List<SellerListingDto>>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> GetMyListings([FromQuery] ListingStatus? status = null)
+    {
+        var query = new GetSellerListingsQuery(status);
+        var result = await Mediator.Send(query);
+        return Ok(result);
+    }
 }
+
 
