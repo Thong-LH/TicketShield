@@ -18,7 +18,7 @@ namespace TicketShield.Infrastructure.Services;
 /// <summary>
 /// Triển khai dịch vụ xác thực vé qua gRPC và quản lý tin bán lại (Ticket Verification & Lock Saga).
 /// </summary>
-public class TicketVerificationService : ITicketVerificationService, ITicketResaleWorkflow
+public class TicketVerificationService : ITicketVerificationService
 {
     private readonly CoreResaleStore _db;
     private readonly IOrganizerGateway _gateway;

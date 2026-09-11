@@ -14,6 +14,9 @@ using TicketShield.Infrastructure.Resale;
 using TicketShield.API.Resale;
 using Microsoft.EntityFrameworkCore;
 
+
+var builder = WebApplication.CreateBuilder(args);
+
 // CORS Configuration for Frontend Development
 builder.Services.AddCors(options =>
 {

@@ -39,7 +39,6 @@ public static class ResaleRegistration
 
         // Đăng ký Application Service
         services.AddScoped<ITicketVerificationService, TicketVerificationService>();
-        services.AddScoped<ITicketResaleWorkflow, TicketVerificationService>();
         services.AddScoped<TicketVerificationService>();
 
         // Đăng ký Persistence Store

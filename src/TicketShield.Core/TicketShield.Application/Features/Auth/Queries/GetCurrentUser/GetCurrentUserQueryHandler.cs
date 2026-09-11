@@ -22,7 +22,7 @@ public class GetCurrentUserQueryHandler : IRequestHandler<GetCurrentUserQuery, A
         var currentUserId = _currentUserService.UserId;
         if (!currentUserId.HasValue || currentUserId.Value == Guid.Empty)
         {
-            throw new ForbiddenAccessException("Người dùng chưa đăng nhập hoặc phiên làm việc đã hết hạn.");
+            throw new UnauthorizedException("Người dùng chưa đăng nhập hoặc phiên làm việc đã hết hạn.");
         }
 
         var user = await _dbContext.Users

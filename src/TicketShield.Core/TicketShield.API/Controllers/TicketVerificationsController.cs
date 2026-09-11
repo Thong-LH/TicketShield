@@ -79,6 +79,7 @@ public class TicketVerificationsController(
     /// <summary>
     /// Hủy tin đăng bán và yêu cầu Nhà tổ chức Mở khóa vé (Release Lock)
     /// </summary>
+    [Obsolete("Sử dụng endpoint chuẩn POST /api/v1/resale-listings/{id}/cancel thay thế.")]
     [HttpPost("{id}/cancel-listing")]
     public async Task<IActionResult> Cancel(
         string id,

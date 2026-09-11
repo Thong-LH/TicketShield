@@ -2,6 +2,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using TicketShield.Application.Common.Interfaces;
 using TicketShield.Application.Common.Models;
+using TicketShield.Application.Features.ResaleListings.Common;
 using TicketShield.Application.Features.ResaleListings.Queries.GetResaleListingDetail;
 using TicketShield.Domain.Exceptions;
 
@@ -36,37 +37,6 @@ public class GetResaleListingByPrivateTokenQueryHandler : IRequestHandler<GetRes
             throw new NotFoundException("Liên kết bán riêng tư không hợp lệ hoặc đã bị hủy.");
         }
 
-        // Mask ticket code to prevent admission barcode theft prior to escrow payment
-        var rawCode = listing.OriginalTicketCode;
-        var maskedCode = rawCode.Length <= 4
-            ? "****"
-            : string.Concat(rawCode.AsSpan(0, 2), new string('*', rawCode.Length - 4), rawCode.AsSpan(rawCode.Length - 2));
-
-        var discount = listing.OriginalPrice - listing.ResalePrice;
-        var discountPercent = listing.OriginalPrice > 0 ? Math.Round((discount / listing.OriginalPrice) * 100, 1) : 0;
-
-        var dto = new ResaleListingDetailDto
-        {
-            ListingId = listing.Id,
-            EventId = listing.EventId,
-            EventName = listing.Event.Name,
-            EventVenue = listing.Event.Venue,
-            EventStartAt = listing.Event.EventStartAt,
-            TierId = listing.TierId,
-            TierName = listing.Tier.TierName,
-            OriginalPrice = listing.OriginalPrice,
-            ResalePrice = listing.ResalePrice,
-            DiscountAmount = discount > 0 ? discount : 0,
-            DiscountPercentage = discountPercent > 0 ? discountPercent : 0,
-            IsPrivate = listing.IsPrivate,
-            MaskedTicketCode = maskedCode,
-            VerificationStatus = listing.VerificationStatus.ToString(),
-            ListingStatus = listing.ListingStatus.ToString(),
-            SellerId = listing.SellerId,
-            SellerFullName = listing.Seller.FullName,
-            CreatedAt = listing.CreatedAt
-        };
-
-        return ApiResponse<ResaleListingDetailDto>.SuccessResponse(dto, "Lấy thông tin vé bán riêng tư thành công.");
+        return ApiResponse<ResaleListingDetailDto>.SuccessResponse(listing.ToDetailDto(), "Lấy thông tin vé bán riêng tư thành công.");
     }
 }

@@ -3,6 +3,7 @@ using TicketShield.Application.Common.Interfaces;
 using TicketShield.Application.Features.ResaleListings.Queries.GetSellerListings;
 using TicketShield.Domain.Entities;
 using TicketShield.Domain.Enums;
+using TicketShield.Domain.Exceptions;
 using TicketShield.Infrastructure.Persistence;
 using Xunit;
 
@@ -213,5 +214,19 @@ public class GetSellerListingsQueryHandlerTests
         Assert.True(result.Success);
         Assert.NotNull(result.Data);
         Assert.Empty(result.Data);
+    }
+
+    [Fact]
+    public async Task Handle_WhenNotAuthenticated_ShouldThrowUnauthorizedException()
+    {
+        // Arrange
+        var (dbContext, _, _) = CreateInMemoryDbContext();
+        var currentUserService = new MockCurrentUserService(null);
+        var handler = new GetSellerListingsQueryHandler(dbContext, currentUserService);
+        var query = new GetSellerListingsQuery();
+
+        // Act & Assert
+        var ex = await Assert.ThrowsAsync<UnauthorizedException>(() => handler.Handle(query, CancellationToken.None));
+        Assert.Contains("đăng nhập", ex.Message);
     }
 }

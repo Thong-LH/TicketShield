@@ -148,7 +148,8 @@ public sealed class OrganizerResaleGrpcService(ResaleStore db, ResaleOptions opt
         catch (System.Net.Mail.SmtpFailedRecipientException) { state = "Failed"; }
         catch (Exception) { state = "Unknown"; } // No exception/payload logging: SMTP errors may contain addresses.
         await using var tx = await db.Database.BeginTransactionAsync(CancellationToken.None);
-        await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock(84722001)");
+        long lockKey = ComputeLockKey(op.VerificationId ?? op.OperationId);
+        await db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock({lockKey})", CancellationToken.None);
         db.ChangeTracker.Clear();
         var s = await Session(op.VerificationId, op.RequesterRef, CancellationToken.None);
         if (s.Generation == result.Generation) { s.Delivery = state; await db.Put(SessionKey(s.Id), s, CancellationToken.None); }
@@ -268,7 +269,8 @@ public sealed class OrganizerResaleGrpcService(ResaleStore db, ResaleOptions opt
     {
         Authenticate(context); Validate(v);
         await using var tx = await db.Database.BeginTransactionAsync(context.CancellationToken);
-        await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock(84722001)", context.CancellationToken);
+        long lockKey = ComputeLockKey(v.VerificationId);
+        await db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock({lockKey})", context.CancellationToken);
         return await action();
     }
     public override Task<VerificationView> GetVerification(GetVerificationRequest r, ServerCallContext c) =>
