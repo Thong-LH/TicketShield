@@ -32,7 +32,30 @@ public sealed class SmtpCapture : IAsyncDisposable
                     else if (line == "DATA") {
                         await writer.WriteLineAsync("354 send data"); var body = new StringBuilder();
                         while (await reader.ReadLineAsync(stop.Token) is { } data && data != ".") body.AppendLine(data);
-                        var match = Regex.Match(body.ToString(), @"\bis (\d{6})\b");
+                        var raw = body.ToString();
+                        var textToSearch = raw;
+                        if (raw.Contains("Content-Transfer-Encoding: base64", StringComparison.OrdinalIgnoreCase)) {
+                            var split = raw.Split(new[] { "\r\n\r\n", "\n\n" }, 2, StringSplitOptions.None);
+                            if (split.Length == 2) {
+                                try {
+                                    var base64Clean = Regex.Replace(split[1], @"\s+", "");
+                                    var bytes = Convert.FromBase64String(base64Clean);
+                                    textToSearch = Encoding.UTF8.GetString(bytes);
+                                } catch { }
+                            }
+                        }
+                        var match = Regex.Match(textToSearch, @">(\d{6})<");
+                        if (!match.Success) match = Regex.Match(textToSearch, @"\bis (\d{6})\b");
+                        if (!match.Success) match = Regex.Match(textToSearch, @"\b(\d{6})\b");
+                        if (!match.Success) {
+                            foreach (Match m in Regex.Matches(raw, @"=\?utf-8\?B\?([^\?]+)\?=", RegexOptions.IgnoreCase)) {
+                                try {
+                                    var decoded = Encoding.UTF8.GetString(Convert.FromBase64String(m.Groups[1].Value));
+                                    var subMatch = Regex.Match(decoded, @"\b(\d{6})\b");
+                                    if (subMatch.Success) { match = subMatch; break; }
+                                } catch { }
+                            }
+                        }
                         if (match.Success) Messages.Enqueue((recipient, match.Groups[1].Value));
                         await writer.WriteLineAsync("250 accepted");
                     } else if (line == "QUIT") { await writer.WriteLineAsync("221 bye"); break; }

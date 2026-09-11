@@ -9,9 +9,9 @@ namespace TicketShield.Infrastructure.Services;
 public class MockEmailService : IEmailService
 {
     private readonly ILogger<MockEmailService> _logger;
-    private readonly IConfiguration _configuration;
+    private readonly IConfiguration? _configuration;
 
-    public MockEmailService(ILogger<MockEmailService> logger, IConfiguration configuration)
+    public MockEmailService(ILogger<MockEmailService> logger, IConfiguration? configuration = null)
     {
         _logger = logger;
         _configuration = configuration;
@@ -26,6 +26,11 @@ public class MockEmailService : IEmailService
             "OTP Code : {OtpCode} (Expires in 10 minutes)\n" +
             "==================================================",
             fullName, toEmail, otpCode);
+
+        if (_configuration == null)
+        {
+            return;
+        }
 
         var host = _configuration["Smtp:Host"] ?? _configuration["OrganizerResale:Smtp:Host"];
         var username = _configuration["Smtp:Username"] ?? _configuration["OrganizerResale:Smtp:Username"];
