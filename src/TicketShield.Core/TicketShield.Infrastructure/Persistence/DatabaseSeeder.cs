@@ -26,7 +26,7 @@ public static class DatabaseSeeder
             var seller = new User
             {
                 Id = Guid.Parse("11111111-1111-1111-1111-111111111111"),
-                Email = "seller@ticketshield.vn",
+                Email = "linhtranlatao2004@gmail.com",
                 FullName = "Nguyen Van Seller",
                 PhoneNumber = "0901234567",
                 PasswordHash = defaultPasswordHash,
@@ -60,6 +60,12 @@ public static class DatabaseSeeder
         }
         else
         {
+            var existingSeller = await context.Users.FirstOrDefaultAsync(u => u.Id == Guid.Parse("11111111-1111-1111-1111-111111111111"));
+            if (existingSeller != null)
+            {
+                existingSeller.Email = "linhtranlatao2004@gmail.com";
+            }
+
             // Backfill default password hash for existing seed users if null
             var usersWithoutPassword = await context.Users
                 .Where(u => u.PasswordHash == null)
@@ -71,8 +77,8 @@ public static class DatabaseSeeder
                 {
                     u.PasswordHash = defaultPasswordHash;
                 }
-                await context.SaveChangesAsync();
             }
+            await context.SaveChangesAsync();
         }
 
         // 3. Seed Organizer & Concert Events

@@ -22,7 +22,7 @@ public static class OrganizerDatabaseSeeder
                     EventName = "Anh Trai Say Hi Concert 2026",
                     SeatZone = "VIP Zone A - Row 1 Seat 12",
                     OriginalPrice = 2500000,
-                    OwnerEmail = "seller@ticketshield.vn",
+                    OwnerEmail = "linhtranlatao2004@gmail.com",
                     OwnerPhone = "0901234567",
                     OwnerName = "Nguyen Van Seller",
                     Status = "VALID"
@@ -34,7 +34,7 @@ public static class OrganizerDatabaseSeeder
                     EventName = "Anh Trai Say Hi Concert 2026",
                     SeatZone = "GA Standing Zone 2",
                     OriginalPrice = 1200000,
-                    OwnerEmail = "seller@ticketshield.vn",
+                    OwnerEmail = "linhtranlatao2004@gmail.com",
                     OwnerPhone = "0901234567",
                     OwnerName = "Nguyen Van Seller",
                     Status = "VALID"
@@ -46,7 +46,7 @@ public static class OrganizerDatabaseSeeder
                     EventName = "Anh Trai Say Hi Concert 2026",
                     SeatZone = "Standard Zone C",
                     OriginalPrice = 800000,
-                    OwnerEmail = "seller@ticketshield.vn",
+                    OwnerEmail = "linhtranlatao2004@gmail.com",
                     OwnerPhone = "0901234567",
                     OwnerName = "Nguyen Van Seller",
                     Status = "USED"
@@ -54,6 +54,20 @@ public static class OrganizerDatabaseSeeder
             };
 
             await context.MockTickets.AddRangeAsync(tickets);
+            await context.SaveChangesAsync();
+        }
+        else
+        {
+            // Auto update email and reset locked tickets to VALID for testing Gmail OTP
+            var existingTickets = await context.MockTickets.ToListAsync();
+            foreach (var t in existingTickets)
+            {
+                if (t.TicketCode != "ATSH-USED-001")
+                {
+                    t.OwnerEmail = "linhtranlatao2004@gmail.com";
+                    t.Status = "VALID";
+                }
+            }
             await context.SaveChangesAsync();
         }
     }
