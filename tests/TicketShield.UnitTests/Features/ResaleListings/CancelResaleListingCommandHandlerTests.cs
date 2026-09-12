@@ -210,19 +210,7 @@ public class CancelResaleListingCommandHandlerTests
         {
             throw new InvalidOperationException("Failed to reach MockOrganizer gateway to unlock ticket.");
         }
-<<<<<<< Updated upstream
         public Task<List<TicketShield.Application.Resale.ListingResult>> Marketplace(int page, int size, CancellationToken ct) => throw new NotImplementedException();
-=======
-
-        public Task<List<ListingResult>> Marketplace(int page, int size, CancellationToken ct) => throw new NotImplementedException();
-        public Task<VerificationResult> Request(string seller, string key, string ticket, CancellationToken ct) => throw new NotImplementedException();
-        public Task<VerificationResult> Resend(string seller, string id, string key, CancellationToken ct) => throw new NotImplementedException();
-        public Task<VerificationResult> Confirm(string seller, string id, string key, string otp, CancellationToken ct) => throw new NotImplementedException();
-        public Task<VerificationResult> Get(string seller, string id, CancellationToken ct) => throw new NotImplementedException();
-        public Task<VerificationResult> Close(string seller, string id, string key, CancellationToken ct) => throw new NotImplementedException();
-        public Task<VerificationResult> Publish(string seller, string key, PublishBody body, CancellationToken ct) => throw new NotImplementedException();
-        public Task<VerificationResult> Cancel(string seller, string id, string key, CancellationToken ct) => throw new NotImplementedException();
->>>>>>> Stashed changes
         public Task RecoverPending(CancellationToken ct) => throw new NotImplementedException();
     }
 
