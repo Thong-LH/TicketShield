@@ -59,10 +59,3 @@ public interface ITicketVerificationService
     /// </summary>
     Task RecoverPending(CancellationToken ct);
 }
-
-/// <summary>
-/// Bí danh tương thích cho ITicketVerificationService
-/// </summary>
-public interface ITicketResaleWorkflow : ITicketVerificationService
-{
-}

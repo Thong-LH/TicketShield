@@ -1,20 +1,23 @@
 using System.Globalization;
-using Microsoft.EntityFrameworkCore;
-using TicketShield.Application.Features.ResaleListings.Commands.CreateResaleListing;
 using TicketShield.Domain.Entities;
 using TicketShield.Domain.Enums;
 using TicketShield.Domain.Exceptions;
-using TicketShield.Infrastructure.Persistence;
 using Xunit;
 
 namespace TicketShield.UnitTests.Domain;
 
 /// <summary>
-/// SCRUM-36 · TEST-2.5.1 — Price ceiling rule: a resale price may never exceed the original (face) price.
-/// The rule is enforced in three places, and each is tested here:
-///   1. Domain:    ResaleListing.ValidatePriceCeiling()
-///   2. Validator: CreateResaleListingCommandValidator (rejects the request before the handler runs)
-///   3. Handler:   CreateResaleListingCommandHandler (must not save a listing that breaks the rule)
+/// SCRUM-36 · TEST-2.5.1 — Price ceiling rule: a resale price may never exceed the original
+/// (face) price.
+///
+/// The rule lives in the domain entity as Global Law 1 (ResaleListing.ValidatePriceCeiling),
+/// which is what these tests cover, together with the price arithmetic that depends on it.
+/// The API-level consequence (publishing above the ceiling is rejected with 422) is covered by
+/// the integration test ResaleFlowTests, so it is deliberately not duplicated here.
+///
+/// Note: the CreateResaleListing MediatR command that an earlier version of this file also
+/// exercised was removed by the architecture cleanup on flow/MF_02 as dead code ("Path B"),
+/// so the publish path now runs entirely through TicketVerificationService.
 /// </summary>
 public class PriceCeilingRuleTests
 {
@@ -22,17 +25,27 @@ public class PriceCeilingRuleTests
 
     private static decimal Vnd(string value) => decimal.Parse(value, CultureInfo.InvariantCulture);
 
-    // ───────────────────────── 1. Domain rule ─────────────────────────
+    private static ResaleListing Listing(string original, string resale) => new()
+    {
+        EventId = Guid.NewGuid(),
+        TierId = Guid.NewGuid(),
+        SellerId = Guid.NewGuid(),
+        OriginalTicketCode = "TCK-CEILING-001",
+        OriginalPrice = Vnd(original),
+        ResalePrice = Vnd(resale)
+    };
+
+    // ───────────────────────── 1. The rule itself ─────────────────────────
 
     [Theory]
-    [InlineData("2500000", "2500000")]      // exactly the original price → allowed (boundary)
-    [InlineData("2500000", "2499999")]      // 1 VND below → allowed
-    [InlineData("2500000", "1")]            // far below → allowed
+    [InlineData("2500000", "2500000")]       // exactly the original price → allowed (boundary)
+    [InlineData("2500000", "2499999")]       // 1 VND below → allowed
+    [InlineData("2500000", "1")]             // far below → allowed
     [InlineData("1000000.50", "1000000.50")] // equal with decimals → allowed
     public void ValidatePriceCeiling_WhenResalePriceIsAtOrBelowOriginal_ShouldNotThrow(string original, string resale)
     {
         // Arrange
-        var listing = new ResaleListing { OriginalPrice = Vnd(original), ResalePrice = Vnd(resale) };
+        var listing = Listing(original, resale);
 
         // Act
         var exception = Record.Exception(() => listing.ValidatePriceCeiling());
@@ -42,13 +55,13 @@ public class PriceCeilingRuleTests
     }
 
     [Theory]
-    [InlineData("2500000", "2500001")]      // 1 VND above → rejected (boundary)
-    [InlineData("2500000", "2500000.01")]   // 1 cent above → rejected
-    [InlineData("2500000", "5000000")]      // double the price → rejected
+    [InlineData("2500000", "2500001")]     // 1 VND above → rejected (boundary)
+    [InlineData("2500000", "2500000.01")]  // 1 cent above → rejected
+    [InlineData("2500000", "5000000")]     // double the price → rejected
     public void ValidatePriceCeiling_WhenResalePriceIsAboveOriginal_ShouldThrowBusinessRuleViolation(string original, string resale)
     {
         // Arrange
-        var listing = new ResaleListing { OriginalPrice = Vnd(original), ResalePrice = Vnd(resale) };
+        var listing = Listing(original, resale);
 
         // Act
         var exception = Assert.Throws<BusinessRuleViolationException>(() => listing.ValidatePriceCeiling());
@@ -57,123 +70,73 @@ public class PriceCeilingRuleTests
         Assert.Contains(CeilingMessage, exception.Message);
     }
 
-    // ───────────────────────── 2. Request validator ─────────────────────────
-
-    private static CreateResaleListingCommand Command(decimal original, decimal resale) => new()
-    {
-        EventId = Guid.NewGuid(),
-        TierId = Guid.NewGuid(),
-        OriginalTicketCode = "TCK-CEILING-001",
-        OriginalPrice = original,
-        ResalePrice = resale
-    };
-
     [Fact]
-    public void Validator_WhenResalePriceEqualsOriginal_ShouldBeValid()
+    public void ValidatePriceCeiling_WhenRejecting_ShouldNameBothPricesSoTheSellerCanSeeTheGap()
     {
-        var result = new CreateResaleListingCommandValidator().Validate(Command(2_500_000m, 2_500_000m));
+        // Arrange
+        var listing = Listing("2500000", "3000000");
 
-        Assert.True(result.IsValid);
+        // Act
+        var exception = Assert.Throws<BusinessRuleViolationException>(() => listing.ValidatePriceCeiling());
+
+        // Assert — the seller must be told what they asked for and what the ceiling is
+        Assert.Contains(listing.ResalePrice.ToString("N0"), exception.Message);
+        Assert.Contains(listing.OriginalPrice.ToString("N0"), exception.Message);
     }
 
     [Fact]
-    public void Validator_WhenResalePriceIsOneVndAboveOriginal_ShouldRejectResalePrice()
+    public void ValidatePriceCeiling_ShouldOnlyCheck_AndNeverChangeTheListing()
     {
-        var result = new CreateResaleListingCommandValidator().Validate(Command(2_500_000m, 2_500_001m));
+        // Arrange
+        var listing = Listing("2500000", "2000000");
+        listing.ListingStatus = ListingStatus.Verified;
 
-        Assert.False(result.IsValid);
-        Assert.Contains(result.Errors, e =>
-            e.PropertyName == nameof(CreateResaleListingCommand.ResalePrice) && e.ErrorMessage.Contains(CeilingMessage));
+        // Act
+        listing.ValidatePriceCeiling();
+
+        // Assert — validation must not silently clamp the price or move the listing on
+        Assert.Equal(Vnd("2500000"), listing.OriginalPrice);
+        Assert.Equal(Vnd("2000000"), listing.ResalePrice);
+        Assert.Equal(ListingStatus.Verified, listing.ListingStatus);
     }
+
+    // ──────────── 2. What the rule guarantees about the displayed discount ────────────
+    // Because the resale price can never exceed the original, a listing can never advertise
+    // a negative discount. These cover the arithmetic buyers see on the listing card.
 
     [Theory]
-    [InlineData(0)]
-    [InlineData(-1)]
-    public void Validator_WhenResalePriceIsNotPositive_ShouldRejectResalePrice(int resale)
+    [InlineData("2500000", "2500000", "0", "0")]          // at the ceiling → no discount at all
+    [InlineData("2500000", "2000000", "500000", "20.0")]  // 20% below
+    [InlineData("2500000", "1250000", "1250000", "50.0")] // half price
+    public void Discount_ShouldFollowTheGapBetweenOriginalAndResalePrice(
+        string original, string resale, string expectedAmount, string expectedPercentage)
     {
-        var result = new CreateResaleListingCommandValidator().Validate(Command(2_500_000m, resale));
+        // Arrange
+        var listing = Listing(original, resale);
 
-        Assert.False(result.IsValid);
-        Assert.Contains(result.Errors, e => e.PropertyName == nameof(CreateResaleListingCommand.ResalePrice));
-    }
-
-    // ───────────────────────── 3. Command handler ─────────────────────────
-
-    private static (TicketShieldDbContext Db, Event Event, TicketTier Tier, User Seller) CreateInMemoryDbContext()
-    {
-        var options = new DbContextOptionsBuilder<TicketShieldDbContext>()
-            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
-            .Options;
-        var context = new TicketShieldDbContext(options);
-
-        var organizer = new Organizer { Id = Guid.NewGuid(), Name = "Ceiling Test Organizer", OfficialEmail = "organizer@test.com" };
-        var testEvent = new Event
-        {
-            Id = Guid.NewGuid(),
-            OrganizerId = organizer.Id,
-            Name = "Ceiling Test Concert",
-            Venue = "My Dinh Stadium",
-            EventStartAt = DateTimeOffset.UtcNow.AddDays(10),
-            EventEndAt = DateTimeOffset.UtcNow.AddDays(10).AddHours(4),
-            ResaleDeadline = DateTimeOffset.UtcNow.AddDays(9),
-            Organizer = organizer
-        };
-        var tier = new TicketTier { Id = Guid.NewGuid(), EventId = testEvent.Id, TierName = "VIP", OriginalPrice = 2_500_000m, Event = testEvent };
-        var seller = new User { Id = Guid.NewGuid(), Email = "ceiling-seller@ticketshield.vn", FullName = "Ceiling Seller", Role = UserRole.User };
-
-        context.Organizers.Add(organizer);
-        context.Events.Add(testEvent);
-        context.TicketTiers.Add(tier);
-        context.Users.Add(seller);
-        context.SaveChanges();
-        return (context, testEvent, tier, seller);
+        // Act & Assert
+        Assert.Equal(Vnd(expectedAmount), listing.DiscountAmount);
+        Assert.Equal(Vnd(expectedPercentage), listing.DiscountPercentage);
     }
 
     [Fact]
-    public async Task Handler_WhenResalePriceIsAboveOriginal_ShouldThrowAndNotSaveListing()
+    public void DiscountPercentage_ShouldBeRoundedToOneDecimal()
     {
-        // Arrange
-        var (db, testEvent, tier, seller) = CreateInMemoryDbContext();
-        var handler = new CreateResaleListingCommandHandler(db);
-        var command = new CreateResaleListingCommand
-        {
-            EventId = testEvent.Id,
-            TierId = tier.Id,
-            SellerId = seller.Id,
-            OriginalTicketCode = "TCK-CEILING-ABOVE",
-            OriginalPrice = 2_500_000m,
-            ResalePrice = 2_500_001m
-        };
+        // Arrange — 1,000,000 off 3,000,000 is 33.333...%
+        var listing = Listing("3000000", "2000000");
 
-        // Act
-        await Assert.ThrowsAsync<BusinessRuleViolationException>(() => handler.Handle(command, CancellationToken.None));
-
-        // Assert — nothing was written to the database
-        Assert.False(await db.ResaleListings.AnyAsync(l => l.OriginalTicketCode == "TCK-CEILING-ABOVE"));
+        // Act & Assert
+        Assert.Equal(33.3m, listing.DiscountPercentage);
     }
 
     [Fact]
-    public async Task Handler_WhenResalePriceEqualsOriginal_ShouldSaveListing()
+    public void DiscountPercentage_WhenOriginalPriceIsZero_ShouldBeZeroInsteadOfDividingByZero()
     {
         // Arrange
-        var (db, testEvent, tier, seller) = CreateInMemoryDbContext();
-        var handler = new CreateResaleListingCommandHandler(db);
-        var command = new CreateResaleListingCommand
-        {
-            EventId = testEvent.Id,
-            TierId = tier.Id,
-            SellerId = seller.Id,
-            OriginalTicketCode = "TCK-CEILING-EQUAL",
-            OriginalPrice = 2_500_000m,
-            ResalePrice = 2_500_000m
-        };
+        var listing = Listing("0", "0");
 
-        // Act
-        var result = await handler.Handle(command, CancellationToken.None);
-
-        // Assert
-        Assert.True(result.Success);
-        var saved = await db.ResaleListings.SingleAsync(l => l.OriginalTicketCode == "TCK-CEILING-EQUAL");
-        Assert.Equal(saved.OriginalPrice, saved.ResalePrice);
+        // Act & Assert
+        Assert.Equal(0m, listing.DiscountPercentage);
+        Assert.Equal(0m, listing.DiscountAmount);
     }
 }

@@ -23,6 +23,13 @@ public class ResaleListing : BaseEntity
     public User Seller { get; set; } = null!;
     public EscrowTransaction? EscrowTransaction { get; set; }
 
+    // Computed Domain Properties
+    public decimal DiscountAmount => OriginalPrice > ResalePrice ? OriginalPrice - ResalePrice : 0;
+    public decimal DiscountPercentage => OriginalPrice > 0 ? Math.Round((DiscountAmount / OriginalPrice) * 100, 1) : 0;
+    public string MaskedTicketCode => OriginalTicketCode.Length <= 4
+        ? "****"
+        : string.Concat(OriginalTicketCode.AsSpan(0, 2), new string('*', OriginalTicketCode.Length - 4), OriginalTicketCode.AsSpan(OriginalTicketCode.Length - 2));
+
     /// <summary>
     /// Global Law 1 (Price Ceiling Law): ResalePrice must be <= OriginalPrice.
     /// </summary>

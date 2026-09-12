@@ -18,7 +18,7 @@ namespace TicketShield.Infrastructure.Services;
 /// <summary>
 /// Triển khai dịch vụ xác thực vé qua gRPC và quản lý tin bán lại (Ticket Verification & Lock Saga).
 /// </summary>
-public class TicketVerificationService : ITicketVerificationService, ITicketResaleWorkflow
+public class TicketVerificationService : ITicketVerificationService
 {
     private readonly CoreResaleStore _db;
     private readonly IOrganizerGateway _gateway;
@@ -642,6 +642,15 @@ public class TicketVerificationService : ITicketVerificationService, ITicketResa
         }
         catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UniqueViolation)
         {
+            try
+            {
+                await Release(s, op, ct);
+            }
+            catch
+            {
+                // Best-effort release to unblock original ticket in MockOrganizer
+            }
+
             await Reject(s, op, "TICKET_ALREADY_LISTED", ct);
             throw Error("TICKET_ALREADY_LISTED");
         }

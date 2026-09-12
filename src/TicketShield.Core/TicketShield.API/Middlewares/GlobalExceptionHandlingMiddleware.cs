@@ -41,8 +41,13 @@ public class GlobalExceptionHandlingMiddleware
                 nfEx.Message,
                 null as List<string>),
 
-            ForbiddenAccessException faEx => (
-                (int)HttpStatusCode.Forbidden,
+            UnauthorizedException uaEx =>
+                ((int)HttpStatusCode.Unauthorized,
+                uaEx.Message,
+                null as List<string>),
+
+            ForbiddenAccessException faEx =>
+                ((int)HttpStatusCode.Forbidden,
                 faEx.Message,
                 null as List<string>),
 

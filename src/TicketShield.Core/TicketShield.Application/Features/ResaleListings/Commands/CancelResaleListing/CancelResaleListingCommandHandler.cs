@@ -25,20 +25,10 @@ public class CancelResaleListingCommandHandler : IRequestHandler<CancelResaleLis
 
     public async Task<ApiResponse<CancelResaleListingResponse>> Handle(CancelResaleListingCommand request, CancellationToken cancellationToken)
     {
-        // 1. Resolve seller ID from current authenticated user or fallback to first user in dev mode
+        // 1. Resolve seller ID from current authenticated user — no anonymous fallback
         var sellerId = _currentUserService?.UserId ?? Guid.Empty;
         if (sellerId == Guid.Empty)
-        {
-            var defaultSeller = await _dbContext.Users
-                .OrderBy(u => u.CreatedAt)
-                .FirstOrDefaultAsync(cancellationToken);
-
-            if (defaultSeller == null)
-            {
-                throw new NotFoundException("Không tìm thấy thông tin người bán trong hệ thống.");
-            }
-            sellerId = defaultSeller.Id;
-        }
+            throw new UnauthorizedException("Bạn phải đăng nhập để hủy tin đăng bán vé.");
 
         // 2. Retrieve resale listing
         var listing = await _dbContext.ResaleListings

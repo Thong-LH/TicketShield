@@ -4,7 +4,6 @@ using TicketShield.API.Filters;
 using TicketShield.Application.Common.Interfaces;
 using TicketShield.Application.Common.Models;
 using TicketShield.Application.Features.ResaleListings.Commands.CancelResaleListing;
-using TicketShield.Application.Features.ResaleListings.Commands.CreateResaleListing;
 using TicketShield.Application.Features.ResaleListings.Queries.GetResaleListingByPrivateToken;
 using TicketShield.Application.Features.ResaleListings.Queries.GetResaleListingDetail;
 using TicketShield.Application.Features.ResaleListings.Queries.GetSellerListings;
@@ -25,26 +24,12 @@ public class ResaleListingsController(
                           ?? throw new ResaleWorkflowException("MISSING_SUBJECT", 401);
 
     /// <summary>
-    /// SCRUM-25: Create resale listing with optional private token (US-2.3)
-    /// </summary>
-    /// <param name="command">Resale listing payload with Price Ceiling and Mode</param>
-    /// <returns>Created listing details and private access token if private</returns>
-    [HttpPost]
-    [ProducesResponseType(typeof(ApiResponse<CreateResaleListingResponse>), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status422UnprocessableEntity)]
-    public async Task<IActionResult> CreateListing([FromBody] CreateResaleListingCommand command)
-    {
-        var result = await Mediator.Send(command);
-        return Ok(result);
-    }
-
-    /// <summary>
-    /// Niêm yết vé lên thị trường sau khi đã xác thực và khóa vé thành công
+    /// Niêm yết vé lên thị trường sau khi đã xác thực và khóa vé thành công (US-2.3)
     /// </summary>
     [Authorize]
-    [HttpPost("/api/resale-listings")]
+    [HttpPost]
     [HttpPost("publish")]
+    [HttpPost("/api/resale-listings")]
     [ProducesResponseType(typeof(ApiResponse<VerificationResult>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<VerificationResult>), StatusCodes.Status202Accepted)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
