@@ -53,13 +53,17 @@ public class ResaleListingsController(
     [AllowAnonymous]
     [HttpGet]
     [HttpGet("/api/resale-listings")]
-    [ProducesResponseType(typeof(ApiResponse<List<ListingResult>>), StatusCodes.Status200OK)]
-    public async Task<IActionResult> Marketplace(CancellationToken ct, int page = 1, int size = 20)
+    [ProducesResponseType(typeof(ApiResponse<List<ResaleListingDetailDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> Marketplace(
+        [FromQuery] int page = 1,
+        [FromQuery] int size = 20,
+        [FromQuery] string? keyword = null,
+        [FromQuery] Guid? eventId = null,
+        CancellationToken ct = default)
     {
-        if (verificationService == null)
-            return Ok(ApiResponse<List<ListingResult>>.SuccessResponse([]));
-
-        return Ok(ApiResponse<List<ListingResult>>.SuccessResponse(await verificationService.Marketplace(page, size, ct)));
+        var query = new GetMarketplaceListingsQuery(page, size, keyword, eventId);
+        var result = await Mediator.Send(query, ct);
+        return Ok(result);
     }
 
     /// <summary>
