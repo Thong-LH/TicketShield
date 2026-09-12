@@ -4,7 +4,10 @@
 .context/
 
 # Non-code Documents & Research (Local only)
-docs/
+docs/*
+!docs/reports/
+!docs/architecture/
+!docs/contracts/
 scripts/
 !scripts/doppler_sync.py
 

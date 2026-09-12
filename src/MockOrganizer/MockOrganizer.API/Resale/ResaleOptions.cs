@@ -45,6 +45,25 @@ public sealed class SmtpOtpDelivery(ResaleOptions options, IHostEnvironment envi
         if (!o.EnableSsl && !(environment.IsDevelopment() && (o.Host == "localhost" || IPAddress.TryParse(o.Host, out var ip) && IPAddress.IsLoopback(ip))))
             throw new InvalidOperationException("SMTP_TLS_REQUIRED");
 
+        // Khi chạy local, nếu máy chủ SMTP cục bộ chưa mở cổng, in OTP ra console và hoàn tất ngay lập tức (không treo 10s timeout)
+        if (environment.IsDevelopment() && (o.Host == "localhost" || o.Host == "127.0.0.1"))
+        {
+            using var tcp = new System.Net.Sockets.TcpClient();
+            var connectTask = tcp.ConnectAsync(o.Host, o.Port);
+            var completed = await Task.WhenAny(connectTask, Task.Delay(250, ct));
+            if (completed != connectTask || !tcp.Connected)
+            {
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine($"\n==================================================");
+                Console.WriteLine($"📧 [MOCK ORGANIZER OTP] INSTANT DEV OTP DELIVERED");
+                Console.WriteLine($"To       : {recipient}");
+                Console.WriteLine($"OTP Code : {otp} (Expires: {expires:HH:mm:ss} UTC)");
+                Console.WriteLine($"==================================================\n");
+                Console.ResetColor();
+                return;
+            }
+        }
+
         using var client = new SmtpClient(o.Host, o.Port) { EnableSsl = o.EnableSsl, UseDefaultCredentials = false };
         if (!string.IsNullOrEmpty(o.Username))
         {

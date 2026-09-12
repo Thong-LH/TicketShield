@@ -36,3 +36,14 @@ Dựa trên sự cố tích hợp nhánh `feature/MF-02`, Agent BẮT BUỘC tu�
   - Đã đăng nhập nhưng không có quyền trên tài nguyên của người khác $\rightarrow$ HTTP 403 `ForbiddenAccessException`.
 - **Thông báo bắt buộc nếu có ngoại lệ (Mandatory User Notification):** Nếu vì lý do kỹ thuật đặc thù mà BUỘC PHẢI tạo mock tạm hoặc ngoại lệ kiến trúc, Agent BẮT BUỘC PHẢI giải thích rõ ràng và xin phép người dùng trước khi viết vào codebase, không được tự ý âm thầm thực hiện.
 
+---
+
+## 5. Quy tắc Kiểm thử & Commit an toàn (Testing & Commit Discipline)
+- **Tối ưu tốc độ Kiểm thử (Fast Verification & Smart Testing):**
+  - Chỉ chạy bộ Unit Tests (`dotnet test tests/TicketShield.UnitTests`) khi hoàn thành một tính năng lớn (Big Feature) hoặc thay đổi logic Backend/kiến trúc phức tạp.
+  - Tuyệt đối KHÔNG chạy test cho các chỉnh sửa giao diện (UI) nhỏ, sửa vị trí nút bấm, chỉnh CSS hoặc xóa file đơn giản.
+  - Chỉ chạy full toàn bộ Integration Tests (`dotnet test tests/TicketShield.Resale.Tests`) khi chuẩn bị chốt PR merge nhánh lớn.
+- **Kỷ luật Push & Remote Sync:**
+  - Tuyệt đối KHÔNG tự ý `git push` code lên remote repository nếu chưa có lệnh hoặc sự đồng ý từ người dùng.
+
+
