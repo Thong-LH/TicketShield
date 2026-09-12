@@ -174,6 +174,8 @@ public sealed class OrganizerResaleGrpcService(ResaleStore db, ResaleOptions opt
             if (ticket.Status != "VALID") throw Fail("TICKET_NOT_AVAILABLE");
             if (!options.TicketMappings.TryGetValue(ticket.TicketCode, out var mapping) || string.IsNullOrEmpty(mapping.EventId) || string.IsNullOrEmpty(mapping.TierId))
                 throw Fail("TICKET_MAPPING_NOT_CONFIGURED");
+            var currentLock = await db.Read<LockRecord>("current:" + Hash(ticket.TicketCode), ct);
+            if (currentLock is not null && currentLock.ReleasedAt is null) throw Fail("TICKET_LOCKED");
             await Quota("request-ticket:" + Hash(ticket.TicketCode), options.RequestsPerTicketPerHour, ct);
             await Quota("request-actor:" + op.RequesterRef, options.RequestsPerRequesterPerHour, ct);
             var s = new SessionState { Id = op.VerificationId, Caller = Caller, Requester = op.RequesterRef, TicketCode = ticket.TicketCode, OwnerRevision = Owner(ticket) };
