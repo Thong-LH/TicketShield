@@ -20,6 +20,11 @@ using MockOrganizer.API.Data;
 using MockOrganizer.API.Resale;
 using Npgsql;
 using TicketShield.API.Controllers;
+using TicketShield.API.Middlewares;
+using TicketShield.API.Services;
+using TicketShield.Application;
+using TicketShield.Application.Common.Interfaces;
+using TicketShield.Infrastructure;
 using TicketShield.API.Resale;
 using TicketShield.Contracts.Organizer.V1;
 using TicketShield.Infrastructure.Persistence;
@@ -102,11 +107,19 @@ public sealed class ResaleFixture : IAsyncLifetime
         coreBuilder.Services.AddCoreResale(coreBuilder.Configuration, coreBuilder.Environment);
         coreBuilder.Services.AddResaleAuthentication(coreBuilder.Configuration);
         coreBuilder.Services.AddControllers().AddApplicationPart(typeof(TicketVerificationsController).Assembly);
+        // Listing REST endpoints (/api/v1/resale-listings/...) run through MediatR, read the caller from the JWT
+        // and map domain exceptions to 403/404/422 — register the same layers Program.cs does (SCRUM-38 tests).
+        // AddInfrastructure is needed too: in Development the DI container validates every MediatR handler on Build().
+        coreBuilder.Services.AddApplication();
+        coreBuilder.Services.AddInfrastructure(coreBuilder.Configuration);
+        coreBuilder.Services.AddHttpContextAccessor();
+        coreBuilder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
         Core = coreBuilder.Build();
         using (var scope = Core.Services.CreateScope()) {
             await DatabaseSeeder.SeedTicketShieldAsync(scope.ServiceProvider.GetRequiredService<TicketShieldDbContext>());
             await scope.ServiceProvider.GetRequiredService<CoreResaleStore>().Database.MigrateAsync();
         }
+        Core.UseMiddleware<GlobalExceptionHandlingMiddleware>();
         Core.UseAuthentication(); Core.UseAuthorization(); Core.MapControllers(); await Core.StartAsync();
         Http = new() { BaseAddress = new Uri($"http://127.0.0.1:{httpPort}") };
     }
