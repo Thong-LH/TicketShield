@@ -20,141 +20,136 @@ public static class DatabaseSeeder
 
         var defaultPasswordHash = BCrypt.Net.BCrypt.HashPassword("123456");
 
-        // 2. Seed Users
-        if (!await context.Users.AnyAsync())
+        // 2. Seed / Sync Users
+        var sellerId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+        var buyerId = Guid.Parse("22222222-2222-2222-2222-222222222222");
+        var adminId = Guid.Parse("99999999-9999-9999-9999-999999999999");
+
+        var seller = await context.Users.FirstOrDefaultAsync(u => u.Id == sellerId);
+        if (seller == null)
         {
-            var seller = new User
-            {
-                Id = Guid.Parse("11111111-1111-1111-1111-111111111111"),
-                Email = "linhtranlatao2004@gmail.com",
-                FullName = "Nguyen Van Seller",
-                PhoneNumber = "0901234567",
-                PasswordHash = defaultPasswordHash,
-                Role = UserRole.User,
-                IsActive = true
-            };
-
-            var buyer = new User
-            {
-                Id = Guid.Parse("22222222-2222-2222-2222-222222222222"),
-                Email = "buyer@ticketshield.vn",
-                FullName = "Tran Thi Buyer",
-                PhoneNumber = "0987654321",
-                PasswordHash = defaultPasswordHash,
-                Role = UserRole.User,
-                IsActive = true
-            };
-
-            var admin = new User
-            {
-                Id = Guid.Parse("99999999-9999-9999-9999-999999999999"),
-                Email = "admin@ticketshield.vn",
-                FullName = "System Administrator",
-                PhoneNumber = "0999999999",
-                PasswordHash = defaultPasswordHash,
-                Role = UserRole.Admin,
-                IsActive = true
-            };
-
-            await context.Users.AddRangeAsync(seller, buyer, admin);
+            seller = new User { Id = sellerId };
+            await context.Users.AddAsync(seller);
         }
-        else
+        seller.Email = "linhtranlatao2004@gmail.com";
+        seller.FullName = "Nguyen Van Seller";
+        seller.PhoneNumber = "0901234567";
+        seller.PasswordHash = defaultPasswordHash;
+        seller.Role = UserRole.User;
+        seller.IsActive = true;
+
+        var buyer = await context.Users.FirstOrDefaultAsync(u => u.Id == buyerId);
+        if (buyer == null)
         {
-            var existingSeller = await context.Users.FirstOrDefaultAsync(u => u.Id == Guid.Parse("11111111-1111-1111-1111-111111111111"));
-            if (existingSeller != null)
-            {
-                existingSeller.Email = "linhtranlatao2004@gmail.com";
-            }
-
-            // Backfill default password hash for existing seed users if null
-            var usersWithoutPassword = await context.Users
-                .Where(u => u.PasswordHash == null)
-                .ToListAsync();
-
-            if (usersWithoutPassword.Any())
-            {
-                foreach (var u in usersWithoutPassword)
-                {
-                    u.PasswordHash = defaultPasswordHash;
-                }
-            }
-            await context.SaveChangesAsync();
+            buyer = new User { Id = buyerId };
+            await context.Users.AddAsync(buyer);
         }
+        buyer.Email = "buyer@ticketshield.vn";
+        buyer.FullName = "Tran Thi Buyer";
+        buyer.PhoneNumber = "0987654321";
+        buyer.PasswordHash = defaultPasswordHash;
+        buyer.Role = UserRole.User;
+        buyer.IsActive = true;
 
-        // 3. Seed Organizer & Concert Events
-        if (!await context.Organizers.AnyAsync())
+        var admin = await context.Users.FirstOrDefaultAsync(u => u.Id == adminId);
+        if (admin == null)
         {
-            var organizer = new Organizer
-            {
-                Id = Guid.Parse("e0000000-0000-0000-0000-000000000001"),
-                Name = "VieON Entertainment",
-                OfficialEmail = "contact@vieon.vn",
-                ContactPhone = "19001234",
-                ApiKeyHash = "mock_api_key_hash_123456",
-                Status = "ACTIVE"
-            };
+            admin = new User { Id = adminId };
+            await context.Users.AddAsync(admin);
+        }
+        admin.Email = "admin@ticketshield.vn";
+        admin.FullName = "System Administrator";
+        admin.PhoneNumber = "0999999999";
+        admin.PasswordHash = defaultPasswordHash;
+        admin.Role = UserRole.Admin;
+        admin.IsActive = true;
 
-            var ev = new Event
-            {
-                Id = Guid.Parse("e1111111-1111-1111-1111-111111111111"),
-                OrganizerId = organizer.Id,
-                Name = "Anh Trai Say Hi Concert 2026",
-                Description = "Mega Concert Vietnam 2026",
-                Venue = "Van Hanh Mall Stadium, TP.HCM",
-                EventStartAt = DateTimeOffset.UtcNow.AddDays(30),
-                EventEndAt = DateTimeOffset.UtcNow.AddDays(30).AddHours(4),
-                ResaleDeadline = DateTimeOffset.UtcNow.AddDays(30).AddHours(-2),
-                Status = "UPCOMING"
-            };
+        await context.SaveChangesAsync();
 
-            var tierVip = new TicketTier
-            {
-                Id = Guid.Parse("d1111111-1111-1111-1111-111111111111"),
-                EventId = ev.Id,
-                TierName = "VIP Zone A",
-                OriginalPrice = 2500000,
-                Description = "Khu vực VIP sát sân khấu, tặng kèm lighstick"
-            };
+        // 3. Seed / Sync Organizer, Concert Event & Ticket Tiers
+        var organizerId = Guid.Parse("e0000000-0000-0000-0000-000000000001");
+        var eventId = Guid.Parse("e1111111-1111-1111-1111-111111111111");
+        var tierVipId = Guid.Parse("d1111111-1111-1111-1111-111111111111");
+        var tierGaId = Guid.Parse("d2222222-2222-2222-2222-222222222222");
 
-            var tierGa = new TicketTier
-            {
-                Id = Guid.Parse("d2222222-2222-2222-2222-222222222222"),
-                EventId = ev.Id,
-                TierName = "GA Standing",
-                OriginalPrice = 1200000,
-                Description = "Khu vực đứng tự do"
-            };
-
+        var organizer = await context.Organizers.FirstOrDefaultAsync(o => o.Id == organizerId);
+        if (organizer == null)
+        {
+            organizer = new Organizer { Id = organizerId };
             await context.Organizers.AddAsync(organizer);
-            await context.Events.AddAsync(ev);
-            await context.TicketTiers.AddRangeAsync(tierVip, tierGa);
         }
+        organizer.Name = "VieON Entertainment";
+        organizer.OfficialEmail = "contact@vieon.vn";
+        organizer.ContactPhone = "19001234";
+        organizer.ApiKeyHash = "mock_api_key_hash_123456";
+        organizer.Status = "ACTIVE";
 
-        // 4. Seed 1 Sample Resale Listing (ATSH-GA-999) for buyer page demo
-        // Note: ATSH-VIP-888 is intentionally NOT seeded so you can test the full sell flow with it.
-        if (!await context.ResaleListings.AnyAsync())
+        var ev = await context.Events.FirstOrDefaultAsync(e => e.Id == eventId);
+        if (ev == null)
         {
-            var sellerId = Guid.Parse("11111111-1111-1111-1111-111111111111");
-            var eventId = Guid.Parse("e1111111-1111-1111-1111-111111111111");
-            var tierGaId = Guid.Parse("d2222222-2222-2222-2222-222222222222");
+            ev = new Event { Id = eventId };
+            await context.Events.AddAsync(ev);
+        }
+        ev.OrganizerId = organizerId;
+        ev.Name = "Anh Trai Say Hi Concert 2026";
+        ev.Description = "Mega Concert Vietnam 2026";
+        ev.Venue = "Van Hanh Mall Stadium, TP.HCM";
+        ev.EventStartAt = DateTimeOffset.UtcNow.AddDays(30);
+        ev.EventEndAt = DateTimeOffset.UtcNow.AddDays(30).AddHours(4);
+        ev.ResaleDeadline = DateTimeOffset.UtcNow.AddDays(30).AddHours(-2);
+        ev.Status = "UPCOMING";
 
-            var samplePrivateListing = new ResaleListing
-            {
-                Id = Guid.Parse("44444444-4444-4444-4444-444444444444"),
-                EventId = eventId,
-                TierId = tierGaId,
-                SellerId = sellerId,
-                OriginalTicketCode = "ATSH-GA-999",
-                OriginalPrice = 1200000m,
-                ResalePrice = 1000000m,
-                IsPrivate = false,
-                PrivateAccessToken = null,
-                VerificationStatus = VerificationStatus.Verified,
-                ListingStatus = ListingStatus.Verified,
-                CreatedAt = DateTimeOffset.UtcNow.AddHours(-1)
-            };
+        var tierVip = await context.TicketTiers.FirstOrDefaultAsync(t => t.Id == tierVipId);
+        if (tierVip == null)
+        {
+            tierVip = new TicketTier { Id = tierVipId };
+            await context.TicketTiers.AddAsync(tierVip);
+        }
+        tierVip.EventId = eventId;
+        tierVip.TierName = "VIP Zone A";
+        tierVip.OriginalPrice = 2500000m;
+        tierVip.Description = "Khu vực VIP sát sân khấu, tặng kèm lightstick";
 
-            await context.ResaleListings.AddAsync(samplePrivateListing);
+        var tierGa = await context.TicketTiers.FirstOrDefaultAsync(t => t.Id == tierGaId);
+        if (tierGa == null)
+        {
+            tierGa = new TicketTier { Id = tierGaId };
+            await context.TicketTiers.AddAsync(tierGa);
+        }
+        tierGa.EventId = eventId;
+        tierGa.TierName = "GA Standing";
+        tierGa.OriginalPrice = 1200000m;
+        tierGa.Description = "Khu vực đứng tự do";
+
+        await context.SaveChangesAsync();
+
+        // 4. Seed / Reset Sample Resale Listing (ATSH-GA-999) for buyer marketplace page demo
+        // ATSH-VIP-888 is intentionally unseeded so users can test the full OTP sell workflow from scratch.
+        var sampleListingId = Guid.Parse("44444444-4444-4444-4444-444444444444");
+        var sampleListing = await context.ResaleListings.FirstOrDefaultAsync(l => l.Id == sampleListingId);
+        if (sampleListing == null)
+        {
+            sampleListing = new ResaleListing { Id = sampleListingId };
+            await context.ResaleListings.AddAsync(sampleListing);
+        }
+        sampleListing.EventId = eventId;
+        sampleListing.TierId = tierGaId;
+        sampleListing.SellerId = sellerId;
+        sampleListing.OriginalTicketCode = "ATSH-GA-999";
+        sampleListing.OriginalPrice = 1200000m;
+        sampleListing.ResalePrice = 1000000m;
+        sampleListing.IsPrivate = false;
+        sampleListing.PrivateAccessToken = null;
+        sampleListing.VerificationStatus = VerificationStatus.Verified;
+        sampleListing.ListingStatus = ListingStatus.Verified;
+
+        // Clean up any stale test listing for ATSH-VIP-888 so sell flow is always ready
+        var vipStaleListings = await context.ResaleListings
+            .Where(l => l.OriginalTicketCode == "ATSH-VIP-888")
+            .ToListAsync();
+        if (vipStaleListings.Any())
+        {
+            context.ResaleListings.RemoveRange(vipStaleListings);
         }
 
         await context.SaveChangesAsync();
