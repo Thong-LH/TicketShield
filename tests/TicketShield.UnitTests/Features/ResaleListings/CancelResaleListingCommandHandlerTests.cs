@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using TicketShield.Application.Common.Interfaces;
+using TicketShield.Application.Resale;
 using TicketShield.Application.Features.ResaleListings.Commands.CancelResaleListing;
 using TicketShield.Domain.Entities;
 using TicketShield.Domain.Enums;

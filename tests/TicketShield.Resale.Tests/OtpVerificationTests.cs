@@ -155,9 +155,11 @@ public sealed class OtpVerificationTests(ResaleFixture f) : IClassFixture<Resale
         Assert.Equal(HttpStatusCode.OK, owner.Status);
     }
 
-    // ───────────────────────── Open question with the team ─────────────────────────
+    // ───────────────────────── The limit SCRUM-37 asks for ─────────────────────────
 
-    [Fact(Skip = "SCRUM-37 says the OTP locks after 3 wrong attempts, MockOrganizer is configured with MaxAttempts = 5. Un-skip once the team agrees on 3.")]
+    // MockOrganizer was configured with MaxAttempts = 5 while SCRUM-37 asks for 3.
+    // Fixed in ff581df, so this now guards the agreed number against future drift.
+    [Fact]
     public void Wrong_attempt_limit_matches_the_jira_rule_of_3()
     {
         Assert.Equal(3, Options.MaxAttempts);

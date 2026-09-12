@@ -12,7 +12,7 @@ public sealed class ResaleOptions
     public int DevelopmentGrpcPort { get; set; } = 5002;
     public int OtpLifetimeSeconds { get; set; } = 300;
     public int ResendCooldownSeconds { get; set; } = 60;
-    public int MaxAttempts { get; set; } = 5;
+    public int MaxAttempts { get; set; } = 3;
     public int MaxResends { get; set; } = 3;
     public int RequestsPerTicketPerHour { get; set; } = 10;
     public int RequestsPerRequesterPerHour { get; set; } = 30;
