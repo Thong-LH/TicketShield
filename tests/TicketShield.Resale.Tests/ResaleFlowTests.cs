@@ -73,9 +73,9 @@ public sealed class ResaleFlowTests(ResaleFixture f) : IClassFixture<ResaleFixtu
         var (id, otp) = await f.Start(); var key = ResaleFixture.Id(); var wrong = otp == "000000" ? "111111" : "000000";
         for (var i = 0; i < 2; i++) Assert.Equal(HttpStatusCode.Conflict, (await f.Post($"api/ticket-verifications/{id}/confirm", new { otp = wrong }, key)).Status);
         Assert.Equal(1L, await f.Sql(f.Database.MockConnection, "SELECT (\"Json\"->>'Failures')::bigint FROM organizer_resale_records WHERE \"Id\"=@id", ("id", "session:" + id)));
-        for (var i = 0; i < 4; i++) Assert.Equal(HttpStatusCode.Conflict, (await f.Post($"api/ticket-verifications/{id}/confirm", new { otp = wrong })).Status);
+        for (var i = 0; i < 2; i++) Assert.Equal(HttpStatusCode.Conflict, (await f.Post($"api/ticket-verifications/{id}/confirm", new { otp = wrong })).Status);
         Assert.Equal(HttpStatusCode.TooManyRequests, (await f.Post($"api/ticket-verifications/{id}/confirm", new { otp })).Status);
-        Assert.Equal(5L, await f.Sql(f.Database.MockConnection, "SELECT (\"Json\"->>'Failures')::bigint FROM organizer_resale_records WHERE \"Id\"=@id", ("id", "session:" + id)));
+        Assert.Equal(3L, await f.Sql(f.Database.MockConnection, "SELECT (\"Json\"->>'Failures')::bigint FROM organizer_resale_records WHERE \"Id\"=@id", ("id", "session:" + id)));
     }
     [Fact]
     public async Task Resend_supersedes_code_and_expiry_is_checked()

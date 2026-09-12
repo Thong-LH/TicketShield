@@ -55,7 +55,7 @@ public class CancelResaleListingCommandHandler : IRequestHandler<CancelResaleLis
         // 5. Step 3 of Jira: Call MockOrganizer via verification service to unlock original ticket if gRPC session exists
         if (_verificationService != null)
         {
-            var idempotencyKey = $"cancel-listing-{listing.Id}";
+            var idempotencyKey = listing.Id.ToString("D");
             // CancelByListingId looks up the verificationId via listing index in core_resale_records.
             // If no gRPC session exists (e.g. seeded data), CancelByListingId returns gracefully.
             // If an active session exists and gRPC unlock fails, this throws and aborts cancellation.
