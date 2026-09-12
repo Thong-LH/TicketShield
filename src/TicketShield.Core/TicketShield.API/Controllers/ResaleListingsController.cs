@@ -54,7 +54,7 @@ public class ResaleListingsController(
     [AllowAnonymous]
     [HttpGet]
     [HttpGet("/api/resale-listings")]
-    [ProducesResponseType(typeof(ApiResponse<List<ResaleListingDetailDto>>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<PaginatedList<ResaleListingDetailDto>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> Marketplace(
         [FromQuery] int page = 1,
         [FromQuery] int size = 20,

@@ -16,6 +16,14 @@ public static class DatabaseSeeder
             ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id VARCHAR(255);
             ALTER TABLE users ADD COLUMN IF NOT EXISTS password_reset_otp VARCHAR(20);
             ALTER TABLE users ADD COLUMN IF NOT EXISTS password_reset_otp_expires_at TIMESTAMPTZ;
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
+            ALTER TABLE organizers ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
+            ALTER TABLE events ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
+            ALTER TABLE ticket_tiers ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
+            ALTER TABLE resale_listings ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
+            ALTER TABLE escrow_transactions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
+            ALTER TABLE payout_transactions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
+            ALTER TABLE disputes ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
         ");
 
         var defaultPasswordHash = BCrypt.Net.BCrypt.HashPassword("123456");
@@ -123,9 +131,38 @@ public static class DatabaseSeeder
 
         await context.SaveChangesAsync();
 
-        // 4. Seed / Reset Sample Resale Listing (ATSH-GA-999) for buyer marketplace page demo
-        // ATSH-VIP-888 is intentionally unseeded so users can test the full OTP sell workflow from scratch.
+        // 4. Reset & Purge extraneous operational data (Disputes, Escrows, Non-Seed Listings)
         var sampleListingId = Guid.Parse("44444444-4444-4444-4444-444444444444");
+
+        // Clear dependent tables first
+        context.DisputeMessages.RemoveRange(await context.DisputeMessages.ToListAsync());
+        context.DisputeEvidences.RemoveRange(await context.DisputeEvidences.ToListAsync());
+        context.Disputes.RemoveRange(await context.Disputes.ToListAsync());
+        context.PayoutTransactions.RemoveRange(await context.PayoutTransactions.ToListAsync());
+        context.EscrowTransactions.RemoveRange(await context.EscrowTransactions.ToListAsync());
+
+        // Delete all listings except sample listing (ATSH-GA-999)
+        var staleListings = await context.ResaleListings
+            .Where(l => l.Id != sampleListingId)
+            .ToListAsync();
+        if (staleListings.Any())
+        {
+            context.ResaleListings.RemoveRange(staleListings);
+        }
+
+        // Delete any non-seed users if present
+        var nonSeedUsers = await context.Users
+            .Where(u => u.Id != sellerId && u.Id != buyerId && u.Id != adminId)
+            .ToListAsync();
+        if (nonSeedUsers.Any())
+        {
+            context.Users.RemoveRange(nonSeedUsers);
+        }
+
+        await context.SaveChangesAsync();
+
+        // 5. Seed / Reset Sample Resale Listing (ATSH-GA-999) for buyer marketplace page demo
+        // ATSH-VIP-888 is intentionally unseeded so users can test the full OTP sell workflow from scratch.
         var sampleListing = await context.ResaleListings.FirstOrDefaultAsync(l => l.Id == sampleListingId);
         if (sampleListing == null)
         {
@@ -142,15 +179,6 @@ public static class DatabaseSeeder
         sampleListing.PrivateAccessToken = null;
         sampleListing.VerificationStatus = VerificationStatus.Verified;
         sampleListing.ListingStatus = ListingStatus.Verified;
-
-        // Clean up any stale test listing for ATSH-VIP-888 so sell flow is always ready
-        var vipStaleListings = await context.ResaleListings
-            .Where(l => l.OriginalTicketCode == "ATSH-VIP-888")
-            .ToListAsync();
-        if (vipStaleListings.Any())
-        {
-            context.ResaleListings.RemoveRange(vipStaleListings);
-        }
 
         await context.SaveChangesAsync();
     }

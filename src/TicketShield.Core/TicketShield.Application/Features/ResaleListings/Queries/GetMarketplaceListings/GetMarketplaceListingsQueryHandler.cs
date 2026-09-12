@@ -8,7 +8,7 @@ using TicketShield.Domain.Enums;
 
 namespace TicketShield.Application.Features.ResaleListings.Queries.GetMarketplaceListings;
 
-public class GetMarketplaceListingsQueryHandler : IRequestHandler<GetMarketplaceListingsQuery, ApiResponse<List<ResaleListingDetailDto>>>
+public class GetMarketplaceListingsQueryHandler : IRequestHandler<GetMarketplaceListingsQuery, ApiResponse<PaginatedList<ResaleListingDetailDto>>>
 {
     private readonly ITicketShieldDbContext _dbContext;
 
@@ -17,7 +17,7 @@ public class GetMarketplaceListingsQueryHandler : IRequestHandler<GetMarketplace
         _dbContext = dbContext;
     }
 
-    public async Task<ApiResponse<List<ResaleListingDetailDto>>> Handle(GetMarketplaceListingsQuery request, CancellationToken cancellationToken)
+    public async Task<ApiResponse<PaginatedList<ResaleListingDetailDto>>> Handle(GetMarketplaceListingsQuery request, CancellationToken cancellationToken)
     {
         var page = request.Page > 0 ? request.Page : 1;
         var size = request.Size > 0 ? request.Size : 20;
@@ -44,6 +44,8 @@ public class GetMarketplaceListingsQueryHandler : IRequestHandler<GetMarketplace
                 (l.Event != null && l.Event.Venue.ToLower().Contains(kw)));
         }
 
+        var totalCount = await query.CountAsync(cancellationToken);
+
         var listings = await query
             .OrderByDescending(l => l.CreatedAt)
             .Skip((page - 1) * size)
@@ -51,7 +53,8 @@ public class GetMarketplaceListingsQueryHandler : IRequestHandler<GetMarketplace
             .ToListAsync(cancellationToken);
 
         var dtos = listings.Select(l => l.ToDetailDto()).ToList();
+        var paginatedList = new PaginatedList<ResaleListingDetailDto>(dtos, totalCount, page, size);
 
-        return ApiResponse<List<ResaleListingDetailDto>>.SuccessResponse(dtos, "Lấy danh sách vé thị trường thành công.");
+        return ApiResponse<PaginatedList<ResaleListingDetailDto>>.SuccessResponse(paginatedList, "Lấy danh sách vé thị trường thành công.");
     }
 }

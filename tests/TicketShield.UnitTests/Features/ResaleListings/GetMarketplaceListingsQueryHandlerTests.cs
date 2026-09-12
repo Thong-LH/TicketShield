@@ -170,8 +170,14 @@ public class GetMarketplaceListingsQueryHandlerTests
         Assert.NotNull(result);
         Assert.True(result.Success);
         Assert.NotNull(result.Data);
-        Assert.Equal(2, result.Data.Count);
-        Assert.All(result.Data, item =>
+        Assert.Equal(2, result.Data.Items.Count);
+        Assert.Equal(2, result.Data.TotalCount);
+        Assert.Equal(1, result.Data.PageNumber);
+        Assert.Equal(10, result.Data.PageSize);
+        Assert.Equal(1, result.Data.TotalPages);
+        Assert.False(result.Data.HasNextPage);
+        Assert.False(result.Data.HasPreviousPage);
+        Assert.All(result.Data.Items, item =>
         {
             Assert.False(item.IsPrivate);
             Assert.Contains(item.ListingStatus, new[] { "Verified", "Transacting" });
@@ -192,9 +198,10 @@ public class GetMarketplaceListingsQueryHandlerTests
         var result = await handler.Handle(query, CancellationToken.None);
 
         Assert.NotNull(result?.Data);
-        Assert.Single(result.Data);
-        Assert.Equal(testEvent.Id, result.Data[0].EventId);
-        Assert.Equal("Anh Trai Say Hi Concert 2026", result.Data[0].EventName);
+        Assert.Single(result.Data.Items);
+        Assert.Equal(1, result.Data.TotalCount);
+        Assert.Equal(testEvent.Id, result.Data.Items[0].EventId);
+        Assert.Equal("Anh Trai Say Hi Concert 2026", result.Data.Items[0].EventName);
     }
 
     [Fact]
@@ -207,7 +214,8 @@ public class GetMarketplaceListingsQueryHandlerTests
         var result = await handler.Handle(query, CancellationToken.None);
 
         Assert.NotNull(result?.Data);
-        Assert.Single(result.Data);
-        Assert.Equal("Anh Trai Say Hi Concert 2026", result.Data[0].EventName);
+        Assert.Single(result.Data.Items);
+        Assert.Equal(1, result.Data.TotalCount);
+        Assert.Equal("Anh Trai Say Hi Concert 2026", result.Data.Items[0].EventName);
     }
 }

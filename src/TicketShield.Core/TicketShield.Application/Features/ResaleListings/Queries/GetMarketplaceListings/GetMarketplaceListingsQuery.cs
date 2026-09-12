@@ -4,7 +4,7 @@ using TicketShield.Application.Features.ResaleListings.Queries.GetResaleListingD
 
 namespace TicketShield.Application.Features.ResaleListings.Queries.GetMarketplaceListings;
 
-public class GetMarketplaceListingsQuery : IRequest<ApiResponse<List<ResaleListingDetailDto>>>
+public class GetMarketplaceListingsQuery : IRequest<ApiResponse<PaginatedList<ResaleListingDetailDto>>>
 {
     public int Page { get; set; } = 1;
     public int Size { get; set; } = 20;
