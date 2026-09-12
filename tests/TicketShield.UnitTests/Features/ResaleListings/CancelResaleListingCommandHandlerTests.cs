@@ -204,6 +204,16 @@ public class CancelResaleListingCommandHandlerTests
         }
 
         public Task<List<TicketShield.Application.Resale.ListingResult>> Marketplace(int page, int size, CancellationToken ct) => throw new NotImplementedException();
+
+        // The members below are not used by the cancel handler, but ITicketVerificationService requires them.
+        public Task<TicketShield.Application.Resale.VerificationResult> Request(string seller, string key, string ticket, CancellationToken ct) => throw new NotImplementedException();
+        public Task<TicketShield.Application.Resale.VerificationResult> Resend(string seller, string id, string key, CancellationToken ct) => throw new NotImplementedException();
+        public Task<TicketShield.Application.Resale.VerificationResult> Confirm(string seller, string id, string key, string otp, CancellationToken ct) => throw new NotImplementedException();
+        public Task<TicketShield.Application.Resale.VerificationResult> Get(string seller, string id, CancellationToken ct) => throw new NotImplementedException();
+        public Task<TicketShield.Application.Resale.VerificationResult> Close(string seller, string id, string key, CancellationToken ct) => throw new NotImplementedException();
+        public Task<TicketShield.Application.Resale.VerificationResult> Publish(string seller, string key, TicketShield.Application.Resale.PublishBody body, CancellationToken ct) => throw new NotImplementedException();
+        public Task<TicketShield.Application.Resale.VerificationResult> Cancel(string seller, string id, string key, CancellationToken ct) => throw new NotImplementedException();
+        public Task RecoverPending(CancellationToken ct) => throw new NotImplementedException();
     }
 
     [Fact]
