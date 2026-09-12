@@ -4,6 +4,7 @@ using TicketShield.API.Filters;
 using TicketShield.Application.Common.Interfaces;
 using TicketShield.Application.Common.Models;
 using TicketShield.Application.Features.ResaleListings.Commands.CancelResaleListing;
+using TicketShield.Application.Features.ResaleListings.Queries.GetMarketplaceListings;
 using TicketShield.Application.Features.ResaleListings.Queries.GetResaleListingByPrivateToken;
 using TicketShield.Application.Features.ResaleListings.Queries.GetResaleListingDetail;
 using TicketShield.Application.Features.ResaleListings.Queries.GetSellerListings;
