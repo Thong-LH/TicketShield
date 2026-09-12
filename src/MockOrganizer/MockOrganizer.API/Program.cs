@@ -8,11 +8,23 @@ builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, relo
 var resaleEnabled = builder.Services.AddOrganizerResale(builder.Configuration);
 if (resaleEnabled && builder.Environment.IsDevelopment())
 {
+    var httpPort = builder.Configuration.GetValue("HttpPort", 5001);
     var grpcPort = builder.Configuration.GetValue("OrganizerResale:DevelopmentGrpcPort", 5002);
-    builder.WebHost.ConfigureKestrel(k => k.ListenLocalhost(grpcPort, endpoint => endpoint.Protocols = HttpProtocols.Http2));
+    builder.WebHost.ConfigureKestrel(k =>
+    {
+        k.ListenLocalhost(httpPort, endpoint => endpoint.Protocols = HttpProtocols.Http1AndHttp2);
+        k.ListenLocalhost(grpcPort, endpoint => endpoint.Protocols = HttpProtocols.Http2);
+    });
 }
 
 // Add services to the container.
+builder.Services.AddCors(options =>
+{
+    options.AddDefaultPolicy(policy =>
+    {
+        policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader();
+    });
+});
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
@@ -55,8 +67,11 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.UseHttpsRedirection();
+app.UseCors();
 app.UseAuthorization();
 app.MapControllers();
+
+app.MapGet("/", () => Results.Content(MockOrganizer.API.Portal.PortalHtml.Html, "text/html"));
+app.MapGet("/portal", () => Results.Content(MockOrganizer.API.Portal.PortalHtml.Html, "text/html"));
 
 app.Run();

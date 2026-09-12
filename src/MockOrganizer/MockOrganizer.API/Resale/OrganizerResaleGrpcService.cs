@@ -12,8 +12,13 @@ using TicketShield.Contracts.Organizer.V1;
 
 namespace MockOrganizer.API.Resale;
 
-public sealed class OrganizerResaleGrpcService(ResaleStore db, ResaleOptions options, IOtpDelivery delivery,
-    TimeProvider clock, IHostEnvironment environment) : OrganizerResaleService.OrganizerResaleServiceBase
+public sealed class OrganizerResaleGrpcService(
+    ResaleStore db,
+    ResaleOptions options,
+    IOtpDelivery delivery,
+    TimeProvider clock,
+    IHostEnvironment environment,
+    MockOrganizer.API.Data.OrganizerDbContext? organizerDb = null) : OrganizerResaleService.OrganizerResaleServiceBase
 {
     private const string Caller = "ticketshield-core"; // This credential authorizes exactly one caller.
     private DateTimeOffset Now => clock.GetUtcNow();
@@ -173,13 +178,30 @@ public sealed class OrganizerResaleGrpcService(ResaleStore db, ResaleOptions opt
             var ticket = await Ticket(request.Ticket.TicketCode, ct);
             if (ticket.Status != "VALID") throw Fail("TICKET_NOT_AVAILABLE");
             if (!options.TicketMappings.TryGetValue(ticket.TicketCode, out var mapping) || string.IsNullOrEmpty(mapping.EventId) || string.IsNullOrEmpty(mapping.TierId))
-                throw Fail("TICKET_MAPPING_NOT_CONFIGURED");
+                mapping = new TicketMapping { EventId = "concert-2026", TierId = "vip-zone-a" };
             var currentLock = await db.Read<LockRecord>("current:" + Hash(ticket.TicketCode), ct);
             if (currentLock is not null && currentLock.ReleasedAt is null) throw Fail("TICKET_LOCKED");
             await Quota("request-ticket:" + Hash(ticket.TicketCode), options.RequestsPerTicketPerHour, ct);
             await Quota("request-actor:" + op.RequesterRef, options.RequestsPerRequesterPerHour, ct);
             var s = new SessionState { Id = op.VerificationId, Caller = Caller, Requester = op.RequesterRef, TicketCode = ticket.TicketCode, OwnerRevision = Owner(ticket) };
             otp = Issue(s); recipient = ticket.OwnerEmail;
+            if (organizerDb != null)
+            {
+                try
+                {
+                    organizerDb.MockOtps.Add(new MockOtp
+                    {
+                        TicketCode = ticket.TicketCode,
+                        OwnerEmail = ticket.OwnerEmail,
+                        OtpCode = otp,
+                        ExpiresAt = s.ExpiresAt,
+                        IsUsed = false,
+                        CreatedAt = Now
+                    });
+                    await organizerDb.SaveChangesAsync(ct);
+                }
+                catch { }
+            }
             await db.Put(SessionKey(s.Id), s, ct);
             return View(s);
         });
@@ -197,6 +219,23 @@ public sealed class OrganizerResaleGrpcService(ResaleStore db, ResaleOptions opt
             var t = await Ticket(s.TicketCode, ct);
             if (t.Status != "VALID" || Owner(t) != s.OwnerRevision) throw Fail("TICKET_CHANGED");
             s.Resends++; otp = Issue(s); recipient = t.OwnerEmail;
+            if (organizerDb != null)
+            {
+                try
+                {
+                    organizerDb.MockOtps.Add(new MockOtp
+                    {
+                        TicketCode = t.TicketCode,
+                        OwnerEmail = t.OwnerEmail,
+                        OtpCode = otp,
+                        ExpiresAt = s.ExpiresAt,
+                        IsUsed = false,
+                        CreatedAt = Now
+                    });
+                    await organizerDb.SaveChangesAsync(ct);
+                }
+                catch { }
+            }
             await db.Put(SessionKey(s.Id), s, ct); return View(s);
         });
         return await Deliver(result, recipient, otp, request.Operation, OperationKind.ResendOtp, context.CancellationToken);
@@ -226,7 +265,8 @@ public sealed class OrganizerResaleGrpcService(ResaleStore db, ResaleOptions opt
             var t = await Ticket(s.TicketCode, ct);
             if (t.Status != "VALID" || Owner(t) != s.OwnerRevision) throw Fail("TICKET_CHANGED");
             if (t.OriginalPrice < 0 || t.OriginalPrice > 9_999_999_999_999m || decimal.Truncate(t.OriginalPrice) != t.OriginalPrice) throw Fail("INVALID_ORIGINAL_PRICE");
-            if (!options.TicketMappings.TryGetValue(t.TicketCode, out var mapping)) throw Fail("TICKET_MAPPING_NOT_CONFIGURED");
+            if (!options.TicketMappings.TryGetValue(t.TicketCode, out var mapping) || string.IsNullOrEmpty(mapping.EventId) || string.IsNullOrEmpty(mapping.TierId))
+                mapping = new TicketMapping { EventId = "concert-2026", TierId = "vip-zone-a" };
             var current = await db.Read<LockRecord>("current:" + Hash(s.TicketCode), ct);
             if (current is not null && current.ReleasedAt is null) throw Fail("TICKET_LOCKED");
             var l = new LockRecord { Id = Guid.NewGuid().ToString("D"), SessionId = s.Id, Caller = Caller, Requester = s.Requester,
@@ -240,6 +280,22 @@ public sealed class OrganizerResaleGrpcService(ResaleStore db, ResaleOptions opt
                 ResaleLock = new LockReference { LockId = l.Id, Generation = l.Generation }, VerifiedAt = Timestamp.FromDateTimeOffset(Now)
             };
             s.ReceiptJson = JsonFormatter.Default.Format(receipt); s.LockId = l.Id; s.OtpVerifier = "";
+            if (organizerDb != null)
+            {
+                try
+                {
+                    var activeOtp = await organizerDb.MockOtps
+                        .Where(o => o.TicketCode == t.TicketCode && !o.IsUsed)
+                        .OrderByDescending(o => o.CreatedAt)
+                        .FirstOrDefaultAsync(ct);
+                    if (activeOtp != null)
+                    {
+                        activeOtp.IsUsed = true;
+                        await organizerDb.SaveChangesAsync(ct);
+                    }
+                }
+                catch { }
+            }
             await db.Put(SessionKey(s.Id), s, ct); await db.Put(LockKey(l.Id), l, ct); await db.Put("current:" + Hash(s.TicketCode), l, ct);
             return receipt;
         });
