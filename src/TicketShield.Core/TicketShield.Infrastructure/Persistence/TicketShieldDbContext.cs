@@ -22,6 +22,7 @@ public class TicketShieldDbContext : DbContext, ITicketShieldDbContext
     public DbSet<Dispute> Disputes => Set<Dispute>();
     public DbSet<DisputeEvidence> DisputeEvidences => Set<DisputeEvidence>();
     public DbSet<DisputeMessage> DisputeMessages => Set<DisputeMessage>();
+    public DbSet<SystemSetting> SystemSettings => Set<SystemSetting>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -206,6 +207,17 @@ public class TicketShieldDbContext : DbContext, ITicketShieldDbContext
                 .WithMany()
                 .HasForeignKey(e => e.SenderId)
                 .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // SystemSetting
+        modelBuilder.Entity<SystemSetting>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.SettingKey).IsUnique();
+            entity.Property(e => e.SettingKey).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.SettingValue).HasMaxLength(500).IsRequired();
+            entity.Property(e => e.DataType).HasMaxLength(50).IsRequired();
+            entity.Property(e => e.Description).HasMaxLength(500);
         });
 
         // Automatic snake_case naming for PostgreSQL
