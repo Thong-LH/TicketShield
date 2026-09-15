@@ -24,6 +24,16 @@ public static class DatabaseSeeder
             ALTER TABLE escrow_transactions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
             ALTER TABLE payout_transactions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
             ALTER TABLE disputes ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
+            CREATE TABLE IF NOT EXISTS system_settings (
+                id UUID PRIMARY KEY,
+                setting_key VARCHAR(100) NOT NULL UNIQUE,
+                setting_value VARCHAR(500) NOT NULL,
+                data_type VARCHAR(50) NOT NULL,
+                description VARCHAR(500) NULL,
+                updated_by UUID NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
         ");
 
         var defaultPasswordHash = BCrypt.Net.BCrypt.HashPassword("123456");
@@ -179,6 +189,32 @@ public static class DatabaseSeeder
         sampleListing.PrivateAccessToken = null;
         sampleListing.VerificationStatus = VerificationStatus.Verified;
         sampleListing.ListingStatus = ListingStatus.Verified;
+
+        await context.SaveChangesAsync();
+
+        // 6. Seed Default Resale Fee System Settings (BE-CORE-2.6.2)
+        var feeSettings = new[]
+        {
+            new { Key = "ResaleFee_BuyerPercentage", Value = "0.05", Type = "Decimal", Desc = "Tỷ lệ phí người mua (5%)" },
+            new { Key = "ResaleFee_SellerPercentage", Value = "0.03", Type = "Decimal", Desc = "Tỷ lệ phí người bán (3%)" },
+            new { Key = "ResaleFee_MinBuyerFee", Value = "10000", Type = "Money", Desc = "Phí tối thiểu người mua (10,000 VNĐ)" },
+            new { Key = "ResaleFee_MinSellerFee", Value = "5000", Type = "Money", Desc = "Phí tối thiểu người bán (5,000 VNĐ)" }
+        };
+
+        foreach (var item in feeSettings)
+        {
+            var setting = await context.SystemSettings.FirstOrDefaultAsync(s => s.SettingKey == item.Key);
+            if (setting == null)
+            {
+                await context.SystemSettings.AddAsync(new SystemSetting
+                {
+                    SettingKey = item.Key,
+                    SettingValue = item.Value,
+                    DataType = item.Type,
+                    Description = item.Desc
+                });
+            }
+        }
 
         await context.SaveChangesAsync();
     }

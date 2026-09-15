@@ -25,6 +25,11 @@ public static class DependencyInjection
         services.AddScoped<IEmailService, Services.MockEmailService>();
         services.AddScoped<IGoogleAuthService, Services.GoogleAuthService>();
 
+        // Dynamic Resale Fee Services (BE-CORE-2.6.2)
+        services.AddMemoryCache();
+        services.AddScoped<ISystemSettingRepository, Persistence.Repositories.SystemSettingRepository>();
+        services.AddScoped<IResaleFeeCalculator, Services.DynamicResaleFeeCalculator>();
+
         return services;
     }
 }

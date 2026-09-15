@@ -16,6 +16,7 @@ public interface ITicketShieldDbContext
     DbSet<Dispute> Disputes { get; }
     DbSet<DisputeEvidence> DisputeEvidences { get; }
     DbSet<DisputeMessage> DisputeMessages { get; }
+    DbSet<SystemSetting> SystemSettings { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }
