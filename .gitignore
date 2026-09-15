@@ -2,6 +2,7 @@
 
 # Security & Local Context
 .context/
+.agents/
 
 # Non-code Documents & Research (Local only)
 docs/*

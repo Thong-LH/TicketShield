@@ -6,6 +6,10 @@ public class Event : BaseEntity
 {
     public Guid OrganizerId { get; set; }
     public string Name { get; set; } = string.Empty;
+    public string? Artist { get; set; }
+    public string? Category { get; set; } = "CONCERT";
+    public string? City { get; set; } = "TP. Hồ Chí Minh";
+    public string? BannerUrl { get; set; }
     public string? Description { get; set; }
     public string Venue { get; set; } = string.Empty;
     public DateTimeOffset EventStartAt { get; set; }
@@ -18,3 +22,4 @@ public class Event : BaseEntity
     public ICollection<TicketTier> TicketTiers { get; set; } = new List<TicketTier>();
     public ICollection<ResaleListing> ResaleListings { get; set; } = new List<ResaleListing>();
 }
+

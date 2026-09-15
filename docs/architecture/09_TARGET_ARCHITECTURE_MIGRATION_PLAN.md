@@ -21,7 +21,7 @@ Hiện tại `TicketShield.Core` đang là một Monolith gánh 6 Bounded Contex
 |---|---|---|---|---|---|
 | **1** | **`TicketShield.Identity`** | .NET 8 Web API | REST (`:5002`) | `identity_db` | Đăng ký, Đăng nhập, Google OAuth, Cấp phát JWT Bearer Token, Quản lý User Profile & Số tài khoản ngân hàng. |
 | **2** | **`TicketShield.TradingCore`** | .NET 8 Web API | REST (`:5000`) | `trading_db` | Chợ vé (Marketplace), Kiểm tra giá trần, Đặt mua & Hold vé 10p, Ký quỹ Escrow (LOCKED), gRPC Client với BTC. |
-| **3** | **`TicketShield.SettlementWorker`** | .NET 8 Worker | Daemon ngầm | `trading_db` (Read) | Lắng nghe sự kiện qua RabbitMQ, đếm ngược T+24h, tự động gọi NAPAS 247 giải ngân tiền cho Seller. |
+| **3** | **`TicketShield.SettlementWorker`** | .NET 8 Worker | Daemon ngầm | `settlement_db` (hoặc Redis Scheduler) | Lắng nghe `IOwnershipTransferredEvent` qua RabbitMQ, đếm ngược T+24h, tự động gọi NAPAS 247 giải ngân tiền cho Seller, gọi API nội bộ cập nhật Escrow. |
 | **4** | **`MockOrganizer.API`** | .NET 8 gRPC/REST | gRPC (`:5001`) | `organizer_db` | Giả lập hệ thống Ban tổ chức (BTC): Xác thực vé gốc, gửi OTP qua Email (SMTP), Khóa/Mở khóa vé, Cấp vé mới. |
 | **5** | **`AIEngine`** | Python FastAPI | REST (`:8000`) | In-memory / ML | Thu thập dữ liệu sinh trắc học hành vi (chuột, phím) để phân loại rủi ro bot mua vé sơ cấp. |
 
@@ -29,24 +29,32 @@ Hiện tại `TicketShield.Core` đang là một Monolith gánh 6 Bounded Contex
 
 ---
 
-## 3. Cơ chế giao tiếp thời gian thực: Message Broker (RabbitMQ)
+## 3. Cơ chế giao tiếp thời gian thực & Giải quyết Race Condition (RabbitMQ + Pre-flight Sync)
 
-Để `Settlement Worker` biết ngay lập tức khi có một giao dịch vừa thanh toán và sang tên thành công để tiến hành đếm giờ 24h, hệ thống sử dụng **RabbitMQ** với thư viện **MassTransit**:
+Để triệt tiêu lỗi **Shared Database Anti-pattern** khi bảo vệ đồ án, `SettlementWorker` **hoàn toàn không truy vấn trực tiếp vào `trading_db`**. Hai service giao tiếp qua **RabbitMQ (MassTransit)** kết hợp cơ chế **Pre-flight Sync Check**:
 
 ```
 [ Buyer quét VietQR ]
         │
-        ▼ (Webhook thành công - 0s)
-[ Trading Core API ] ──(gRPC: Đổi chủ vé)──► [ MockOrganizer (BTC) ]
+        ▼ (Webhook thanh toán thành công)
+[ Trading Core API ] ──(gRPC: Sang tên vé)──► [ MockOrganizer (BTC) ]
         │
-        ├──► Bắn Event lên RabbitMQ: `IOwnershipTransferredEvent`
+        ├──► Bắn Event lên RabbitMQ: `IOwnershipTransferredEvent` (Mang toàn bộ thông tin thanh toán)
         │
-        ▼ (RabbitMQ đẩy ngay lập tức)
+        ▼ (RabbitMQ đẩy tức thì)
 [ Settlement Worker ]
-  - Nhận Event trong 1 mili-giây
-  - Lưu lịch đếm ngược: T + 24 giờ (Persistent Scheduler / Hangfire)
-  - Hết 24h (nếu không có tranh chấp): Kích hoạt lệnh giải ngân NAPAS về tài khoản Seller
+        ├── 1. Nhận Event, lưu lịch hẹn đếm ngược T + 24 giờ vào Hangfire/Redis
+        ├── 2. Hết 24h: GỌI PRE-FLIGHT SYNC CHECK sang TradingCore:
+        │      POST /api/v1/internal/escrows/{id}/claim-payout
+        │      └── TradingCore khóa atomic: Status = PAYING_OUT (nếu có Dispute -> trả HTTP 409 từ chối)
+        ├── 3. Nhận HTTP 200 OK: Kích hoạt lệnh chuyển khoản NAPAS 247 cho Seller
+        └── 4. Hoàn tất: Gọi PUT /api/v1/internal/escrows/{id}/release để TradingCore đổi Escrow -> RELEASED
 ```
+
+### Chốt chặn chống Race Condition lúc 23:59:59:
+* `TradingCore` đóng vai trò là **State Orchestrator** quản lý trạng thái Escrow trong `trading_db`.
+* Khi Worker hết 24h, bắt buộc phải gọi `claim-payout`. `TradingCore` thực thi `UPDATE ... WHERE status = 'LOCKED'` có khóa dòng (Row-Level Lock) trên PostgreSQL.
+* Nếu Buyer bấm Dispute đúng giây cuối $\rightarrow$ `TradingCore` xử lý tuần tự: ai đến trước thì thắng, triệt tiêu 100% rủi ro chuyển tiền khi đã bị hủy.
 
 ### Event Contract (`TicketShield.Contracts`):
 ```csharp
@@ -55,7 +63,10 @@ public interface IOwnershipTransferredEvent
     Guid EscrowId { get; }
     Guid ListingId { get; }
     Guid SellerId { get; }
-    decimal Amount { get; }
+    decimal NetSellerPayout { get; }
+    string RecipientBankCode { get; }
+    string RecipientAccountNumber { get; }
+    string RecipientAccountName { get; }
     DateTimeOffset TransferredAt { get; }
 }
 ```

@@ -19,6 +19,10 @@ public static class DatabaseSeeder
             ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
             ALTER TABLE organizers ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
             ALTER TABLE events ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
+            ALTER TABLE events ADD COLUMN IF NOT EXISTS artist VARCHAR(255);
+            ALTER TABLE events ADD COLUMN IF NOT EXISTS category VARCHAR(50) DEFAULT 'CONCERT';
+            ALTER TABLE events ADD COLUMN IF NOT EXISTS city VARCHAR(100) DEFAULT 'TP. Hồ Chí Minh';
+            ALTER TABLE events ADD COLUMN IF NOT EXISTS banner_url VARCHAR(500);
             ALTER TABLE ticket_tiers ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
             ALTER TABLE resale_listings ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
             ALTER TABLE escrow_transactions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
@@ -74,7 +78,7 @@ public static class DatabaseSeeder
 
         await context.SaveChangesAsync();
 
-        // 3. Seed / Sync Organizer, Concert Event & Ticket Tiers
+        // 3. Seed / Sync Organizer, Concert Events & Ticket Tiers
         var organizerId = Guid.Parse("e0000000-0000-0000-0000-000000000001");
         var eventId = Guid.Parse("e1111111-1111-1111-1111-111111111111");
         var tierVipId = Guid.Parse("d1111111-1111-1111-1111-111111111111");
@@ -92,6 +96,7 @@ public static class DatabaseSeeder
         organizer.ApiKeyHash = "mock_api_key_hash_123456";
         organizer.Status = "ACTIVE";
 
+        // Event 1: Anh Trai Say Hi
         var ev = await context.Events.FirstOrDefaultAsync(e => e.Id == eventId);
         if (ev == null)
         {
@@ -100,7 +105,11 @@ public static class DatabaseSeeder
         }
         ev.OrganizerId = organizerId;
         ev.Name = "Anh Trai Say Hi Concert 2026";
-        ev.Description = "Mega Concert Vietnam 2026";
+        ev.Artist = "Anh Trai Say Hi All-Stars";
+        ev.Category = "CONCERT";
+        ev.City = "TP. Hồ Chí Minh";
+        ev.BannerUrl = "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?auto=format&fit=crop&w=1400&q=80";
+        ev.Description = "Mega Concert Vietnam 2026 quy tụ dàn nghệ sĩ đỉnh cao";
         ev.Venue = "Van Hanh Mall Stadium, TP.HCM";
         ev.EventStartAt = DateTimeOffset.UtcNow.AddDays(30);
         ev.EventEndAt = DateTimeOffset.UtcNow.AddDays(30).AddHours(4);
@@ -129,7 +138,107 @@ public static class DatabaseSeeder
         tierGa.OriginalPrice = 1200000m;
         tierGa.Description = "Khu vực đứng tự do";
 
+        // Event 2: My Tam Live Concert (Hanoi)
+        var event2Id = Guid.Parse("e2222222-2222-2222-2222-222222222222");
+        var ev2 = await context.Events.FirstOrDefaultAsync(e => e.Id == event2Id);
+        if (ev2 == null)
+        {
+            ev2 = new Event { Id = event2Id };
+            await context.Events.AddAsync(ev2);
+        }
+        ev2.OrganizerId = organizerId;
+        ev2.Name = "Tri Âm Live Concert 2026";
+        ev2.Artist = "Mỹ Tâm";
+        ev2.Category = "CONCERT";
+        ev2.City = "Hà Nội";
+        ev2.BannerUrl = "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=1400&q=80";
+        ev2.Description = "Live Concert âm nhạc kỷ niệm đặc biệt tại thủ đô";
+        ev2.Venue = "Sân vận động Mỹ Đình, Hà Nội";
+        ev2.EventStartAt = DateTimeOffset.UtcNow.AddDays(15);
+        ev2.EventEndAt = DateTimeOffset.UtcNow.AddDays(15).AddHours(4);
+        ev2.ResaleDeadline = DateTimeOffset.UtcNow.AddDays(15).AddHours(-2);
+        ev2.Status = "UPCOMING";
+
+        var tier2GaId = Guid.Parse("d3333333-3333-3333-3333-333333333333");
+        var tier2Ga = await context.TicketTiers.FirstOrDefaultAsync(t => t.Id == tier2GaId);
+        if (tier2Ga == null)
+        {
+            tier2Ga = new TicketTier { Id = tier2GaId };
+            await context.TicketTiers.AddAsync(tier2Ga);
+        }
+        tier2Ga.EventId = event2Id;
+        tier2Ga.TierName = "Khán đài A";
+        tier2Ga.OriginalPrice = 1500000m;
+        tier2Ga.Description = "Ghế ngồi khán đài chính diện sân khấu";
+
+        // Event 3: Ravolution EDM Festival
+        var event3Id = Guid.Parse("e3333333-3333-3333-3333-333333333333");
+        var ev3 = await context.Events.FirstOrDefaultAsync(e => e.Id == event3Id);
+        if (ev3 == null)
+        {
+            ev3 = new Event { Id = event3Id };
+            await context.Events.AddAsync(ev3);
+        }
+        ev3.OrganizerId = organizerId;
+        ev3.Name = "Ravolution Music Festival 2026";
+        ev3.Artist = "International DJ Lineup";
+        ev3.Category = "FESTIVAL";
+        ev3.City = "TP. Hồ Chí Minh";
+        ev3.BannerUrl = "https://images.unsplash.com/photo-1501386761578-eac5c94b800a?auto=format&fit=crop&w=1400&q=80";
+        ev3.Description = "Lễ hội âm nhạc điện tử ngoài trời lớn nhất năm";
+        ev3.Venue = "SECC Quận 7, TP.HCM";
+        ev3.EventStartAt = DateTimeOffset.UtcNow.AddDays(20);
+        ev3.EventEndAt = DateTimeOffset.UtcNow.AddDays(20).AddHours(8);
+        ev3.ResaleDeadline = DateTimeOffset.UtcNow.AddDays(20).AddHours(-2);
+        ev3.Status = "UPCOMING";
+
+        var tier3GaId = Guid.Parse("d4444444-4444-4444-4444-444444444444");
+        var tier3Ga = await context.TicketTiers.FirstOrDefaultAsync(t => t.Id == tier3GaId);
+        if (tier3Ga == null)
+        {
+            tier3Ga = new TicketTier { Id = tier3GaId };
+            await context.TicketTiers.AddAsync(tier3Ga);
+        }
+        tier3Ga.EventId = event3Id;
+        tier3Ga.TierName = "General Admission";
+        tier3Ga.OriginalPrice = 850000m;
+        tier3Ga.Description = "Vé vào cổng tự do";
+
+        // Event 4: V-League Derby
+        var event4Id = Guid.Parse("e4444444-4444-4444-4444-444444444444");
+        var ev4 = await context.Events.FirstOrDefaultAsync(e => e.Id == event4Id);
+        if (ev4 == null)
+        {
+            ev4 = new Event { Id = event4Id };
+            await context.Events.AddAsync(ev4);
+        }
+        ev4.OrganizerId = organizerId;
+        ev4.Name = "Trận Derby: CLB Hà Nội vs CLB Viettel";
+        ev4.Artist = "V-League 2026";
+        ev4.Category = "SPORTS";
+        ev4.City = "Hà Nội";
+        ev4.BannerUrl = "https://images.unsplash.com/photo-1508098682722-e99c43a406b2?auto=format&fit=crop&w=1400&q=80";
+        ev4.Description = "Trận cầu đinh giải vô địch bóng đá quốc gia";
+        ev4.Venue = "Sân vận động Hàng Đẫy, Hà Nội";
+        ev4.EventStartAt = DateTimeOffset.UtcNow.AddDays(7);
+        ev4.EventEndAt = DateTimeOffset.UtcNow.AddDays(7).AddHours(2);
+        ev4.ResaleDeadline = DateTimeOffset.UtcNow.AddDays(7).AddHours(-2);
+        ev4.Status = "UPCOMING";
+
+        var tier4GaId = Guid.Parse("d5555555-5555-5555-5555-555555555555");
+        var tier4Ga = await context.TicketTiers.FirstOrDefaultAsync(t => t.Id == tier4GaId);
+        if (tier4Ga == null)
+        {
+            tier4Ga = new TicketTier { Id = tier4GaId };
+            await context.TicketTiers.AddAsync(tier4Ga);
+        }
+        tier4Ga.EventId = event4Id;
+        tier4Ga.TierName = "Khán đài B";
+        tier4Ga.OriginalPrice = 200000m;
+        tier4Ga.Description = "Ghế ngồi khán đài B";
+
         await context.SaveChangesAsync();
+
 
         // 4. Reset & Purge extraneous operational data (Disputes, Escrows, Non-Seed Listings)
         var sampleListingId = Guid.Parse("44444444-4444-4444-4444-444444444444");
