@@ -23,6 +23,7 @@ public class TicketShieldDbContext : DbContext, ITicketShieldDbContext
     public DbSet<DisputeEvidence> DisputeEvidences => Set<DisputeEvidence>();
     public DbSet<DisputeMessage> DisputeMessages => Set<DisputeMessage>();
     public DbSet<SystemSetting> SystemSettings => Set<SystemSetting>();
+    public DbSet<CoreResaleRow> CoreResaleRecords => Set<CoreResaleRow>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -222,6 +223,15 @@ public class TicketShieldDbContext : DbContext, ITicketShieldDbContext
             entity.Property(e => e.Description).HasMaxLength(500);
         });
 
+        // CoreResaleRecords (Document store for Resale Verification Saga)
+        modelBuilder.Entity<CoreResaleRow>(entity =>
+        {
+            entity.ToTable("core_resale_records");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("Id").HasColumnType("text");
+            entity.Property(e => e.Json).HasColumnName("Json").HasColumnType("jsonb");
+        });
+
         // Automatic snake_case naming for PostgreSQL
         ApplySnakeCaseNaming(modelBuilder);
     }
@@ -230,6 +240,8 @@ public class TicketShieldDbContext : DbContext, ITicketShieldDbContext
     {
         foreach (var entity in modelBuilder.Model.GetEntityTypes())
         {
+            if (entity.ClrType == typeof(CoreResaleRow)) continue;
+
             entity.SetTableName(ToSnakeCase(entity.GetTableName() ?? entity.DisplayName()));
 
             foreach (var property in entity.GetProperties())

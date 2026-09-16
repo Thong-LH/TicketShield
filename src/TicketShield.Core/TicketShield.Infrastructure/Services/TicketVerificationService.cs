@@ -4,6 +4,7 @@ using System.Text.Json;
 using Google.Protobuf;
 using Grpc.Core;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Npgsql;
 using TicketShield.Application.Common.Interfaces;
 using TicketShield.Application.Common.Models;
@@ -13,6 +14,7 @@ using TicketShield.Contracts.Organizer.V1;
 using TicketShield.Infrastructure.ExternalServices.Organizer;
 using TicketShield.Infrastructure.Persistence.Resale;
 using TicketShield.Domain.Entities;
+using TicketShield.Domain.Enums;
 
 namespace TicketShield.Infrastructure.Services;
 
@@ -22,17 +24,20 @@ namespace TicketShield.Infrastructure.Services;
 public class TicketVerificationService : ITicketVerificationService
 {
     private readonly CoreResaleStore _db;
+    private readonly ITicketShieldDbContext _appDb;
     private readonly IOrganizerGateway _gateway;
     private readonly OrganizerConnectionOptions _options;
     private readonly TimeProvider _clock;
 
     public TicketVerificationService(
         CoreResaleStore db,
+        ITicketShieldDbContext appDb,
         IOrganizerGateway gateway,
         OrganizerConnectionOptions options,
         TimeProvider clock)
     {
         _db = db;
+        _appDb = appDb;
         _gateway = gateway;
         _options = options;
         _clock = clock;
@@ -74,6 +79,11 @@ public class TicketVerificationService : ITicketVerificationService
     {
         _db.ChangeTracker.Clear();
         await using var tx = await _db.Database.BeginTransactionAsync(ct);
+
+        if (_appDb is DbContext appDbContext)
+        {
+            await appDbContext.Database.UseTransactionAsync(tx.GetDbTransaction(), ct);
+        }
 
         long lockKey = ComputeLockKey(lockTarget);
         await _db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock({lockKey})", ct);
@@ -614,16 +624,13 @@ public class TicketVerificationService : ITicketVerificationService
                 var organizer = Guid.Parse(_options.OrganizerId);
                 var now = _clock.GetUtcNow();
 
-                var eventAvailable = await _db.Database.SqlQuery<int>($@"
-                    SELECT 1 AS ""Value"" 
-                    FROM ticket_tiers t 
-                    JOIN events e ON e.id = t.event_id 
-                    WHERE t.id = {mapping.TierId} 
-                      AND e.id = {mapping.EventId} 
-                      AND e.organizer_id = {organizer} 
-                      AND e.resale_deadline > {now} 
-                      AND e.status = 'UPCOMING'
-                ").AnyAsync(ct);
+                var eventAvailable = await _appDb.TicketTiers
+                    .Where(t => t.Id == mapping.TierId 
+                             && t.EventId == mapping.EventId 
+                             && t.Event.OrganizerId == organizer 
+                             && t.Event.ResaleDeadline > now 
+                             && t.Event.Status == "UPCOMING")
+                    .AnyAsync(ct);
 
                 if (!eventAvailable)
                 {
@@ -638,17 +645,26 @@ public class TicketVerificationService : ITicketVerificationService
                     ? Convert.ToHexString(RandomNumberGenerator.GetBytes(16)).ToLowerInvariant()
                     : null;
 
-                await _db.Database.ExecuteSqlInterpolatedAsync($@"
-                    INSERT INTO resale_listings (
-                        id, event_id, tier_id, seller_id, original_ticket_code, 
-                        original_price, resale_price, applied_markup_percentage, is_private, private_access_token, 
-                        verification_status, listing_status, created_at, updated_at
-                    ) VALUES (
-                        {id}, {mapping.EventId}, {mapping.TierId}, {seller}, {s.TicketCode}, 
-                        {original}, {resale}, {markup}, {isPrivate}, {privateToken}, 
-                        'Verified', 'Verified', {now}, {now}
-                    )
-                ", ct);
+                var listing = new ResaleListing
+                {
+                    Id = id,
+                    EventId = mapping.EventId,
+                    TierId = mapping.TierId,
+                    SellerId = seller,
+                    OriginalTicketCode = s.TicketCode,
+                    OriginalPrice = original,
+                    ResalePrice = resale,
+                    AppliedMarkupPercentage = markup,
+                    IsPrivate = isPrivate,
+                    PrivateAccessToken = privateToken,
+                    VerificationStatus = VerificationStatus.Verified,
+                    ListingStatus = ListingStatus.Verified,
+                    CreatedAt = now,
+                    UpdatedAt = now
+                };
+
+                _appDb.ResaleListings.Add(listing);
+                await _appDb.SaveChangesAsync(ct);
 
                 fresh.State = "Published";
                 fresh.ListingId = id;
@@ -739,9 +755,8 @@ public class TicketVerificationService : ITicketVerificationService
                         return true;
                     }
 
-                    var cancellable = await _db.Database
-                        .SqlQuery<int>($"SELECT 1 AS \"Value\" FROM resale_listings WHERE id={s.ListingId} AND listing_status='Verified'")
-                        .AnyAsync(ct);
+                    var cancellable = await _appDb.ResaleListings
+                        .AnyAsync(l => l.Id == s.ListingId && l.ListingStatus == ListingStatus.Verified, ct);
 
                     if (!cancellable)
                     {
@@ -789,14 +804,17 @@ public class TicketVerificationService : ITicketVerificationService
                 if (fresh.ListingId.HasValue)
                 {
                     var now = _clock.GetUtcNow();
-                    var updated = await _db.Database.ExecuteSqlInterpolatedAsync(
-                        $"UPDATE resale_listings SET listing_status='Cancelled', updated_at={now} WHERE id={fresh.ListingId} AND listing_status='Verified'",
-                        ct);
+                    var listing = await _appDb.ResaleListings
+                        .FirstOrDefaultAsync(l => l.Id == fresh.ListingId && l.ListingStatus == ListingStatus.Verified, ct);
 
-                    if (updated != 1)
+                    if (listing is null)
                     {
                         throw Error("LISTING_NOT_CANCELLABLE");
                     }
+
+                    listing.ListingStatus = ListingStatus.Cancelled;
+                    listing.UpdatedAt = now;
+                    await _appDb.SaveChangesAsync(ct);
                 }
 
                 fresh.State = "Closed";
