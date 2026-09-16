@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using TicketShield.Application.Common.Interfaces;
+using TicketShield.Infrastructure.Messaging;
 using TicketShield.Infrastructure.Persistence;
 
 namespace TicketShield.Infrastructure;
@@ -29,6 +30,9 @@ public static class DependencyInjection
         services.AddMemoryCache();
         services.AddScoped<ISystemSettingRepository, Persistence.Repositories.SystemSettingRepository>();
         services.AddScoped<IResaleFeeCalculator, Services.DynamicResaleFeeCalculator>();
+
+        // Event Bus (RabbitMQ + MassTransit)
+        services.AddEventBus(configuration);
 
         return services;
     }

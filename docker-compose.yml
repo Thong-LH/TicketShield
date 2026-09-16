@@ -17,9 +17,25 @@ services:
     networks:
       - ticketshield_network
 
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: ticketshield_rabbitmq
+    restart: always
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - ticketshield_network
+
 networks:
   ticketshield_network:
     driver: bridge
 
 volumes:
   postgres_data:
+  rabbitmq_data:
