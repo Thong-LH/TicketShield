@@ -43,18 +43,17 @@ public class GetResaleListingByPrivateTokenQueryHandlerTests
             OriginalPrice = 5_000_000m,
             Event = testEvent
         };
-        var seller = new User
+        var seller = new ShadowUser
         {
             Id = Guid.NewGuid(),
             Email = "seller_private@ticketshield.vn",
-            FullName = "Nguyen Van Private Seller",
-            Role = UserRole.User
+            FullName = "Nguyen Van Private Seller"
         };
 
         context.Organizers.Add(organizer);
         context.Events.Add(testEvent);
         context.TicketTiers.Add(tier);
-        context.Users.Add(seller);
+        context.ShadowUsers.Add(seller);
         context.SaveChanges();
 
         return context;
@@ -67,7 +66,7 @@ public class GetResaleListingByPrivateTokenQueryHandlerTests
         using var dbContext = CreateInMemoryDbContext();
         var testEvent = await dbContext.Events.FirstAsync();
         var testTier = await dbContext.TicketTiers.FirstAsync();
-        var seller = await dbContext.Users.FirstAsync();
+        var seller = await dbContext.ShadowUsers.FirstAsync();
         var shareToken = "a1b2c3d4e5f67890123456789abcdef0";
 
         var privateListing = new ResaleListing
@@ -139,7 +138,7 @@ public class GetResaleListingByPrivateTokenQueryHandlerTests
         using var dbContext = CreateInMemoryDbContext();
         var testEvent = await dbContext.Events.FirstAsync();
         var testTier = await dbContext.TicketTiers.FirstAsync();
-        var seller = await dbContext.Users.FirstAsync();
+        var seller = await dbContext.ShadowUsers.FirstAsync();
 
         var publicListing = new ResaleListing
         {

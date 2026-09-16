@@ -5,8 +5,6 @@ namespace TicketShield.Application.Common.Interfaces;
 
 public interface ITicketShieldDbContext
 {
-    DbSet<User> Users { get; }
-    DbSet<UserBankAccount> UserBankAccounts { get; }
     DbSet<Organizer> Organizers { get; }
     DbSet<Event> Events { get; }
     DbSet<TicketTier> TicketTiers { get; }
@@ -17,6 +15,8 @@ public interface ITicketShieldDbContext
     DbSet<DisputeEvidence> DisputeEvidences { get; }
     DbSet<DisputeMessage> DisputeMessages { get; }
     DbSet<SystemSetting> SystemSettings { get; }
+    DbSet<CoreResaleRow> CoreResaleRecords { get; }
+    DbSet<ShadowUser> ShadowUsers { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

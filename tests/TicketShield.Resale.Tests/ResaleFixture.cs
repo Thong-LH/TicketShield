@@ -84,8 +84,8 @@ public sealed class ResaleFixture : IAsyncLifetime
         mockBuilder.Services.AddOrganizerResale(mockBuilder.Configuration);
         Mock = mockBuilder.Build();
         using (var scope = Mock.Services.CreateScope()) {
-            await OrganizerDatabaseSeeder.SeedOrganizerAsync(scope.ServiceProvider.GetRequiredService<OrganizerDbContext>());
             await scope.ServiceProvider.GetRequiredService<ResaleStore>().Database.MigrateAsync();
+            await OrganizerDatabaseSeeder.SeedOrganizerAsync(scope.ServiceProvider.GetRequiredService<OrganizerDbContext>());
         }
         Mock.MapGrpcService<OrganizerResaleGrpcService>(); await Mock.StartAsync();
         Channel = GrpcChannel.ForAddress($"http://127.0.0.1:{grpcPort}"); Grpc = new(Channel);
@@ -95,6 +95,7 @@ public sealed class ResaleFixture : IAsyncLifetime
         coreBuilder.WebHost.ConfigureKestrel(k => k.Listen(IPAddress.Loopback, httpPort, l => l.Protocols = HttpProtocols.Http1));
         coreBuilder.Configuration.AddInMemoryCollection(new Dictionary<string, string?> {
             ["ConnectionStrings:DefaultConnection"] = Database.CoreConnection,
+            ["RabbitMQ:UseInMemory"] = "true",
             ["OrganizerGrpc:Enabled"] = "true", ["OrganizerGrpc:OrganizerId"] = Organizer,
             ["OrganizerGrpc:Address"] = $"http://127.0.0.1:{grpcPort}", ["OrganizerGrpc:ApiKey"] = apiKey,
             ["OrganizerGrpc:HmacKey"] = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)),
@@ -116,8 +117,8 @@ public sealed class ResaleFixture : IAsyncLifetime
         coreBuilder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
         Core = coreBuilder.Build();
         using (var scope = Core.Services.CreateScope()) {
-            await DatabaseSeeder.SeedTicketShieldAsync(scope.ServiceProvider.GetRequiredService<TicketShieldDbContext>());
             await scope.ServiceProvider.GetRequiredService<CoreResaleStore>().Database.MigrateAsync();
+            await DatabaseSeeder.SeedTicketShieldAsync(scope.ServiceProvider.GetRequiredService<TicketShieldDbContext>());
         }
         Core.UseMiddleware<GlobalExceptionHandlingMiddleware>();
         Core.UseAuthentication(); Core.UseAuthorization(); Core.MapControllers(); await Core.StartAsync();

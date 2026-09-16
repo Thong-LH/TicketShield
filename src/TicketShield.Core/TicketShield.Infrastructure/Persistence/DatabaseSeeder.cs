@@ -38,53 +38,94 @@ public static class DatabaseSeeder
                 created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
+            CREATE TABLE IF NOT EXISTS shadow_users (
+                id UUID PRIMARY KEY,
+                email VARCHAR(255) NOT NULL,
+                full_name VARCHAR(255) NOT NULL,
+                phone_number VARCHAR(50) NULL,
+                role VARCHAR(50) NOT NULL DEFAULT 'User',
+                is_active BOOLEAN NOT NULL DEFAULT true,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE INDEX IF NOT EXISTS ix_shadow_users_email ON shadow_users (email);
+
+            -- Drop hard foreign key constraints to users(id) to allow database-per-service isolation
+            ALTER TABLE resale_listings DROP CONSTRAINT IF EXISTS fk_resale_listings_users_seller_id;
+            ALTER TABLE resale_listings DROP CONSTRAINT IF EXISTS resale_listings_seller_id_fkey;
+            ALTER TABLE escrow_transactions DROP CONSTRAINT IF EXISTS fk_escrow_transactions_users_buyer_id;
+            ALTER TABLE escrow_transactions DROP CONSTRAINT IF EXISTS fk_escrow_transactions_users_seller_id;
+            ALTER TABLE escrow_transactions DROP CONSTRAINT IF EXISTS escrow_transactions_buyer_id_fkey;
+            ALTER TABLE escrow_transactions DROP CONSTRAINT IF EXISTS escrow_transactions_seller_id_fkey;
+            ALTER TABLE disputes DROP CONSTRAINT IF EXISTS fk_disputes_users_buyer_id;
+            ALTER TABLE disputes DROP CONSTRAINT IF EXISTS fk_disputes_users_resolved_by;
+            ALTER TABLE disputes DROP CONSTRAINT IF EXISTS disputes_buyer_id_fkey;
+            ALTER TABLE disputes DROP CONSTRAINT IF EXISTS disputes_resolved_by_fkey;
+            ALTER TABLE dispute_evidences DROP CONSTRAINT IF EXISTS fk_dispute_evidences_users_uploader_id;
+            ALTER TABLE dispute_evidences DROP CONSTRAINT IF EXISTS dispute_evidences_uploader_id_fkey;
+            ALTER TABLE dispute_messages DROP CONSTRAINT IF EXISTS fk_dispute_messages_users_sender_id;
+            ALTER TABLE dispute_messages DROP CONSTRAINT IF EXISTS dispute_messages_sender_id_fkey;
+
+            -- Backfill existing users into shadow_users if users table exists
+            DO $$ 
+            BEGIN 
+                IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'users') THEN
+                    INSERT INTO shadow_users (id, email, full_name, phone_number, role, is_active, created_at, updated_at)
+                    SELECT id, email, full_name, phone_number, role::text, is_active, created_at, updated_at
+                    FROM users
+                    ON CONFLICT (id) DO UPDATE SET
+                        email = EXCLUDED.email,
+                        full_name = EXCLUDED.full_name,
+                        phone_number = EXCLUDED.phone_number,
+                        role = EXCLUDED.role,
+                        is_active = EXCLUDED.is_active,
+                        updated_at = EXCLUDED.updated_at;
+                END IF;
+            END $$;
         ");
 
         var defaultPasswordHash = BCrypt.Net.BCrypt.HashPassword("123456");
 
-        // 2. Seed / Sync Users
+        // 2. Seed / Sync ShadowUsers for Trading Core
         var sellerId = Guid.Parse("11111111-1111-1111-1111-111111111111");
         var buyerId = Guid.Parse("22222222-2222-2222-2222-222222222222");
         var adminId = Guid.Parse("99999999-9999-9999-9999-999999999999");
 
-        var seller = await context.Users.FirstOrDefaultAsync(u => u.Id == sellerId);
-        if (seller == null)
+        var shadowSeller = await context.ShadowUsers.FirstOrDefaultAsync(u => u.Id == sellerId);
+        if (shadowSeller == null)
         {
-            seller = new User { Id = sellerId };
-            await context.Users.AddAsync(seller);
+            shadowSeller = new ShadowUser { Id = sellerId };
+            await context.ShadowUsers.AddAsync(shadowSeller);
         }
-        seller.Email = "linhtranlatao2004@gmail.com";
-        seller.FullName = "Nguyen Van Seller";
-        seller.PhoneNumber = "0901234567";
-        seller.PasswordHash = defaultPasswordHash;
-        seller.Role = UserRole.User;
-        seller.IsActive = true;
+        shadowSeller.Email = "linhtranlatao2004@gmail.com";
+        shadowSeller.FullName = "Nguyen Van Seller";
+        shadowSeller.PhoneNumber = "0901234567";
+        shadowSeller.Role = UserRole.User;
+        shadowSeller.IsActive = true;
 
-        var buyer = await context.Users.FirstOrDefaultAsync(u => u.Id == buyerId);
-        if (buyer == null)
+        var shadowBuyer = await context.ShadowUsers.FirstOrDefaultAsync(u => u.Id == buyerId);
+        if (shadowBuyer == null)
         {
-            buyer = new User { Id = buyerId };
-            await context.Users.AddAsync(buyer);
+            shadowBuyer = new ShadowUser { Id = buyerId };
+            await context.ShadowUsers.AddAsync(shadowBuyer);
         }
-        buyer.Email = "buyer@ticketshield.vn";
-        buyer.FullName = "Tran Thi Buyer";
-        buyer.PhoneNumber = "0987654321";
-        buyer.PasswordHash = defaultPasswordHash;
-        buyer.Role = UserRole.User;
-        buyer.IsActive = true;
+        shadowBuyer.Email = "buyer@ticketshield.vn";
+        shadowBuyer.FullName = "Tran Thi Buyer";
+        shadowBuyer.PhoneNumber = "0987654321";
+        shadowBuyer.Role = UserRole.User;
+        shadowBuyer.IsActive = true;
 
-        var admin = await context.Users.FirstOrDefaultAsync(u => u.Id == adminId);
-        if (admin == null)
+        var shadowAdmin = await context.ShadowUsers.FirstOrDefaultAsync(u => u.Id == adminId);
+        if (shadowAdmin == null)
         {
-            admin = new User { Id = adminId };
-            await context.Users.AddAsync(admin);
+            shadowAdmin = new ShadowUser { Id = adminId };
+            await context.ShadowUsers.AddAsync(shadowAdmin);
         }
-        admin.Email = "admin@ticketshield.vn";
-        admin.FullName = "System Administrator";
-        admin.PhoneNumber = "0999999999";
-        admin.PasswordHash = defaultPasswordHash;
-        admin.Role = UserRole.Admin;
-        admin.IsActive = true;
+        shadowAdmin.Email = "admin@ticketshield.vn";
+        shadowAdmin.FullName = "System Administrator";
+        shadowAdmin.PhoneNumber = "0999999999";
+        shadowAdmin.Role = UserRole.Admin;
+        shadowAdmin.IsActive = true;
 
         await context.SaveChangesAsync();
 
@@ -270,13 +311,13 @@ public static class DatabaseSeeder
             context.ResaleListings.RemoveRange(staleListings);
         }
 
-        // Delete any non-seed users if present
-        var nonSeedUsers = await context.Users
+        // Delete any non-seed shadow users if present
+        var nonSeedShadowUsers = await context.ShadowUsers
             .Where(u => u.Id != sellerId && u.Id != buyerId && u.Id != adminId)
             .ToListAsync();
-        if (nonSeedUsers.Any())
+        if (nonSeedShadowUsers.Any())
         {
-            context.Users.RemoveRange(nonSeedUsers);
+            context.ShadowUsers.RemoveRange(nonSeedShadowUsers);
         }
 
         await context.SaveChangesAsync();

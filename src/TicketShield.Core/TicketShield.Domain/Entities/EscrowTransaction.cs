@@ -23,8 +23,8 @@ public class EscrowTransaction : BaseEntity
 
     // Navigation
     public ResaleListing Listing { get; set; } = null!;
-    public User Buyer { get; set; } = null!;
-    public User Seller { get; set; } = null!;
+    public ShadowUser Buyer { get; set; } = null!;
+    public ShadowUser Seller { get; set; } = null!;
     public PayoutTransaction? PayoutTransaction { get; set; }
     public Dispute? Dispute { get; set; }
 }

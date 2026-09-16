@@ -20,5 +20,4 @@ public class PayoutTransaction : BaseEntity
 
     // Navigation
     public EscrowTransaction Escrow { get; set; } = null!;
-    public UserBankAccount? SellerBankAccount { get; set; }
 }

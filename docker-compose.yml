@@ -16,6 +16,120 @@ services:
       - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
     networks:
       - ticketshield_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: ticketshield_rabbitmq
+    restart: always
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - ticketshield_network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mock-organizer-api:
+    build:
+      context: .
+      dockerfile: src/MockOrganizer/MockOrganizer.API/Dockerfile
+    container_name: ticketshield_mock_organizer
+    restart: always
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__DefaultConnection: "Host=postgres;Port=5432;Database=organizer_db;Username=postgres;Password=postgres"
+    ports:
+      - "5001:5001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - ticketshield_network
+
+  identity-api:
+    build:
+      context: .
+      dockerfile: src/TicketShield.Identity/TicketShield.Identity.API/Dockerfile
+    container_name: ticketshield_identity_api
+    restart: always
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__IdentityConnection: "Host=postgres;Port=5432;Database=identity_db;Username=postgres;Password=postgres"
+      ConnectionStrings__DefaultConnection: "Host=postgres;Port=5432;Database=identity_db;Username=postgres;Password=postgres"
+      RabbitMQ__Host: "rabbitmq"
+      RabbitMQ__Port: "5672"
+      RabbitMQ__Username: "guest"
+      RabbitMQ__Password: "guest"
+      RabbitMQ__UseInMemory: "false"
+    ports:
+      - "5002:5002"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - ticketshield_network
+
+  core-api:
+    build:
+      context: .
+      dockerfile: src/TicketShield.Core/TicketShield.API/Dockerfile
+    container_name: ticketshield_core_api
+    restart: always
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__DefaultConnection: "Host=postgres;Port=5432;Database=ticketshield_db;Username=postgres;Password=postgres"
+      RabbitMQ__Host: "rabbitmq"
+      RabbitMQ__Port: "5672"
+      RabbitMQ__Username: "guest"
+      RabbitMQ__Password: "guest"
+      RabbitMQ__UseInMemory: "false"
+      OrganizerGrpc__Address: "http://mock-organizer-api:5001"
+    ports:
+      - "5003:5003"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      mock-organizer-api:
+        condition: service_started
+    networks:
+      - ticketshield_network
+
+  gateway:
+    build:
+      context: .
+      dockerfile: src/TicketShield.Gateway/Dockerfile
+    container_name: ticketshield_gateway
+    restart: always
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ReverseProxy__Clusters__identity-cluster__Destinations__destination1__Address: "http://identity-api:5002"
+      ReverseProxy__Clusters__core-cluster__Destinations__destination1__Address: "http://core-api:5003"
+    ports:
+      - "5000:5000"
+    depends_on:
+      identity-api:
+        condition: service_started
+      core-api:
+        condition: service_started
+    networks:
+      - ticketshield_network
 
 networks:
   ticketshield_network:
@@ -23,3 +137,4 @@ networks:
 
 volumes:
   postgres_data:
+  rabbitmq_data:

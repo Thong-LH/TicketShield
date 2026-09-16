@@ -1,6 +1,7 @@
 @echo off
-echo [Doppler Auto-Sync] Scanning and uploading local appsettings secrets to Doppler Cloud...
-python scripts/doppler_sync.py
-
-echo [Doppler Runtime] Starting TicketShield API with Doppler Secret Manager...
-doppler run -- dotnet run --project src/TicketShield.Core/TicketShield.API
+title TicketShield Microservices Launcher
+echo ==========================================================
+echo       TICKETSHIELD MICROSERVICES 1-CLICK LAUNCHER
+echo ==========================================================
+powershell -ExecutionPolicy Bypass -File scripts/start-all.ps1
+pause

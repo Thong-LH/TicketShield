@@ -9,7 +9,7 @@ public sealed class ResaleOptions
     public string ApiKey { get; set; } = "";
     public string HmacKey { get; set; } = "";
     public string OrganizerId { get; set; } = "";
-    public int DevelopmentGrpcPort { get; set; } = 5002;
+    public int DevelopmentGrpcPort { get; set; } = 5001;
     public int OtpLifetimeSeconds { get; set; } = 300;
     public int ResendCooldownSeconds { get; set; } = 60;
     public int MaxAttempts { get; set; } = 3;

@@ -11,8 +11,10 @@ using TicketShield.Application.Resale;
 using TicketShield.Contracts;
 using TicketShield.Contracts.Organizer.V1;
 using TicketShield.Infrastructure.ExternalServices.Organizer;
+using TicketShield.Infrastructure.Persistence;
 using TicketShield.Infrastructure.Persistence.Resale;
 using TicketShield.Domain.Entities;
+using TicketShield.Domain.Enums;
 
 namespace TicketShield.Infrastructure.Services;
 
@@ -21,13 +23,13 @@ namespace TicketShield.Infrastructure.Services;
 /// </summary>
 public class TicketVerificationService : ITicketVerificationService
 {
-    private readonly CoreResaleStore _db;
+    private readonly TicketShieldDbContext _db;
     private readonly IOrganizerGateway _gateway;
     private readonly OrganizerConnectionOptions _options;
     private readonly TimeProvider _clock;
 
     public TicketVerificationService(
-        CoreResaleStore db,
+        TicketShieldDbContext db,
         IOrganizerGateway gateway,
         OrganizerConnectionOptions options,
         TimeProvider clock)
@@ -43,6 +45,23 @@ public class TicketVerificationService : ITicketVerificationService
     private static string SessionKey(string id) => "session:" + id;
 
     private static string OpKey(string actor, string kind, string id) => $"op:{actor}:{kind}:{id}";
+
+    public async Task<T?> Read<T>(string id, CancellationToken ct) where T : class
+    {
+        var row = await _db.CoreResaleRecords.FindAsync([id], ct);
+        return row is null ? null : JsonSerializer.Deserialize<T>(row.Json);
+    }
+
+    public async Task Put<T>(string id, T value, CancellationToken ct)
+    {
+        var row = await _db.CoreResaleRecords.FindAsync([id], ct);
+        if (row is null)
+        {
+            row = new CoreResaleRow { Id = id };
+            _db.CoreResaleRecords.Add(row);
+        }
+        row.Json = JsonSerializer.Serialize(value);
+    }
 
     private string Fingerprint(object value)
     {
@@ -89,7 +108,7 @@ public class TicketVerificationService : ITicketVerificationService
         ValidateUuid(seller);
         ValidateUuid(id);
 
-        var session = await _db.Read<CoreSession>(SessionKey(id), ct)
+        var session = await Read<CoreSession>(SessionKey(id), ct)
             ?? throw Error("VERIFICATION_NOT_FOUND", 404);
 
         if (session.Seller != seller)
@@ -198,7 +217,7 @@ public class TicketVerificationService : ITicketVerificationService
         return await Transaction(async () =>
         {
             var key = OpKey(seller, kind, operationId);
-            var previous = await _db.Read<CoreOperation>(key, ct);
+            var previous = await Read<CoreOperation>(key, ct);
             if (previous is not null)
             {
                 if (previous.Fingerprint != fingerprint)
@@ -213,9 +232,8 @@ public class TicketVerificationService : ITicketVerificationService
             }
 
             var sellerId = Guid.Parse(seller);
-            var isActive = await _db.Database
-                .SqlQuery<int>($"SELECT 1 AS \"Value\" FROM users WHERE id={sellerId} AND is_active=true")
-                .AnyAsync(ct);
+            var isActive = await _db.ShadowUsers
+                .AnyAsync(u => u.Id == sellerId && u.IsActive, ct);
 
             if (!isActive)
             {
@@ -277,8 +295,8 @@ public class TicketVerificationService : ITicketVerificationService
             session.PendingOperationId = key;
             session.UpdatedAt = _clock.GetUtcNow();
 
-            await _db.Put(key, op, ct);
-            await _db.Put(SessionKey(session.Id), session, ct);
+            await Put(key, op, ct);
+            await Put(SessionKey(session.Id), session, ct);
 
             return (session, op);
         }, ct, ticket ?? sessionId);
@@ -405,8 +423,8 @@ public class TicketVerificationService : ITicketVerificationService
             };
             fresh.PendingOperationId = null;
 
-            await _db.Put(key, op, ct);
-            await _db.Put(SessionKey(fresh.Id), fresh, ct);
+            await Put(key, op, ct);
+            await Put(SessionKey(fresh.Id), fresh, ct);
             return true;
         }, ct, s.Id);
 
@@ -459,8 +477,8 @@ public class TicketVerificationService : ITicketVerificationService
             fresh.PendingOperationId = null;
             fresh.UpdatedAt = _clock.GetUtcNow();
 
-            await _db.Put(key, op, ct);
-            await _db.Put(SessionKey(fresh.Id), fresh, ct);
+            await Put(key, op, ct);
+            await Put(SessionKey(fresh.Id), fresh, ct);
             return await ResultAsync(fresh, ct);
         }, ct, s.Id);
 
@@ -472,7 +490,7 @@ public class TicketVerificationService : ITicketVerificationService
             return await ResultAsync(s, ct);
         }
 
-        var op = await _db.Read<CoreOperation>(s.PendingOperationId, ct);
+        var op = await Read<CoreOperation>(s.PendingOperationId, ct);
         if (op is null)
         {
             throw Error("OPERATION_NOT_FOUND", 500);
@@ -560,7 +578,7 @@ public class TicketVerificationService : ITicketVerificationService
             if (fresh.PendingOperationId == OpKey(seller, "Publish", key))
             {
                 fresh.Price = body.ResalePrice;
-                await _db.Put(SessionKey(fresh.Id), fresh, ct);
+                await Put(SessionKey(fresh.Id), fresh, ct);
             }
             return fresh;
         }, ct, s.Id);
@@ -614,16 +632,13 @@ public class TicketVerificationService : ITicketVerificationService
                 var organizer = Guid.Parse(_options.OrganizerId);
                 var now = _clock.GetUtcNow();
 
-                var eventAvailable = await _db.Database.SqlQuery<int>($@"
-                    SELECT 1 AS ""Value"" 
-                    FROM ticket_tiers t 
-                    JOIN events e ON e.id = t.event_id 
-                    WHERE t.id = {mapping.TierId} 
-                      AND e.id = {mapping.EventId} 
-                      AND e.organizer_id = {organizer} 
-                      AND e.resale_deadline > {now} 
-                      AND e.status = 'UPCOMING'
-                ").AnyAsync(ct);
+                var eventAvailable = await _db.TicketTiers
+                    .Where(t => t.Id == mapping.TierId 
+                             && t.EventId == mapping.EventId 
+                             && t.Event.OrganizerId == organizer 
+                             && t.Event.ResaleDeadline > now 
+                             && t.Event.Status == "UPCOMING")
+                    .AnyAsync(ct);
 
                 if (!eventAvailable)
                 {
@@ -638,17 +653,25 @@ public class TicketVerificationService : ITicketVerificationService
                     ? Convert.ToHexString(RandomNumberGenerator.GetBytes(16)).ToLowerInvariant()
                     : null;
 
-                await _db.Database.ExecuteSqlInterpolatedAsync($@"
-                    INSERT INTO resale_listings (
-                        id, event_id, tier_id, seller_id, original_ticket_code, 
-                        original_price, resale_price, applied_markup_percentage, is_private, private_access_token, 
-                        verification_status, listing_status, created_at, updated_at
-                    ) VALUES (
-                        {id}, {mapping.EventId}, {mapping.TierId}, {seller}, {s.TicketCode}, 
-                        {original}, {resale}, {markup}, {isPrivate}, {privateToken}, 
-                        'Verified', 'Verified', {now}, {now}
-                    )
-                ", ct);
+                var listing = new ResaleListing
+                {
+                    Id = id,
+                    EventId = mapping.EventId,
+                    TierId = mapping.TierId,
+                    SellerId = seller,
+                    OriginalTicketCode = s.TicketCode,
+                    OriginalPrice = original,
+                    ResalePrice = resale,
+                    AppliedMarkupPercentage = markup,
+                    IsPrivate = isPrivate,
+                    PrivateAccessToken = privateToken,
+                    VerificationStatus = VerificationStatus.Verified,
+                    ListingStatus = ListingStatus.Verified,
+                    CreatedAt = now,
+                    UpdatedAt = now
+                };
+
+                _db.ResaleListings.Add(listing);
 
                 fresh.State = "Published";
                 fresh.ListingId = id;
@@ -657,10 +680,10 @@ public class TicketVerificationService : ITicketVerificationService
                 fresh.PrivateAccessToken = privateToken;
                 op.State = "Succeeded";
 
-                await _db.Put(SessionKey(fresh.Id), fresh, ct);
-                await _db.Put(OpKey(s.Seller, op.Kind, op.Id), op, ct);
+                await Put(SessionKey(fresh.Id), fresh, ct);
+                await Put(OpKey(s.Seller, op.Kind, op.Id), op, ct);
                 // Store reverse index: listingId → verificationId for fast lookup by REST cancel endpoint
-                await _db.Put(ListingIndexKey(id), new ListingIndex { VerificationId = fresh.Id, Seller = fresh.Seller }, ct);
+                await Put(ListingIndexKey(id), new ListingIndex { VerificationId = fresh.Id, Seller = fresh.Seller }, ct);
                 return Result(fresh);
             }, ct, s.Id);
         }
@@ -703,14 +726,14 @@ public class TicketVerificationService : ITicketVerificationService
             var s = await Owned(seller, id, ct);
             if (s.State is "RequestPending" or "ConfirmPending" or "ResendPending")
             {
-                if (s.PendingOperationId is not null && await _db.Read<CoreOperation>(s.PendingOperationId, ct) is { } old)
+                if (s.PendingOperationId is not null && await Read<CoreOperation>(s.PendingOperationId, ct) is { } old)
                 {
                     old.State = "Superseded";
-                    await _db.Put(s.PendingOperationId, old, ct);
+                    await Put(s.PendingOperationId, old, ct);
                 }
                 s.PendingOperationId = null;
                 s.State = "Rejected";
-                await _db.Put(SessionKey(id), s, ct);
+                await Put(SessionKey(id), s, ct);
             }
             return true;
         }, ct, id);
@@ -739,9 +762,8 @@ public class TicketVerificationService : ITicketVerificationService
                         return true;
                     }
 
-                    var cancellable = await _db.Database
-                        .SqlQuery<int>($"SELECT 1 AS \"Value\" FROM resale_listings WHERE id={s.ListingId} AND listing_status='Verified'")
-                        .AnyAsync(ct);
+                    var cancellable = await _db.ResaleListings
+                        .AnyAsync(l => l.Id == s.ListingId && l.ListingStatus == ListingStatus.Verified, ct);
 
                     if (!cancellable)
                     {
@@ -789,22 +811,24 @@ public class TicketVerificationService : ITicketVerificationService
                 if (fresh.ListingId.HasValue)
                 {
                     var now = _clock.GetUtcNow();
-                    var updated = await _db.Database.ExecuteSqlInterpolatedAsync(
-                        $"UPDATE resale_listings SET listing_status='Cancelled', updated_at={now} WHERE id={fresh.ListingId} AND listing_status='Verified'",
-                        ct);
+                    var listing = await _db.ResaleListings
+                        .FirstOrDefaultAsync(l => l.Id == fresh.ListingId && l.ListingStatus == ListingStatus.Verified, ct);
 
-                    if (updated != 1)
+                    if (listing is null)
                     {
                         throw Error("LISTING_NOT_CANCELLABLE");
                     }
+
+                    listing.ListingStatus = ListingStatus.Cancelled;
+                    listing.UpdatedAt = now;
                 }
 
                 fresh.State = "Closed";
                 fresh.PendingOperationId = null;
                 op.State = "Succeeded";
 
-                await _db.Put(SessionKey(fresh.Id), fresh, ct);
-                await _db.Put(OpKey(s.Seller, op.Kind, op.Id), op, ct);
+                await Put(SessionKey(fresh.Id), fresh, ct);
+                await Put(OpKey(s.Seller, op.Kind, op.Id), op, ct);
                 return Result(fresh);
             }, ct, s.Id);
         }
@@ -848,7 +872,7 @@ public class TicketVerificationService : ITicketVerificationService
     public async Task RecoverPending(CancellationToken ct)
     {
         var now = _clock.GetUtcNow();
-        var rows = await _db.Records.AsNoTracking()
+        var rows = await _db.CoreResaleRecords.AsNoTracking()
             .Where(x => x.Id.StartsWith("op:"))
             .ToListAsync(ct);
 
@@ -868,7 +892,7 @@ public class TicketVerificationService : ITicketVerificationService
 
             await Transaction(async () =>
             {
-                var current = (await _db.Read<CoreOperation>(row.Id, ct))!;
+                var current = (await Read<CoreOperation>(row.Id, ct))!;
                 if (current.State != "Pending")
                 {
                     return false;
@@ -876,7 +900,7 @@ public class TicketVerificationService : ITicketVerificationService
 
                 current.Attempts++;
                 current.NextAttemptAt = now.AddSeconds(Math.Min(300, 5 * Math.Pow(2, Math.Min(current.Attempts, 6))));
-                await _db.Put(row.Id, current, ct);
+                await Put(row.Id, current, ct);
                 return true;
             }, ct, row.Id);
 
@@ -911,7 +935,7 @@ public class TicketVerificationService : ITicketVerificationService
     /// </summary>
     public async Task CancelByListingId(string seller, Guid listingId, string key, CancellationToken ct)
     {
-        var index = await _db.Read<ListingIndex>(ListingIndexKey(listingId), ct);
+        var index = await Read<ListingIndex>(ListingIndexKey(listingId), ct);
         if (index == null || index.Seller != seller)
         {
             // No gRPC session found for this listing (e.g. seeded data) - skip gRPC unlock gracefully
