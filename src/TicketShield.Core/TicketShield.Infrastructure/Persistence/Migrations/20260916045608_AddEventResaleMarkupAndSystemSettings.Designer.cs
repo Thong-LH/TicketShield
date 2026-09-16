@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using TicketShield.Infrastructure.Persistence;
@@ -11,9 +12,11 @@ using TicketShield.Infrastructure.Persistence;
 namespace TicketShield.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(TicketShieldDbContext))]
-    partial class TicketShieldDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260916045608_AddEventResaleMarkupAndSystemSettings")]
+    partial class AddEventResaleMarkupAndSystemSettings
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

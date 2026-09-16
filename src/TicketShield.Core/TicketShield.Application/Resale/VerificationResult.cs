@@ -12,4 +12,6 @@ public sealed record VerificationResult(
     string? DeliveryState,
     long? OriginalPrice,
     Guid? ListingId,
-    string? PrivateAccessToken = null);
+    string? PrivateAccessToken = null,
+    decimal? MarkupPercent = null,
+    long? PriceCeiling = null);
