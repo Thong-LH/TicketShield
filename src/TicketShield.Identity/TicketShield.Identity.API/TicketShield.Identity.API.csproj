@@ -19,8 +19,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\TicketShield.Core\TicketShield.Application\TicketShield.Application.csproj" />
-    <ProjectReference Include="..\..\TicketShield.Core\TicketShield.Infrastructure\TicketShield.Infrastructure.csproj" />
+    <ProjectReference Include="..\TicketShield.Identity.Application\TicketShield.Identity.Application.csproj" />
+    <ProjectReference Include="..\TicketShield.Identity.Infrastructure\TicketShield.Identity.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>

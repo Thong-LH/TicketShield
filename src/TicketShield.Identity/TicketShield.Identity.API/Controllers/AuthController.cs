@@ -1,13 +1,14 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using TicketShield.Application.Common.Models;
-using TicketShield.Application.Features.Auth.Commands.ForgotPassword;
-using TicketShield.Application.Features.Auth.Commands.GoogleLogin;
-using TicketShield.Application.Features.Auth.Commands.Login;
-using TicketShield.Application.Features.Auth.Commands.Register;
-using TicketShield.Application.Features.Auth.Commands.ResetPassword;
-using TicketShield.Application.Features.Auth.Models;
-using TicketShield.Application.Features.Auth.Queries.GetCurrentUser;
+using TicketShield.Identity.Application.Common.Models;
+using TicketShield.Identity.Application.Features.Auth.Commands.ForgotPassword;
+using TicketShield.Identity.Application.Features.Auth.Commands.GoogleLogin;
+using TicketShield.Identity.Application.Features.Auth.Commands.Login;
+using TicketShield.Identity.Application.Features.Auth.Commands.RefreshToken;
+using TicketShield.Identity.Application.Features.Auth.Commands.Register;
+using TicketShield.Identity.Application.Features.Auth.Commands.ResetPassword;
+using TicketShield.Identity.Application.Features.Auth.Models;
+using TicketShield.Identity.Application.Features.Auth.Queries.GetCurrentUser;
 
 namespace TicketShield.Identity.API.Controllers;
 
@@ -28,14 +29,30 @@ public class AuthController : ApiControllerBase
     }
 
     /// <summary>
-    /// SCRUM-43: Log in using email and password to receive JWT token
+    /// SCRUM-43: Log in using email and password to receive JWT token (15m) &amp; Refresh token (7d)
     /// </summary>
     [HttpPost("login")]
     [ProducesResponseType(typeof(ApiResponse<AuthResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> Login([FromBody] LoginCommand command)
     {
         var result = await Mediator.Send(command);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Blueprint 12: Refresh access token using valid refresh token (Token Rotation)
+    /// </summary>
+    [HttpPost("refresh-token")]
+    [ProducesResponseType(typeof(ApiResponse<AuthResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> RefreshToken([FromBody] RefreshTokenCommand command)
+    {
+        var ipAddress = HttpContext.Connection.RemoteIpAddress?.ToString();
+        var fullCommand = command with { IpAddress = ipAddress };
+        var result = await Mediator.Send(fullCommand);
         return Ok(result);
     }
 
@@ -46,7 +63,6 @@ public class AuthController : ApiControllerBase
     [HttpGet("me")]
     [ProducesResponseType(typeof(ApiResponse<UserProfileDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status401Unauthorized)]
-    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetCurrentUser()
     {
@@ -60,7 +76,7 @@ public class AuthController : ApiControllerBase
     [HttpPost("google")]
     [ProducesResponseType(typeof(ApiResponse<AuthResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status422UnprocessableEntity)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> GoogleLogin([FromBody] GoogleLoginCommand command)
     {
         var result = await Mediator.Send(command);
@@ -85,7 +101,6 @@ public class AuthController : ApiControllerBase
     [HttpPost("reset-password")]
     [ProducesResponseType(typeof(ApiResponse<string>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status422UnprocessableEntity)]
     public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordCommand command)
     {
         var result = await Mediator.Send(command);

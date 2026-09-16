@@ -46,4 +46,12 @@ Dựa trên sự cố tích hợp nhánh `feature/MF-02`, Agent BẮT BUỘC tu�
 - **Kỷ luật Push & Remote Sync:**
   - Tuyệt đối KHÔNG tự ý `git push` code lên remote repository nếu chưa có lệnh hoặc sự đồng ý từ người dùng.
 
+---
+
+## 6. Quy tắc Quản trị Task & Phân công Jira (Jira Task & Team Ownership Discipline)
+- **Mặc định Unassigned cho Task Mới & Tồn đọng (Default Unassigned):** Mọi task mới tạo hoặc task ở trạng thái chờ (`To Do`, `In Backlog`) BẮT BUỘC phải để trống người phụ trách (`assignee = None / Unassigned`).
+- **Chỉ Assign Task Đã Thực Sự Làm & Hoàn Thành (Assign Completed Work Only):** CHỈ ĐƯỢC assign task cho người dùng (Hoàng Thông) đối với những task mà hai bên ĐÃ THỰC TẾ VIẾT CODE VÀ HOÀN THÀNH (`Done`) trước khi đẩy lên Jira.
+- **Nghiêm Cấm Tự Ý Bulk Assign / Unassign Task Nhóm (No Team Task Tampering / No Task Stealing - KS):** Tuyệt đối KHÔNG chạy script tự động ghi đè hoặc bulk unassign các task của người khác trên bảng Jira chung của nhóm (Thịnh, Tùng, Linh). Mỗi thành viên tự quản lý task của mình, không can thiệp vào phân công của đồng đội.
+
+
 

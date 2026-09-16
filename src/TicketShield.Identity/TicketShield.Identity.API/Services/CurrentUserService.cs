@@ -1,5 +1,5 @@
 using System.Security.Claims;
-using TicketShield.Application.Common.Interfaces;
+using TicketShield.Identity.Application.Common.Interfaces;
 
 namespace TicketShield.Identity.API.Services;
 

@@ -12,5 +12,5 @@ public class DisputeMessage : BaseEntity
 
     // Navigation
     public Dispute Dispute { get; set; } = null!;
-    public User Sender { get; set; } = null!;
+    public ShadowUser Sender { get; set; } = null!;
 }

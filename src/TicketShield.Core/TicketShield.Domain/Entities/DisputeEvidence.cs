@@ -12,5 +12,5 @@ public class DisputeEvidence : BaseEntity
 
     // Navigation
     public Dispute Dispute { get; set; } = null!;
-    public User Uploader { get; set; } = null!;
+    public ShadowUser Uploader { get; set; } = null!;
 }

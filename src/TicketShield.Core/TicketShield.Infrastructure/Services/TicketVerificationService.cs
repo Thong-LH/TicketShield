@@ -232,9 +232,8 @@ public class TicketVerificationService : ITicketVerificationService
             }
 
             var sellerId = Guid.Parse(seller);
-            var isActive = await _db.Database
-                .SqlQuery<int>($"SELECT 1 AS \"Value\" FROM users WHERE id={sellerId} AND is_active=true")
-                .AnyAsync(ct);
+            var isActive = await _db.ShadowUsers
+                .AnyAsync(u => u.Id == sellerId && u.IsActive, ct);
 
             if (!isActive)
             {

@@ -21,7 +21,7 @@ public class PrivateShareTokenSecurityTests
     private const string ShareToken = "a1b2c3d4e5f67890a1b2c3d4e5f67890";
     private const string TicketCode = "ATSH-GA-999";
 
-    private static (TicketShieldDbContext Db, ResaleListing Listing, User Seller, User OtherUser) CreateDbWithPrivateListing(
+    private static (TicketShieldDbContext Db, ResaleListing Listing, ShadowUser Seller, ShadowUser OtherUser) CreateDbWithPrivateListing(
         ListingStatus status = ListingStatus.Verified)
     {
         var options = new DbContextOptionsBuilder<TicketShieldDbContext>()
@@ -42,8 +42,8 @@ public class PrivateShareTokenSecurityTests
             Organizer = organizer
         };
         var tier = new TicketTier { Id = Guid.NewGuid(), EventId = testEvent.Id, TierName = "GA Standing", OriginalPrice = 1_200_000m, Event = testEvent };
-        var seller = new User { Id = Guid.NewGuid(), Email = "private-seller@ticketshield.vn", FullName = "Private Seller", Role = UserRole.User };
-        var otherUser = new User { Id = Guid.NewGuid(), Email = "other-user@ticketshield.vn", FullName = "Other User", Role = UserRole.User };
+        var seller = new ShadowUser { Id = Guid.NewGuid(), Email = "private-seller@ticketshield.vn", FullName = "Private Seller" };
+        var otherUser = new ShadowUser { Id = Guid.NewGuid(), Email = "other-user@ticketshield.vn", FullName = "Other User" };
         var listing = new ResaleListing
         {
             Id = Guid.NewGuid(),
@@ -61,7 +61,7 @@ public class PrivateShareTokenSecurityTests
         context.Organizers.Add(organizer);
         context.Events.Add(testEvent);
         context.TicketTiers.Add(tier);
-        context.Users.AddRange(seller, otherUser);
+        context.ShadowUsers.AddRange(seller, otherUser);
         context.ResaleListings.Add(listing);
         context.SaveChanges();
         return (context, listing, seller, otherUser);

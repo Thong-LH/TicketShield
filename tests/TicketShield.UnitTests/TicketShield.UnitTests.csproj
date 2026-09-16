@@ -26,6 +26,9 @@
     <ProjectReference Include="..\..\src\TicketShield.Core\TicketShield.Application\TicketShield.Application.csproj" />
     <ProjectReference Include="..\..\src\TicketShield.Core\TicketShield.Infrastructure\TicketShield.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\TicketShield.Core\TicketShield.API\TicketShield.API.csproj" />
+    <ProjectReference Include="..\..\src\TicketShield.Identity\TicketShield.Identity.Domain\TicketShield.Identity.Domain.csproj" />
+    <ProjectReference Include="..\..\src\TicketShield.Identity\TicketShield.Identity.Application\TicketShield.Identity.Application.csproj" />
+    <ProjectReference Include="..\..\src\TicketShield.Identity\TicketShield.Identity.Infrastructure\TicketShield.Identity.Infrastructure.csproj" />
   </ItemGroup>
 
   <ItemGroup>

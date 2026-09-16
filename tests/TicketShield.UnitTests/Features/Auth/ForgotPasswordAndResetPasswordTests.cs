@@ -1,35 +1,36 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
-using TicketShield.Application.Features.Auth.Commands.ForgotPassword;
-using TicketShield.Application.Features.Auth.Commands.ResetPassword;
-using TicketShield.Domain.Entities;
-using TicketShield.Domain.Enums;
-using TicketShield.Domain.Exceptions;
-using TicketShield.Infrastructure.Persistence;
-using TicketShield.Infrastructure.Services;
+using TicketShield.Identity.Application.Features.Auth.Commands.ForgotPassword;
+using TicketShield.Identity.Application.Features.Auth.Commands.ResetPassword;
+using TicketShield.Identity.Domain.Entities;
+using TicketShield.Identity.Domain.Enums;
+using TicketShield.Identity.Domain.Exceptions;
+using TicketShield.Identity.Infrastructure.Persistence;
+using TicketShield.Identity.Infrastructure.Services;
 using Xunit;
 
 namespace TicketShield.UnitTests.Features.Auth;
 
 public class ForgotPasswordAndResetPasswordTests
 {
-    private static (TicketShieldDbContext db, BcryptPasswordHasher hasher, MockEmailService emailService) CreateMocks()
+    private static (IdentityDbContext db, MockEmailService emailService) CreateMocks()
     {
-        var options = new DbContextOptionsBuilder<TicketShieldDbContext>()
+        var options = new DbContextOptionsBuilder<IdentityDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
-        var db = new TicketShieldDbContext(options);
-        var hasher = new BcryptPasswordHasher();
-        var emailService = new MockEmailService(NullLogger<MockEmailService>.Instance);
+        var db = new IdentityDbContext(options);
+        var config = new ConfigurationBuilder().Build();
+        var emailService = new MockEmailService(NullLogger<MockEmailService>.Instance, config);
 
-        return (db, hasher, emailService);
+        return (db, emailService);
     }
 
     [Fact]
     public async Task ForgotPassword_WhenEmailExists_ShouldGenerateOtpAndExpiry()
     {
         // Arrange
-        var (db, _, emailService) = CreateMocks();
+        var (db, emailService) = CreateMocks();
         var user = new User
         {
             Id = Guid.NewGuid(),
@@ -42,7 +43,7 @@ public class ForgotPasswordAndResetPasswordTests
         await db.SaveChangesAsync();
 
         var handler = new ForgotPasswordCommandHandler(db, emailService);
-        var command = new ForgotPasswordCommand { Email = "forgotuser@ticketshield.vn" };
+        var command = new ForgotPasswordCommand("forgotuser@ticketshield.vn");
 
         // Act
         var result = await handler.Handle(command, CancellationToken.None);
@@ -60,13 +61,13 @@ public class ForgotPasswordAndResetPasswordTests
     public async Task ResetPassword_WhenOtpIsValid_ShouldUpdatePasswordHashAndClearOtp()
     {
         // Arrange
-        var (db, hasher, _) = CreateMocks();
+        var (db, _) = CreateMocks();
         var user = new User
         {
             Id = Guid.NewGuid(),
             Email = "resetuser@ticketshield.vn",
             FullName = "Reset User",
-            PasswordHash = hasher.HashPassword("OldPassword123!"),
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword("OldPassword123!"),
             PasswordResetOtp = "654321",
             PasswordResetOtpExpiresAt = DateTimeOffset.UtcNow.AddMinutes(10),
             Role = UserRole.User,
@@ -75,13 +76,12 @@ public class ForgotPasswordAndResetPasswordTests
         db.Users.Add(user);
         await db.SaveChangesAsync();
 
-        var handler = new ResetPasswordCommandHandler(db, hasher);
-        var command = new ResetPasswordCommand
-        {
-            Email = "resetuser@ticketshield.vn",
-            Otp = "654321",
-            NewPassword = "BrandNewPassword789!"
-        };
+        var handler = new ResetPasswordCommandHandler(db);
+        var command = new ResetPasswordCommand(
+            Email: "resetuser@ticketshield.vn",
+            Otp: "654321",
+            NewPassword: "BrandNewPassword789!"
+        );
 
         // Act
         var result = await handler.Handle(command, CancellationToken.None);
@@ -92,14 +92,14 @@ public class ForgotPasswordAndResetPasswordTests
         Assert.NotNull(updatedUser);
         Assert.Null(updatedUser.PasswordResetOtp);
         Assert.Null(updatedUser.PasswordResetOtpExpiresAt);
-        Assert.True(hasher.VerifyPassword("BrandNewPassword789!", updatedUser.PasswordHash!));
+        Assert.True(BCrypt.Net.BCrypt.Verify("BrandNewPassword789!", updatedUser.PasswordHash!));
     }
 
     [Fact]
-    public async Task ResetPassword_WhenOtpIsExpired_ShouldThrowBusinessRuleViolationException()
+    public async Task ResetPassword_WhenOtpIsExpired_ShouldThrowBadRequestException()
     {
         // Arrange
-        var (db, hasher, _) = CreateMocks();
+        var (db, _) = CreateMocks();
         var user = new User
         {
             Id = Guid.NewGuid(),
@@ -113,16 +113,15 @@ public class ForgotPasswordAndResetPasswordTests
         db.Users.Add(user);
         await db.SaveChangesAsync();
 
-        var handler = new ResetPasswordCommandHandler(db, hasher);
-        var command = new ResetPasswordCommand
-        {
-            Email = "expireduser@ticketshield.vn",
-            Otp = "112233",
-            NewPassword = "BrandNewPassword789!"
-        };
+        var handler = new ResetPasswordCommandHandler(db);
+        var command = new ResetPasswordCommand(
+            Email: "expireduser@ticketshield.vn",
+            Otp: "112233",
+            NewPassword: "BrandNewPassword789!"
+        );
 
         // Act & Assert
-        await Assert.ThrowsAsync<BusinessRuleViolationException>(
+        await Assert.ThrowsAsync<BadRequestException>(
             () => handler.Handle(command, CancellationToken.None));
     }
 }

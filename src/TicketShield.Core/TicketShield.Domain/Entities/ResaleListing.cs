@@ -26,7 +26,7 @@ public class ResaleListing : BaseEntity
     // Navigation
     public Event Event { get; set; } = null!;
     public TicketTier Tier { get; set; } = null!;
-    public User Seller { get; set; } = null!;
+    public ShadowUser Seller { get; set; } = null!;
     public EscrowTransaction? EscrowTransaction { get; set; }
 
     // Computed Domain Properties

@@ -1,8 +1,7 @@
 using System.Net;
 using System.Text.Json;
-using FluentValidation;
-using TicketShield.Application.Common.Models;
-using TicketShield.Domain.Exceptions;
+using TicketShield.Identity.Application.Common.Models;
+using TicketShield.Identity.Domain.Exceptions;
 
 namespace TicketShield.Identity.API.Middlewares;
 
@@ -25,7 +24,7 @@ public class GlobalExceptionHandlingMiddleware
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "An unhandled exception occurred in Identity API: {Message}", ex.Message);
+            _logger.LogError(ex, "Đã xảy ra lỗi không xử lý trong Identity API: {Message}", ex.Message);
             await HandleExceptionAsync(context, ex);
         }
     }
@@ -39,37 +38,32 @@ public class GlobalExceptionHandlingMiddleware
             NotFoundException nfEx => (
                 (int)HttpStatusCode.NotFound,
                 nfEx.Message,
-                null as List<string>),
+                null as IDictionary<string, string[]>),
 
             UnauthorizedException uaEx => (
                 (int)HttpStatusCode.Unauthorized,
                 uaEx.Message,
-                null as List<string>),
+                null as IDictionary<string, string[]>),
 
             ForbiddenAccessException faEx => (
                 (int)HttpStatusCode.Forbidden,
                 faEx.Message,
-                null as List<string>),
+                null as IDictionary<string, string[]>),
 
-            BusinessRuleViolationException brEx => (
-                (int)HttpStatusCode.UnprocessableEntity,
-                brEx.Message,
-                null as List<string>),
-
-            DomainException dEx => (
+            BadRequestException brEx => (
                 (int)HttpStatusCode.BadRequest,
-                dEx.Message,
-                null as List<string>),
+                brEx.Message,
+                null as IDictionary<string, string[]>),
 
             ValidationException vEx => (
                 (int)HttpStatusCode.BadRequest,
-                "Validation failed",
-                vEx.Errors.Select(e => e.ErrorMessage).ToList()),
+                "Dữ liệu đầu vào không hợp lệ.",
+                vEx.Errors),
 
             _ => (
                 (int)HttpStatusCode.InternalServerError,
-                "An unexpected internal error occurred",
-                null as List<string>)
+                "Đã xảy ra lỗi máy chủ nội bộ. Vui lòng thử lại sau.",
+                null as IDictionary<string, string[]>)
         };
 
         context.Response.StatusCode = statusCode;

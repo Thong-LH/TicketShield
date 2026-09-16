@@ -1,15 +1,14 @@
 using System.Reflection;
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
-using TicketShield.Application;
-using TicketShield.Application.Common.Interfaces;
 using TicketShield.Identity.API.Middlewares;
 using TicketShield.Identity.API.Services;
-using TicketShield.Infrastructure;
-using TicketShield.Infrastructure.Persistence;
+using TicketShield.Identity.Application;
+using TicketShield.Identity.Application.Common.Interfaces;
+using TicketShield.Identity.Infrastructure;
+using TicketShield.Identity.Infrastructure.Persistence;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
@@ -77,9 +76,9 @@ builder.Services.AddSwaggerGen(c =>
     }
 });
 
-// Clean Architecture Layers
-builder.Services.AddApplication();
-builder.Services.AddInfrastructure(builder.Configuration);
+// Clean Architecture Layers for Identity Service
+builder.Services.AddIdentityApplication();
+builder.Services.AddIdentityInfrastructure(builder.Configuration);
 
 // Current User & HttpContext
 builder.Services.AddHttpContextAccessor();
@@ -105,26 +104,26 @@ builder.Services.AddAuthentication(options =>
         ValidateIssuerSigningKey = true,
         ValidIssuer = jwtIssuer,
         ValidAudience = jwtAudience,
-        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret))
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret)),
+        ClockSkew = TimeSpan.Zero
     };
 });
 
 var app = builder.Build();
 
-// Auto-migrate and seed database on startup
+// Auto-seed Identity Database
 using (var scope = app.Services.CreateScope())
 {
     var services = scope.ServiceProvider;
-    var logger = services.GetRequiredService<ILogger<Program>>();
     try
     {
-        var dbContext = services.GetRequiredService<TicketShieldDbContext>();
-        await DatabaseSeeder.SeedTicketShieldAsync(dbContext);
-        logger.LogInformation("Identity database auto-migrated and verified successfully.");
+        var identityContext = services.GetRequiredService<IdentityDbContext>();
+        await IdentityDatabaseSeeder.SeedAsync(identityContext);
     }
     catch (Exception ex)
     {
-        logger.LogError(ex, "An error occurred while auto-migrating Identity database.");
+        var logger = services.GetRequiredService<ILogger<Program>>();
+        logger.LogError(ex, "Lỗi xảy ra trong quá trình khởi tạo & seed dữ liệu Identity DB.");
     }
 }
 
@@ -133,13 +132,15 @@ app.UseMiddleware<GlobalExceptionHandlingMiddleware>();
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
-    app.UseSwaggerUI();
+    app.UseSwaggerUI(c =>
+    {
+        c.SwaggerEndpoint("/swagger/v1/swagger.json", "TicketShield Identity API v1");
+    });
 }
 
 app.UseCors("AllowFrontend");
 app.UseAuthentication();
 app.UseAuthorization();
-
 app.MapControllers();
 
 app.Run();

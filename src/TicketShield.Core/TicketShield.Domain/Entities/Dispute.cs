@@ -19,8 +19,8 @@ public class Dispute : BaseEntity
 
     // Navigation
     public EscrowTransaction Escrow { get; set; } = null!;
-    public User Buyer { get; set; } = null!;
-    public User? Resolver { get; set; }
+    public ShadowUser Buyer { get; set; } = null!;
+    public ShadowUser? Resolver { get; set; }
     public ICollection<DisputeEvidence> Evidences { get; set; } = new List<DisputeEvidence>();
     public ICollection<DisputeMessage> Messages { get; set; } = new List<DisputeMessage>();
 }

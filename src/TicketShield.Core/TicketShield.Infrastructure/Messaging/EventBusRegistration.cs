@@ -1,6 +1,7 @@
 using MassTransit;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using TicketShield.Infrastructure.Messaging.Consumers;
 
 namespace TicketShield.Infrastructure.Messaging;
 
@@ -18,6 +19,10 @@ public static class EventBusRegistration
         services.AddMassTransit(x =>
         {
             x.SetKebabCaseEndpointNameFormatter();
+
+            // Đăng ký Consumers đồng bộ Shadow User
+            x.AddConsumer<UserCreatedConsumer>();
+            x.AddConsumer<UserProfileUpdatedConsumer>();
 
             if (useInMemory)
             {

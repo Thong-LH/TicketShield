@@ -11,8 +11,6 @@ public class TicketShieldDbContext : DbContext, ITicketShieldDbContext
     {
     }
 
-    public DbSet<User> Users => Set<User>();
-    public DbSet<UserBankAccount> UserBankAccounts => Set<UserBankAccount>();
     public DbSet<Organizer> Organizers => Set<Organizer>();
     public DbSet<Event> Events => Set<Event>();
     public DbSet<TicketTier> TicketTiers => Set<TicketTier>();
@@ -24,27 +22,18 @@ public class TicketShieldDbContext : DbContext, ITicketShieldDbContext
     public DbSet<DisputeMessage> DisputeMessages => Set<DisputeMessage>();
     public DbSet<SystemSetting> SystemSettings => Set<SystemSetting>();
     public DbSet<CoreResaleRow> CoreResaleRecords => Set<CoreResaleRow>();
+    public DbSet<ShadowUser> ShadowUsers => Set<ShadowUser>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
 
-        // User
-        modelBuilder.Entity<User>(entity =>
+        // ShadowUser (Read-model for Trading Core synced from Identity Microservice)
+        modelBuilder.Entity<ShadowUser>(entity =>
         {
             entity.HasKey(e => e.Id);
-            entity.HasIndex(e => e.Email).IsUnique();
+            entity.HasIndex(e => e.Email);
             entity.Property(e => e.Role).HasConversion<string>();
-        });
-
-        // UserBankAccount
-        modelBuilder.Entity<UserBankAccount>(entity =>
-        {
-            entity.HasKey(e => e.Id);
-            entity.HasOne(e => e.User)
-                .WithMany(u => u.BankAccounts)
-                .HasForeignKey(e => e.UserId)
-                .OnDelete(DeleteBehavior.Cascade);
         });
 
         // Organizer
@@ -127,7 +116,7 @@ public class TicketShieldDbContext : DbContext, ITicketShieldDbContext
                 .OnDelete(DeleteBehavior.Restrict);
 
             entity.HasOne(e => e.Buyer)
-                .WithMany(u => u.PurchasedEscrows)
+                .WithMany()
                 .HasForeignKey(e => e.BuyerId)
                 .OnDelete(DeleteBehavior.Restrict);
 
@@ -149,11 +138,6 @@ public class TicketShieldDbContext : DbContext, ITicketShieldDbContext
                 .WithOne(es => es.PayoutTransaction)
                 .HasForeignKey<PayoutTransaction>(e => e.EscrowId)
                 .OnDelete(DeleteBehavior.Restrict);
-
-            entity.HasOne(e => e.SellerBankAccount)
-                .WithMany(b => b.Payouts)
-                .HasForeignKey(e => e.SellerBankAccountId)
-                .OnDelete(DeleteBehavior.SetNull);
         });
 
         // Dispute
@@ -172,7 +156,7 @@ public class TicketShieldDbContext : DbContext, ITicketShieldDbContext
                 .OnDelete(DeleteBehavior.Restrict);
 
             entity.HasOne(e => e.Buyer)
-                .WithMany(u => u.Disputes)
+                .WithMany()
                 .HasForeignKey(e => e.BuyerId)
                 .OnDelete(DeleteBehavior.Restrict);
 

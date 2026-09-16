@@ -11,7 +11,7 @@ namespace TicketShield.UnitTests.Features.ResaleListings;
 
 public class GetSellerListingsQueryHandlerTests
 {
-    private static (TicketShieldDbContext dbContext, User seller1, User seller2) CreateInMemoryDbContext()
+    private static (TicketShieldDbContext dbContext, ShadowUser seller1, ShadowUser seller2) CreateInMemoryDbContext()
     {
         var options = new DbContextOptionsBuilder<TicketShieldDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
@@ -44,25 +44,23 @@ public class GetSellerListingsQueryHandlerTests
             OriginalPrice = 2_000_000m,
             Event = testEvent
         };
-        var seller1 = new User
+        var seller1 = new ShadowUser
         {
             Id = Guid.NewGuid(),
             Email = "seller1@ticketshield.vn",
-            FullName = "Nguyen Van Seller One",
-            Role = UserRole.User
+            FullName = "Nguyen Van Seller One"
         };
-        var seller2 = new User
+        var seller2 = new ShadowUser
         {
             Id = Guid.NewGuid(),
             Email = "seller2@ticketshield.vn",
-            FullName = "Le Van Seller Two",
-            Role = UserRole.User
+            FullName = "Le Van Seller Two"
         };
 
         context.Organizers.Add(organizer);
         context.Events.Add(testEvent);
         context.TicketTiers.Add(tier);
-        context.Users.AddRange(seller1, seller2);
+        context.ShadowUsers.AddRange(seller1, seller2);
         context.SaveChanges();
 
         return (context, seller1, seller2);

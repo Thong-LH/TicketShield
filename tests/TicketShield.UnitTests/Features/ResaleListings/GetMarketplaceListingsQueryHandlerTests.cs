@@ -63,18 +63,17 @@ public class GetMarketplaceListingsQueryHandlerTests
             Event = secondEvent
         };
 
-        var seller = new User
+        var seller = new ShadowUser
         {
             Id = Guid.NewGuid(),
             Email = "seller@ticketshield.vn",
-            FullName = "Nguyen Van Seller",
-            Role = UserRole.User
+            FullName = "Nguyen Van Seller"
         };
 
         context.Organizers.Add(organizer);
         context.Events.AddRange(testEvent, secondEvent);
         context.TicketTiers.AddRange(tier1, tier2);
-        context.Users.Add(seller);
+        context.ShadowUsers.Add(seller);
 
         // 1. Verified Public Listing (Event 1)
         context.ResaleListings.Add(new ResaleListing

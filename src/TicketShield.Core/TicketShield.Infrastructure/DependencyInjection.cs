@@ -20,12 +20,6 @@ public static class DependencyInjection
         services.AddScoped<ITicketShieldDbContext>(provider =>
             provider.GetRequiredService<TicketShieldDbContext>());
 
-        // Auth & Security Services
-        services.AddSingleton<IPasswordHasher, Services.BcryptPasswordHasher>();
-        services.AddScoped<IJwtTokenGenerator, Services.JwtTokenGenerator>();
-        services.AddScoped<IEmailService, Services.MockEmailService>();
-        services.AddScoped<IGoogleAuthService, Services.GoogleAuthService>();
-
         // Dynamic Resale Fee Services (BE-CORE-2.6.2)
         services.AddMemoryCache();
         services.AddScoped<ISystemSettingRepository, Persistence.Repositories.SystemSettingRepository>();
