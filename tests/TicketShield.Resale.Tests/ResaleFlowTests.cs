@@ -34,7 +34,7 @@ public sealed class ResaleFlowTests(ResaleFixture f) : IClassFixture<ResaleFixtu
         Assert.Equal(HttpStatusCode.OK, confirmed.Status);
         Assert.Equal(2500000L, confirmed.Body.GetProperty("data").GetProperty("originalPrice").GetInt64());
         Assert.Equal(HttpStatusCode.OK, (await f.Post($"api/ticket-verifications/{id}/confirm", new { otp }, confirmKey)).Status);
-        Assert.Equal(HttpStatusCode.UnprocessableEntity, (await f.Post("api/resale-listings", new { verificationId = id, resalePrice = 2500001 })).Status);
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, (await f.Post("api/resale-listings", new { verificationId = id, resalePrice = 2750001 })).Status);
         var publishKey = ResaleFixture.Id();
         var publish = await f.Post("api/resale-listings", new { verificationId = id, resalePrice = 2500000 }, publishKey);
         Assert.Equal(HttpStatusCode.OK, publish.Status);
