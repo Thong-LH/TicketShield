@@ -116,6 +116,7 @@ public static class DatabaseSeeder
         ev.EventEndAt = DateTimeOffset.UtcNow.AddDays(30).AddHours(4);
         ev.ResaleDeadline = DateTimeOffset.UtcNow.AddDays(30).AddHours(-2);
         ev.Status = "UPCOMING";
+        ev.MaxResaleMarkupPercentage = 10m;
 
         var tierVip = await context.TicketTiers.FirstOrDefaultAsync(t => t.Id == tierVipId);
         if (tierVip == null)
@@ -185,6 +186,7 @@ public static class DatabaseSeeder
         sampleListing.OriginalTicketCode = "ATSH-GA-999";
         sampleListing.OriginalPrice = 1200000m;
         sampleListing.ResalePrice = 1000000m;
+        sampleListing.AppliedMarkupPercentage = 10m;
         sampleListing.IsPrivate = false;
         sampleListing.PrivateAccessToken = null;
         sampleListing.VerificationStatus = VerificationStatus.Verified;

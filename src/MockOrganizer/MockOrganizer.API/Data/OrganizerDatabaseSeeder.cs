@@ -14,11 +14,14 @@ public static class OrganizerDatabaseSeeder
         var ticket1Id = Guid.Parse("a0000000-0000-0000-0000-000000000001");
         var ticket2Id = Guid.Parse("a0000000-0000-0000-0000-000000000002");
         var ticket3Id = Guid.Parse("a0000000-0000-0000-0000-000000000003");
-        var seedIds = new HashSet<Guid> { ticket1Id, ticket2Id, ticket3Id };
+        var ticket4Id = Guid.Parse("a0000000-0000-0000-0000-000000000004");
+        var ticket5Id = Guid.Parse("a0000000-0000-0000-0000-000000000005");
+        var seedIds = new HashSet<Guid> { ticket1Id, ticket2Id, ticket3Id, ticket4Id, ticket5Id };
 
-        // Clean operational logs & OTPs
+        // Clean operational logs, OTPs, and leftover resale locks so cancelled tickets can request OTP again
         context.MockOtps.RemoveRange(await context.MockOtps.ToListAsync());
         context.GateAccessLogs.RemoveRange(await context.GateAccessLogs.ToListAsync());
+        await context.Database.ExecuteSqlRawAsync("DELETE FROM organizer_resale_records");
 
         // Remove any non-seed tickets
         var extraTickets = await context.MockTickets.Where(t => !seedIds.Contains(t.Id)).ToListAsync();
@@ -72,6 +75,36 @@ public static class OrganizerDatabaseSeeder
         ticket3.OwnerPhone = "0901234567";
         ticket3.OwnerName = "Nguyen Van Seller";
         ticket3.Status = "USED";
+
+        var ticket4 = await context.MockTickets.FirstOrDefaultAsync(t => t.Id == ticket4Id);
+        if (ticket4 == null)
+        {
+            ticket4 = new MockTicket { Id = ticket4Id };
+            await context.MockTickets.AddAsync(ticket4);
+        }
+        ticket4.TicketCode = "ATSH-VIP-887";
+        ticket4.EventName = "Anh Trai Say Hi Concert 2026";
+        ticket4.SeatZone = "VIP Zone A - Row 2 Seat 08";
+        ticket4.OriginalPrice = 2500000;
+        ticket4.OwnerEmail = "linhtranlatao2004@gmail.com";
+        ticket4.OwnerPhone = "0901234567";
+        ticket4.OwnerName = "Nguyen Van Seller";
+        ticket4.Status = "VALID";
+
+        var ticket5 = await context.MockTickets.FirstOrDefaultAsync(t => t.Id == ticket5Id);
+        if (ticket5 == null)
+        {
+            ticket5 = new MockTicket { Id = ticket5Id };
+            await context.MockTickets.AddAsync(ticket5);
+        }
+        ticket5.TicketCode = "ATSH-VIP-886";
+        ticket5.EventName = "Anh Trai Say Hi Concert 2026";
+        ticket5.SeatZone = "VIP Zone A - Row 3 Seat 04";
+        ticket5.OriginalPrice = 2500000;
+        ticket5.OwnerEmail = "linhtranlatao2004@gmail.com";
+        ticket5.OwnerPhone = "0901234567";
+        ticket5.OwnerName = "Nguyen Van Seller";
+        ticket5.Status = "VALID";
 
         await context.SaveChangesAsync();
     }
