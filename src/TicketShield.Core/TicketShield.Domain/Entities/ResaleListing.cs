@@ -12,6 +12,12 @@ public class ResaleListing : BaseEntity
     public string OriginalTicketCode { get; set; } = string.Empty;
     public decimal OriginalPrice { get; set; }
     public decimal ResalePrice { get; set; }
+
+    /// <summary>
+    /// Markup percent copied from the Event at publish time. Later Event edits do not change live listings.
+    /// </summary>
+    public decimal AppliedMarkupPercentage { get; set; }
+
     public bool IsPrivate { get; set; } = false;
     public string? PrivateAccessToken { get; set; }
     public VerificationStatus VerificationStatus { get; set; } = VerificationStatus.Verified;
@@ -31,14 +37,27 @@ public class ResaleListing : BaseEntity
         : string.Concat(OriginalTicketCode.AsSpan(0, 2), new string('*', OriginalTicketCode.Length - 4), OriginalTicketCode.AsSpan(OriginalTicketCode.Length - 2));
 
     /// <summary>
-    /// Global Law 1 (Price Ceiling Law): ResalePrice must be <= OriginalPrice.
+    /// Global Law 1 (Price Ceiling Law): ResalePrice must be at or below
+    /// Truncate(OriginalPrice × (1 + markupPercent / 100)).
     /// </summary>
-    public void ValidatePriceCeiling()
+    public void ValidatePriceCeiling(decimal? markupPercent = null)
     {
-        if (ResalePrice > OriginalPrice)
+        var percent = markupPercent ?? AppliedMarkupPercentage;
+        var ceiling = ComputePriceCeiling(OriginalPrice, percent);
+        if (ResalePrice > ceiling)
         {
             throw new BusinessRuleViolationException(
-                $"Giá bán lại ({ResalePrice:N0} VNĐ) không được vượt quá giá gốc ({OriginalPrice:N0} VNĐ) theo Quy định chống đầu cơ của TicketShield.");
+                $"Giá bán lại ({ResalePrice:N0} VNĐ) không được vượt quá trần {ceiling:N0} VNĐ (giá gốc {OriginalPrice:N0} VNĐ + {percent:0.##}%).");
         }
+    }
+
+    public static decimal ComputePriceCeiling(decimal originalPrice, decimal markupPercent)
+    {
+        if (markupPercent < 0m || markupPercent > 100m)
+        {
+            throw new BusinessRuleViolationException("Biên độ trần giá (markup) phải nằm trong khoảng 0% đến 100%.");
+        }
+
+        return decimal.Truncate(originalPrice * (1m + markupPercent / 100m));
     }
 }

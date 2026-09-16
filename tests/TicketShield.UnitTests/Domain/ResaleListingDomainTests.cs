@@ -17,7 +17,7 @@ public class ResaleListingDomainTests
         };
 
         // Act & Assert
-        listing.ValidatePriceCeiling();
+        listing.ValidatePriceCeiling(0m);
     }
 
     [Fact]
@@ -31,7 +31,7 @@ public class ResaleListingDomainTests
         };
 
         // Act & Assert
-        listing.ValidatePriceCeiling();
+        listing.ValidatePriceCeiling(0m);
     }
 
     [Fact]
@@ -45,7 +45,7 @@ public class ResaleListingDomainTests
         };
 
         // Act & Assert
-        var exception = Assert.Throws<BusinessRuleViolationException>(() => listing.ValidatePriceCeiling());
-        Assert.Contains("không được vượt quá giá gốc", exception.Message);
+        var exception = Assert.Throws<BusinessRuleViolationException>(() => listing.ValidatePriceCeiling(0m));
+        Assert.Contains("không được vượt quá", exception.Message);
     }
 }

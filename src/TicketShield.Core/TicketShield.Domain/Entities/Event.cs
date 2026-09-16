@@ -17,6 +17,11 @@ public class Event : BaseEntity
     public DateTimeOffset ResaleDeadline { get; set; }
     public string Status { get; set; } = "UPCOMING";
 
+    /// <summary>
+    /// Extra percent above face value that a resale may charge (0 = old 100% ceiling). Admin-owned.
+    /// </summary>
+    public decimal MaxResaleMarkupPercentage { get; set; }
+
     // Navigation
     public Organizer Organizer { get; set; } = null!;
     public ICollection<TicketTier> TicketTiers { get; set; } = new List<TicketTier>();

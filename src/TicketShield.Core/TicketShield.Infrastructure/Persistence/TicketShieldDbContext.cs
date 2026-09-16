@@ -57,6 +57,7 @@ public class TicketShieldDbContext : DbContext, ITicketShieldDbContext
         modelBuilder.Entity<Event>(entity =>
         {
             entity.HasKey(e => e.Id);
+            entity.Property(e => e.MaxResaleMarkupPercentage).HasPrecision(5, 2);
             entity.HasOne(e => e.Organizer)
                 .WithMany(o => o.Events)
                 .HasForeignKey(e => e.OrganizerId)
@@ -80,6 +81,7 @@ public class TicketShieldDbContext : DbContext, ITicketShieldDbContext
             entity.HasKey(e => e.Id);
             entity.Property(e => e.OriginalPrice).HasPrecision(15, 2);
             entity.Property(e => e.ResalePrice).HasPrecision(15, 2);
+            entity.Property(e => e.AppliedMarkupPercentage).HasPrecision(5, 2);
             entity.Property(e => e.VerificationStatus).HasConversion<string>();
             entity.Property(e => e.ListingStatus).HasConversion<string>();
 

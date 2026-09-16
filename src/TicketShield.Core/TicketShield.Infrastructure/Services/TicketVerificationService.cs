@@ -12,6 +12,7 @@ using TicketShield.Contracts;
 using TicketShield.Contracts.Organizer.V1;
 using TicketShield.Infrastructure.ExternalServices.Organizer;
 using TicketShield.Infrastructure.Persistence.Resale;
+using TicketShield.Domain.Entities;
 
 namespace TicketShield.Infrastructure.Services;
 
@@ -144,6 +145,42 @@ public class TicketVerificationService : ITicketVerificationService
         );
     }
 
+    private async Task<decimal> LoadEventMarkup(Guid eventId, CancellationToken ct)
+    {
+        return await _db.Database
+            .SqlQuery<decimal>($@"
+                SELECT COALESCE(max_resale_markup_percentage, 0) AS ""Value""
+                FROM events
+                WHERE id = {eventId}")
+            .FirstOrDefaultAsync(ct);
+    }
+
+    private async Task<VerificationResult> ResultAsync(CoreSession s, CancellationToken ct)
+    {
+        var result = Result(s);
+        if (result.OriginalPrice is null or <= 0 || s.ReceiptJson is null)
+        {
+            return result with
+            {
+                MarkupPercent = 0m,
+                PriceCeiling = result.OriginalPrice
+            };
+        }
+
+        decimal markup = 0m;
+        var receipt = Receipt(s);
+        var mappings = _options.Mappings.Values
+            .Where(x => x.ExternalEventId == receipt.Ticket.ExternalEventId && x.ExternalTierId == receipt.Ticket.ExternalTierId)
+            .ToArray();
+        if (mappings.Length == 1)
+        {
+            markup = await LoadEventMarkup(mappings[0].EventId, ct);
+        }
+
+        var ceiling = (long)ResaleListing.ComputePriceCeiling(result.OriginalPrice.Value, markup);
+        return result with { MarkupPercent = markup, PriceCeiling = ceiling };
+    }
+
     private async Task<(CoreSession Session, CoreOperation Operation)> Begin(
         string seller,
         string operationId,
@@ -250,13 +287,13 @@ public class TicketVerificationService : ITicketVerificationService
     public async Task<VerificationResult> Request(string seller, string key, string ticket, CancellationToken ct)
     {
         var (s, op) = await Begin(seller, key, "Request", null, new { ticket }, ticket, ct);
-        return op.State == "Succeeded" ? Result(s) : await Execute(s, op, null, ct);
+        return op.State == "Succeeded" ? await ResultAsync(s, ct) : await Execute(s, op, null, ct);
     }
 
     public async Task<VerificationResult> Resend(string seller, string id, string key, CancellationToken ct)
     {
         var (s, op) = await Begin(seller, key, "Resend", id, new { }, null, ct);
-        return op.State == "Succeeded" ? Result(s) : await Execute(s, op, null, ct);
+        return op.State == "Succeeded" ? await ResultAsync(s, ct) : await Execute(s, op, null, ct);
     }
 
     public async Task<VerificationResult> Confirm(string seller, string id, string key, string otp, CancellationToken ct)
@@ -267,7 +304,7 @@ public class TicketVerificationService : ITicketVerificationService
         }
 
         var (s, op) = await Begin(seller, key, "Confirm", id, new { otp }, null, ct);
-        return op.State == "Succeeded" ? Result(s) : await Execute(s, op, otp, ct);
+        return op.State == "Succeeded" ? await ResultAsync(s, ct) : await Execute(s, op, otp, ct);
     }
 
     private static bool Uncertain(RpcException ex) =>
@@ -380,7 +417,7 @@ public class TicketVerificationService : ITicketVerificationService
             var key = OpKey(s.Seller, op.Kind, op.Id);
             if (fresh.PendingOperationId != key)
             {
-                return Result(fresh);
+                return await ResultAsync(fresh, ct);
             }
 
             if (response is ChallengeView challenge)
@@ -424,7 +461,7 @@ public class TicketVerificationService : ITicketVerificationService
 
             await _db.Put(key, op, ct);
             await _db.Put(SessionKey(fresh.Id), fresh, ct);
-            return Result(fresh);
+            return await ResultAsync(fresh, ct);
         }, ct, s.Id);
 
     public async Task<VerificationResult> Get(string seller, string id, CancellationToken ct)
@@ -432,7 +469,7 @@ public class TicketVerificationService : ITicketVerificationService
         var s = await Owned(seller, id, ct);
         if (s.PendingOperationId is null)
         {
-            return Result(s);
+            return await ResultAsync(s, ct);
         }
 
         var op = await _db.Read<CoreOperation>(s.PendingOperationId, ct);
@@ -478,7 +515,7 @@ public class TicketVerificationService : ITicketVerificationService
             if (result.State == OperationState.Rejected)
             {
                 await Reject(s, op, result.Rejection?.Code ?? "ORGANIZER_REJECTED", ct);
-                return Result(await Owned(s.Seller, s.Id, ct));
+                return await ResultAsync(await Owned(s.Seller, s.Id, ct), ct);
             }
             if (result.State == OperationState.Succeeded)
             {
@@ -501,7 +538,7 @@ public class TicketVerificationService : ITicketVerificationService
         {
         }
 
-        return Result(s);
+        return await ResultAsync(s, ct);
     }
 
     public async Task<VerificationResult> Publish(string seller, string key, PublishBody body, CancellationToken ct)
@@ -514,7 +551,7 @@ public class TicketVerificationService : ITicketVerificationService
         var (s, op) = await Begin(seller, key, "Publish", body.VerificationId, body, null, ct);
         if (op.State == "Succeeded")
         {
-            return Result(s);
+            return await ResultAsync(s, ct);
         }
 
         s = await Transaction(async () =>
@@ -536,11 +573,6 @@ public class TicketVerificationService : ITicketVerificationService
         try
         {
             var receipt = Receipt(s);
-            if (price <= 0 || price > receipt.Ticket.OriginalPrice)
-            {
-                throw Error("PRICE_EXCEEDS_CEILING", 422);
-            }
-
             var mappings = _options.Mappings.Values
                 .Where(x => x.ExternalEventId == receipt.Ticket.ExternalEventId && x.ExternalTierId == receipt.Ticket.ExternalTierId)
                 .ToArray();
@@ -550,6 +582,12 @@ public class TicketVerificationService : ITicketVerificationService
                 throw Error("TICKET_MAPPING_NOT_CONFIGURED");
             }
             var mapping = mappings[0];
+            var markup = await LoadEventMarkup(mapping.EventId, ct);
+            var ceiling = (long)ResaleListing.ComputePriceCeiling(receipt.Ticket.OriginalPrice, markup);
+            if (price <= 0 || price > ceiling)
+            {
+                throw Error("PRICE_EXCEEDS_CEILING", 422);
+            }
 
             var locked = await _gateway.Lock(new GetResaleLockRequest
             {
@@ -603,11 +641,11 @@ public class TicketVerificationService : ITicketVerificationService
                 await _db.Database.ExecuteSqlInterpolatedAsync($@"
                     INSERT INTO resale_listings (
                         id, event_id, tier_id, seller_id, original_ticket_code, 
-                        original_price, resale_price, is_private, private_access_token, 
+                        original_price, resale_price, applied_markup_percentage, is_private, private_access_token, 
                         verification_status, listing_status, created_at, updated_at
                     ) VALUES (
                         {id}, {mapping.EventId}, {mapping.TierId}, {seller}, {s.TicketCode}, 
-                        {original}, {resale}, {isPrivate}, {privateToken}, 
+                        {original}, {resale}, {markup}, {isPrivate}, {privateToken}, 
                         'Verified', 'Verified', {now}, {now}
                     )
                 ", ct);
