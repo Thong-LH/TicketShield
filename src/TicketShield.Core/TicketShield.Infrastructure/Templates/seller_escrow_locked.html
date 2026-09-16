@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Thông báo Ký quỹ Escrow Locked - TicketShield AI</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            background-color: #f1f5f9;
+            margin: 0;
+            padding: 20px;
+            color: #1e293b;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background-color: #ffffff;
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+        }
+        .header {
+            background: linear-gradient(135deg, #065f46 0%, #047857 50%, #10b981 100%);
+            padding: 32px 24px;
+            text-align: center;
+            color: #ffffff;
+        }
+        .logo {
+            font-size: 26px;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+            color: #a7f3d0;
+            margin-bottom: 8px;
+        }
+        .badge {
+            display: inline-block;
+            background-color: rgba(255, 255, 255, 0.2);
+            border: 1px solid #ffffff;
+            color: #ffffff;
+            font-size: 12px;
+            font-weight: 700;
+            padding: 6px 14px;
+            border-radius: 50px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .content {
+            padding: 32px 24px;
+        }
+        .greeting {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 16px;
+        }
+        .escrow-box {
+            background-color: #ecfdf5;
+            border: 1px solid #a7f3d0;
+            border-radius: 12px;
+            padding: 20px;
+            margin: 20px 0;
+            text-align: center;
+        }
+        .escrow-title {
+            font-size: 14px;
+            color: #047857;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .amount-locked {
+            font-size: 28px;
+            font-weight: 800;
+            color: #065f46;
+            margin: 8px 0;
+        }
+        .info-card {
+            background-color: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 16px 20px;
+            margin-bottom: 20px;
+        }
+        .info-item {
+            font-size: 14px;
+            color: #475569;
+            margin-bottom: 8px;
+        }
+        .info-item:last-child {
+            margin-bottom: 0;
+        }
+        .steps-box {
+            background-color: #f0fdf4;
+            border-left: 4px solid #10b981;
+            padding: 16px 20px;
+            border-radius: 0 12px 12px 0;
+            margin: 20px 0;
+        }
+        .steps-title {
+            font-weight: 700;
+            color: #065f46;
+            margin-bottom: 8px;
+        }
+        .footer {
+            background-color: #f8fafc;
+            padding: 24px;
+            text-align: center;
+            font-size: 12px;
+            color: #94a3b8;
+            border-top: 1px solid #e2e8f0;
+        }
+        .cta-button {
+            display: inline-block;
+            background-color: #059669;
+            color: #ffffff !important;
+            font-weight: 700;
+            text-decoration: none;
+            padding: 14px 28px;
+            border-radius: 10px;
+            margin-top: 16px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">🛡️ TicketShield AI</div>
+            <div class="badge">🔒 ESCROW LOCKED - TIỀN ĐÃ KHÓA BẢO HỘ</div>
+        </div>
+        <div class="content">
+            <div class="greeting">Xin chào {{SellerName}},</div>
+            <p style="color: #475569; line-height: 1.6;">
+                Tin vui! Vé đăng bán của bạn đã có người mua thanh toán thành công. Tiền bán vé đã được hệ thống TicketShield AI chuyển vào **Quỹ Ký Quỹ Escrow an toàn (LOCKED)**.
+            </p>
+
+            <div class="escrow-box">
+                <div class="escrow-title">Số Tiền Đang Khóa Tại Quỹ Escrow</div>
+                <div class="amount-locked">{{AmountLocked}} VNĐ</div>
+                <div style="font-size: 13px; color: #059669;">Mã Escrow: <strong>{{EscrowCode}}</strong></div>
+            </div>
+
+            <div class="info-card">
+                <div class="info-item">🎟️ <strong>Bài Đăng Bán:</strong> &nbsp;{{ListingTitle}}</div>
+                <div class="info-item">🎭 <strong>Sự Kiện:</strong> &nbsp;{{EventName}}</div>
+                <div class="info-item">👤 <strong>Người Mua:</strong> &nbsp;{{BuyerName}}</div>
+            </div>
+
+            <div class="steps-box">
+                <div class="steps-title">📌 Các bước tiếp theo:</div>
+                <ol style="margin: 0; padding-left: 20px; font-size: 14px; color: #334155; line-height: 1.6;">
+                    <li>Hệ thống TicketShield AI đang tiến hành kiểm tra & chuyển nhượng vé chính chủ cho người mua.</li>
+                    <li>Ngay sau khi quá trình chuyển nhượng hoàn tất và sự kiện kết thúc thành công, số tiền <strong>{{AmountLocked}} VNĐ</strong> sẽ tự động giải ngân trực tiếp vào tài khoản ngân hàng của bạn.</li>
+                </ol>
+            </div>
+
+            <div style="text-align: center; margin-top: 24px;">
+                <a href="https://ticketshield.ai" class="cta-button">Quản Lý Giao Dịch Escrow Của Bạn</a>
+            </div>
+        </div>
+        <div class="footer">
+            <p>© 2026 TicketShield AI Capstone Team. Mọi quyền được bảo lưu.</p>
+            <p>Email này được gửi tự động từ hệ thống TicketShield Mail Server (ticketshieldai@gmail.com).</p>
+        </div>
+    </div>
+</body>
+</html>

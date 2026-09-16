@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Xác nhận cấp vé chính chủ - TicketShield AI</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            background-color: #f1f5f9;
+            margin: 0;
+            padding: 20px;
+            color: #1e293b;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background-color: #ffffff;
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+        }
+        .header {
+            background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #312e81 100%);
+            padding: 32px 24px;
+            text-align: center;
+            color: #ffffff;
+        }
+        .logo {
+            font-size: 26px;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+            color: #818cf8;
+            margin-bottom: 8px;
+        }
+        .badge {
+            display: inline-block;
+            background-color: rgba(16, 185, 129, 0.2);
+            border: 1px solid #10b981;
+            color: #34d399;
+            font-size: 12px;
+            font-weight: 700;
+            padding: 6px 14px;
+            border-radius: 50px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .content {
+            padding: 32px 24px;
+        }
+        .greeting {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 16px;
+        }
+        .event-card {
+            background-color: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .event-title {
+            font-size: 20px;
+            font-weight: 700;
+            color: #1e1b4b;
+            margin-bottom: 12px;
+        }
+        .event-detail {
+            font-size: 14px;
+            color: #475569;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+        }
+        .qr-section {
+            text-align: center;
+            background-color: #ffffff;
+            border: 2px dashed #6366f1;
+            border-radius: 16px;
+            padding: 24px;
+            margin: 24px 0;
+        }
+        .qr-image {
+            width: 180px;
+            height: 180px;
+            border-radius: 8px;
+        }
+        .ticket-code {
+            font-family: monospace;
+            font-size: 18px;
+            font-weight: 700;
+            color: #4f46e5;
+            letter-spacing: 2px;
+            margin-top: 12px;
+            background-color: #eef2ff;
+            padding: 8px 16px;
+            border-radius: 8px;
+            display: inline-block;
+        }
+        .summary-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        .summary-table td {
+            padding: 10px 0;
+            border-bottom: 1px solid #e2e8f0;
+            font-size: 14px;
+        }
+        .summary-table tr:last-child td {
+            border-bottom: none;
+            font-weight: 700;
+            font-size: 16px;
+            color: #0f172a;
+        }
+        .footer {
+            background-color: #f8fafc;
+            padding: 24px;
+            text-align: center;
+            font-size: 12px;
+            color: #94a3b8;
+            border-top: 1px solid #e2e8f0;
+        }
+        .cta-button {
+            display: inline-block;
+            background-color: #4f46e5;
+            color: #ffffff !important;
+            font-weight: 700;
+            text-decoration: none;
+            padding: 14px 28px;
+            border-radius: 10px;
+            margin-top: 16px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">🛡️ TicketShield AI</div>
+            <div class="badge">✓ Vé Chính Chủ Đã Cấp</div>
+        </div>
+        <div class="content">
+            <div class="greeting">Xin chào {{BuyerName}},</div>
+            <p style="color: #475569; line-height: 1.6;">
+                Chúc mừng bạn! Giao dịch mua vé thông qua hệ thống **TicketShield AI Escrow** đã được xác thực thành công. Vé điện tử chính chủ của bạn đã được khởi tạo và sẵn sàng sử dụng.
+            </p>
+
+            <div class="event-card">
+                <div class="event-title">{{EventName}}</div>
+                <div class="event-detail">📅 <strong>Thời gian:</strong> &nbsp;{{EventDate}}</div>
+                <div class="event-detail">📍 <strong>Địa điểm:</strong> &nbsp;{{Venue}}</div>
+                <div class="event-detail">🎟️ <strong>Hạng vé:</strong> &nbsp;{{TicketTier}}</div>
+                <div class="event-detail">💺 <strong>Vị trí ghế:</strong> &nbsp;{{SeatNumber}}</div>
+            </div>
+
+            <div class="qr-section">
+                <p style="font-size: 14px; color: #64748b; margin-top: 0;">Mã QR Quẹt Thẻ Tại Cổng Sự Kiện</p>
+                <img src="{{QrCodeDataUrl}}" alt="QR Code Vé" class="qr-image" />
+                <div>
+                    <span class="ticket-code">{{TicketCode}}</span>
+                </div>
+            </div>
+
+            <table class="summary-table">
+                <tr>
+                    <td style="color: #64748b;">Mã Escrow Giao Dịch:</td>
+                    <td style="text-align: right; font-family: monospace;">{{EscrowCode}}</td>
+                </tr>
+                <tr>
+                    <td style="color: #64748b;">Trạng Thái Ký Quỹ:</td>
+                    <td style="text-align: right; color: #10b981; font-weight: 600;">Đã Xác Thực & Bảo Hộ 100%</td>
+                </tr>
+                <tr>
+                    <td>Tổng Tiền Thanh Toán:</td>
+                    <td style="text-align: right; color: #4f46e5;">{{AmountPaid}} VNĐ</td>
+                </tr>
+            </table>
+
+            <div style="text-align: center; margin-top: 24px;">
+                <a href="https://ticketshield.ai" class="cta-button">Xem Vé Trong Ứng Dụng TicketShield</a>
+            </div>
+        </div>
+        <div class="footer">
+            <p>© 2026 TicketShield AI Capstone Team. Mọi quyền được bảo lưu.</p>
+            <p>Email này được gửi tự động từ hệ thống TicketShield Mail Server (ticketshieldai@gmail.com).</p>
+        </div>
+    </div>
+</body>
+</html>

@@ -23,6 +23,7 @@ public static class DependencyInjection
         services.AddSingleton<IPasswordHasher, Services.BcryptPasswordHasher>();
         services.AddScoped<IJwtTokenGenerator, Services.JwtTokenGenerator>();
         services.AddScoped<IEmailService, Services.MockEmailService>();
+        services.AddSingleton<IEmailTemplateService, Services.EmailTemplateService>();
         services.AddScoped<IGoogleAuthService, Services.GoogleAuthService>();
 
         // Dynamic Resale Fee Services (BE-CORE-2.6.2)
