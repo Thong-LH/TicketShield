@@ -9,7 +9,7 @@ using TicketShield.Application.Features.Auth.Commands.ResetPassword;
 using TicketShield.Application.Features.Auth.Models;
 using TicketShield.Application.Features.Auth.Queries.GetCurrentUser;
 
-namespace TicketShield.API.Controllers;
+namespace TicketShield.Identity.API.Controllers;
 
 [Route("api/v1/auth")]
 public class AuthController : ApiControllerBase

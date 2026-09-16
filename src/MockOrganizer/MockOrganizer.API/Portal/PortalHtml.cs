@@ -31,7 +31,7 @@ public static class PortalHtml
               <span class=""w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse""></span> ONLINE
             </span>
           </div>
-          <p class=""text-xs text-slate-400"">Cổng quản trị nội bộ cho ban tổ chức • REST :5001 / gRPC :5002</p>
+          <p class=""text-xs text-slate-400"">Cổng quản trị nội bộ cho ban tổ chức • REST & gRPC :5001</p>
         </div>
       </div>
 
