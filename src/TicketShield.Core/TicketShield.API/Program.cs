@@ -83,6 +83,8 @@ builder.Services.AddSwaggerGen(c =>
 // Clean Architecture Layers
 builder.Services.Configure<TicketShield.Application.Common.Configurations.VietQrSettings>(
     builder.Configuration.GetSection(TicketShield.Application.Common.Configurations.VietQrSettings.SectionName));
+builder.Services.Configure<TicketShield.Application.Common.Configurations.SmtpSettings>(
+    builder.Configuration.GetSection(TicketShield.Application.Common.Configurations.SmtpSettings.SectionName));
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
 var resaleEnabled = builder.Services.AddCoreResale(builder.Configuration, builder.Environment);
