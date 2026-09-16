@@ -31,16 +31,21 @@ Tài liệu quy định chi tiết toàn bộ các **Quy tắc Nghiệp vụ (Bu
   3. Người bán nhập đúng OTP -> TicketShield gọi gRPC `ConfirmTicketOtp`. MockOrganizer chuyển trạng thái vé gốc thành **`LOCKED_FOR_RESALE`** (ngăn chặn việc mang vé đi bán chỗ khác hoặc quét vào cổng trước).
 - **Hủy tin bán:** Nếu người bán đổi ý hủy niêm yết (khi vé chưa bán), TicketShield gửi gRPC `ReleaseTicketLock` để MockOrganizer hoàn vé về trạng thái `VALID`.
 
-### 1.3. BR-G03: Quy Tắc Giải Ngân Điều Kiện Kép & Khóa Hai Đầu (Dual-Condition Settlement & Dual-Hold Law)
+### 1.3. BR-G03: Quy Tắc Giải Ngân Điều Kiện Kép & Kích Hoạt Kép (Dual-Condition Settlement & Dual-Trigger Law)
 - **Nội dung:** Tiền thanh toán của Buyer và Vé chuyển nhượng của Buyer đều được đặt trong trạng thái tạm giữ an toàn:
   - **Khóa tiền (Seller Escrow):** Tiền nằm trong Escrow với trạng thái `LOCKED`.
   - **Khóa vé (Buyer Provisional Hold):** Vé mới cấp cho Buyer được gắn cờ `IN_SETTLEMENT_BUFFER` (Buyer sở hữu vé để chuẩn bị đi sự kiện, nhưng **bị khóa tính năng đăng bán lại** trong thời gian này).
-- **Công thức tính thời hạn giải ngân kép (Settlement Deadline Formula):**
-  `SettlementDeadline = Min(TransferTime + 24h, EventStartTime - CutoffHours)`
-  *(Trong đó: `CutoffHours` mặc định là 2 giờ trước khi sự kiện bắt đầu).*
-  - **Mốc thời gian chuẩn (T+24h từ lúc sang tên):** Thời hạn 24h được tính **kể từ thời điểm sang tên chính chủ thành công (`TransferTime`)**, không bắt buộc phải đợi sự kiện diễn ra xong mới giải ngân.
-  - **Giao dịch cận giờ G (Mua trước sự kiện < 26 giờ):** Thời hạn giải ngân tự động co lại vào mốc trước sự kiện 2 giờ (`EventStartTime - 2h`). Điều này đảm bảo tiền của Seller **vẫn đang nằm an toàn trong Ký quỹ (Escrow LOCKED)** khi Buyer đến cổng sự kiện.
-- **Giải ngân an toàn:** Hết `SettlementDeadline`, nếu Buyer không có Khiếu nại (`has_dispute = false`), hệ thống tự động Payout chuyển khoản NAPAS 247 cho Seller và gỡ cờ `IN_SETTLEMENT_BUFFER` trên vé của Buyer.
+- **Cơ chế Kích hoạt Giải ngân Kép (Dual-Trigger Settlement — Điều kiện nào đến trước thì kích hoạt trước):**
+  1. **Trigger 1 — Giải ngân tức thì theo Sự kiện vào cổng (Event-Driven / Gate Entry Success):**
+     - Khi Buyer đến sự kiện và máy quét tại cổng của BTC chấp thuận mã vé thành công (hệ thống BTC ghi nhận `ScannedAt`, trạng thái vé đổi sang `USED`):
+     - Giao dịch đã hoàn tất mục tiêu tối thượng 100% (Buyer đã vào bên trong xem sự kiện, không còn rủi ro bị từ chối vé tại cổng).
+     - Hệ thống **kích hoạt lệnh Payout giải ngân ngay lập tức cho Seller** mà **không cần chờ đợi hết 24h**. Quy chế này giúp Seller nhận tiền sớm liền tay, tối ưu hóa vòng quay dòng tiền trên sàn.
+  2. **Trigger 2 — Giải ngân theo Bộ đếm thời gian (Timer Timeout — T+24h):**
+     - Áp dụng khi giao dịch diễn ra trước sự kiện nhiều ngày/tuần (hoặc trong trường hợp Buyer bận việc riêng không đến quét vé):
+     - Hết đúng **24h kể từ thời điểm sang tên chính chủ thành công (`TransferTime`)**, nếu Buyer không có Khiếu nại (`has_dispute = false`), hệ thống tự động Payout chuyển khoản NAPAS 247 cho Seller và gỡ cờ `IN_SETTLEMENT_BUFFER` trên vé của Buyer.
+- **Xử lý giao dịch cận giờ G (Mua sát giờ sự kiện diễn ra):**
+  - Tiền của Seller tiếp tục được giữ an toàn trong Escrow (`LOCKED`) cho tới khi vé được quét vào cổng thành công (Trigger 1).
+  - Nếu gặp sự cố tại cổng (máy quét báo lỗi, bị từ chối vào cổng) -> Buyer bấm Report ngay tại hiện trường -> Hệ thống lập tức đóng băng Escrow (`DISPUTED`) và trích 100% tiền từ két Ký quỹ hoàn trả ngay cho Buyer theo quy tắc BR-D02 và BR-D03.
 
 ### 1.4. BR-G04: Tính Toàn Vẹn Giao Dịch Tài Chính (ACID Law)
 - **Nội dung:** Mọi thao tác thay đổi trạng thái của `resale_listings` và `escrow_transactions` bắt buộc phải thực thi trong cùng một Database Transaction trên PostgreSQL (`ReadCommitted` hoặc `Serializable`).
@@ -78,7 +83,7 @@ Tài liệu quy định chi tiết toàn bộ các **Quy tắc Nghiệp vụ (Bu
 | :--- | :--- | :--- |
 | **BR-E01** | Khóa giữ chỗ (Purchase Hold Timeout) | Khi Buyer nhấn "Mua vé", Listing chuyển sang `TRANSACTING` và khóa giữ chỗ trong tối đa **10 phút** để Buyer quét mã thanh toán VietQR. Quá 10 phút không nhận được Webhook thanh toán, vé tự động nhả về trạng thái `VERIFIED`. |
 | **BR-E02** | Tính bất biến thanh toán (Payment Idempotency) | Mỗi Webhook thanh toán gửi kèm mã tham chiếu độc nhất (`transaction_reference`). Xử lý lặp lại Webhook cùng mã sẽ trả về kết quả thành công cũ mà không tạo thêm giao dịch ký quỹ mới. |
-| **BR-E03** | Đổi chủ trước khi giải ngân (Transfer-before-Release) | Tiền ký quỹ chỉ được phép giải ngân (Status: `RELEASED`) khi mã vé mới đã được cấp thành công cho Buyer (`status = SOLD` và `owner_email = buyer_email`). |
+| **BR-E03** | Đổi chủ trước khi giải ngân & Kích hoạt kép (Transfer-before-Release & Dual-Trigger) | Tiền ký quỹ chỉ được phép giải ngân (Status: `RELEASED`) khi mã vé mới đã được cấp thành công cho Buyer (`status = SOLD` và `owner_email = buyer_email`). Lệnh giải ngân được kích hoạt theo cơ chế kép: 1) Tức thì ngay khi vé ghi nhận quét cổng thành công (`ticket_status == 'USED'`), hoặc 2) Hết hạn đếm ngược T+24h nếu không có khiếu nại. |
 | **BR-E04** | Quy tắc thụ hưởng ngân hàng (Payout Beneficiary) | Lệnh Payout giải ngân cho Seller chỉ được gửi đi khi Seller đã liên kết tài khoản ngân hàng hợp lệ (`UserBankAccount`), bao gồm: Mã ngân hàng (BankCode), Số tài khoản (AccountNumber), Tên chủ tài khoản (AccountHolderName) trùng khớp với danh tính tài khoản. |
 | **BR-E05** | Tách rời trách nhiệm giải ngân (Decoupling & Non-blocking) | Trading Service chỉ quản lý cờ trạng thái Escrow. Việc thực thi chuyển tiền thực tế được bàn giao hoàn toàn cho `Payout Worker` xử lý bất đồng bộ ngầm, đảm bảo hệ thống không bị nghẽn (non-blocking) nếu phía Ngân hàng/NAPAS phản hồi chậm hoặc bảo trì. |
 | **BR-E06** | Tính bất biến & Thử lại lệnh Payout (Idempotency & Retry Policy) | Mỗi lệnh Payout bắt buộc gắn kèm `idempotency_key` duy nhất (dựa trên `payout_code` / quan hệ 1-1 `escrow_id` có Unique Index). Khi worker gặp sự cố timeout từ phía ngân hàng, áp dụng cơ chế Retry an toàn (tối đa 3 lần với Exponential Backoff, ghi vết `retry_count`), triệt tiêu 100% rủi ro giải ngân trùng tiền khi worker quét lại. |
