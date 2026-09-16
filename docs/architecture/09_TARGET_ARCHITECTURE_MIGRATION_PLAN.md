@@ -10,7 +10,7 @@
 Hiện tại `TicketShield.Core` đang là một Monolith gánh 6 Bounded Context khác nhau. Nhằm chuẩn hóa kiến trúc cho các sprint tiếp theo (MF-03 Escrow, MF-04 Settlement), hệ thống được tái cấu trúc thành **3 Services chính thức của TicketShield** + 2 Service vệ tinh ngoại vi.
 
 ### Nguyên lý cốt lõi: "What changes together, stays together"
-- Các nghiệp vụ cần tính toàn vẹn giao dịch ACID cao (**Đặt mua vé $\leftrightarrow$ Khóa vé $\leftrightarrow$ Ký quỹ Escrow**) bắt buộc phải nằm chung một cơ sở dữ liệu `trading_db` trong `Trading Core API` để tránh bài toán Distributed Transaction phức tạp (không cần 2-Phase Commit).
+- Các nghiệp vụ cần tính toàn vẹn giao dịch ACID cao (**Đặt mua vé <-> Khóa vé <-> Ký quỹ Escrow**) bắt buộc phải nằm chung một cơ sở dữ liệu `trading_db` trong `Trading Core API` để tránh bài toán Distributed Transaction phức tạp (không cần 2-Phase Commit).
 - Các phân hệ độc lập về mặt dữ liệu (**Identity/Auth** và **Settlement Worker T+24h**) được bóc tách thành các dịch vụ độc lập.
 
 ---

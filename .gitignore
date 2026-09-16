@@ -9,6 +9,8 @@ docs/*
 !docs/reports/
 !docs/architecture/
 !docs/contracts/
+!docs/specs/
+!docs/sprints/
 scripts/
 !scripts/doppler_sync.py
 
