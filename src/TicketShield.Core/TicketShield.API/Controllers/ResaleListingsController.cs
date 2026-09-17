@@ -4,6 +4,7 @@ using TicketShield.API.Filters;
 using TicketShield.Application.Common.Interfaces;
 using TicketShield.Application.Common.Models;
 using TicketShield.Application.Features.ResaleListings.Commands.CancelResaleListing;
+using TicketShield.Application.Features.ResaleListings.Commands.HoldListingForPurchase;
 using TicketShield.Application.Features.ResaleListings.Queries.GetMarketplaceListings;
 using TicketShield.Application.Features.ResaleListings.Queries.GetResaleListingByPrivateToken;
 using TicketShield.Application.Features.ResaleListings.Queries.GetResaleListingDetail;
@@ -130,6 +131,38 @@ public class ResaleListingsController(
     {
         var command = new CancelResaleListingCommand(id);
         var result = await Mediator.Send(command);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// SCRUM-79 / BE-CORE-3.1.1: Hold listing for purchase (10-minute TRANSACTING lock &amp; unique VietQR payment reference)
+    /// </summary>
+    /// <param name="id">Listing ID to hold</param>
+    /// <param name="request">Optional request payload including private access token and recipient info</param>
+    /// <param name="ct">CancellationToken</param>
+    /// <returns>Hold listing response including payment reference and escrow details</returns>
+    [Authorize]
+    [HttpPost("{id:guid}/hold")]
+    [ProducesResponseType(typeof(ApiResponse<HoldListingForPurchaseResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> HoldListing(
+        [FromRoute] Guid id,
+        [FromBody] HoldListingForPurchaseRequest? request,
+        CancellationToken ct)
+    {
+        var command = new HoldListingForPurchaseCommand
+        {
+            ListingId = id,
+            PrivateAccessToken = request?.PrivateAccessToken,
+            RecipientName = request?.RecipientName,
+            RecipientEmail = request?.RecipientEmail,
+            RecipientIdCard = request?.RecipientIdCard
+        };
+
+        var result = await Mediator.Send(command, ct);
         return Ok(result);
     }
 }
