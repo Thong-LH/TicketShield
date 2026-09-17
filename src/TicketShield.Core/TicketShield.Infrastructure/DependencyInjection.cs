@@ -27,6 +27,9 @@ public static class DependencyInjection
         services.AddScoped<ISystemSettingRepository, Persistence.Repositories.SystemSettingRepository>();
         services.AddScoped<IResaleFeeCalculator, Services.DynamicResaleFeeCalculator>();
 
+        // VietQR Service (BE-CORE-3.1.2)
+        services.AddSingleton<IVietQrService, Services.VietQrService>();
+
         // Event Bus (RabbitMQ + MassTransit)
         services.AddEventBus(configuration);
 

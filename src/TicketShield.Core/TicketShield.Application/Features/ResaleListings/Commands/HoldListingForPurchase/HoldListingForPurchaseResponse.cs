@@ -6,6 +6,11 @@ public class HoldListingForPurchaseResponse
     public Guid ListingId { get; set; }
     public string ListingStatus { get; set; } = string.Empty;
     public string PaymentReference { get; set; } = string.Empty;
+    public string QrImageUrl { get; set; } = string.Empty;
+    public string QuickLinkUrl { get; set; } = string.Empty;
+    public string BankBin { get; set; } = string.Empty;
+    public string AccountNumber { get; set; } = string.Empty;
+    public string AccountName { get; set; } = string.Empty;
     public decimal ResalePrice { get; set; }
     public decimal BuyerFee { get; set; }
     public decimal SellerFee { get; set; }

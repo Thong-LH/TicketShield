@@ -14,15 +14,18 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
     private readonly ITicketShieldDbContext _dbContext;
     private readonly ICurrentUserService? _currentUserService;
     private readonly IResaleFeeCalculator _feeCalculator;
+    private readonly IVietQrService? _vietQrService;
 
     public HoldListingForPurchaseCommandHandler(
         ITicketShieldDbContext dbContext,
         IResaleFeeCalculator feeCalculator,
-        ICurrentUserService? currentUserService = null)
+        ICurrentUserService? currentUserService = null,
+        IVietQrService? vietQrService = null)
     {
         _dbContext = dbContext;
         _feeCalculator = feeCalculator;
         _currentUserService = currentUserService;
+        _vietQrService = vietQrService;
     }
 
     public async Task<ApiResponse<HoldListingForPurchaseResponse>> Handle(HoldListingForPurchaseCommand request, CancellationToken cancellationToken)
@@ -83,7 +86,10 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
         // 7. Generate Unique Payment Reference (transfer_content for VietQR / NAPAS 247)
         var paymentReference = await GenerateUniquePaymentReferenceAsync(cancellationToken);
 
-        // 8. Update Listing Status & Create / Update EscrowTransaction
+        // 8. Generate VietQR QuickLink (BE-CORE-3.1.2)
+        var vietQrResult = _vietQrService?.GenerateSystemQuickLink(feeResult.TotalBuyerPaid, paymentReference);
+
+        // 9. Update Listing Status & Create / Update EscrowTransaction
         var unlockAt = now.AddMinutes(10);
         listing.ListingStatus = ListingStatus.Transacting;
 
@@ -137,6 +143,11 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
             ListingId = listing.Id,
             ListingStatus = listing.ListingStatus.ToString(),
             PaymentReference = paymentReference,
+            QrImageUrl = vietQrResult?.QrImageUrl ?? string.Empty,
+            QuickLinkUrl = vietQrResult?.QuickLinkUrl ?? string.Empty,
+            BankBin = vietQrResult?.BankBin ?? string.Empty,
+            AccountNumber = vietQrResult?.AccountNumber ?? string.Empty,
+            AccountName = vietQrResult?.AccountName ?? string.Empty,
             ResalePrice = listing.ResalePrice,
             BuyerFee = feeResult.BuyerFee,
             SellerFee = feeResult.SellerFee,
