@@ -5,6 +5,7 @@ using TicketShield.Application.Common.Interfaces;
 using TicketShield.Application.Common.Models;
 using TicketShield.Application.Features.ResaleListings.Commands.CancelResaleListing;
 using TicketShield.Application.Features.ResaleListings.Commands.HoldListingForPurchase;
+using TicketShield.Application.Features.ResaleListings.Commands.ReleaseListingHold;
 using TicketShield.Application.Features.ResaleListings.Queries.GetMarketplaceListings;
 using TicketShield.Application.Features.ResaleListings.Queries.GetResaleListingByPrivateToken;
 using TicketShield.Application.Features.ResaleListings.Queries.GetResaleListingDetail;
@@ -162,6 +163,26 @@ public class ResaleListingsController(
             RecipientIdCard = request?.RecipientIdCard
         };
 
+        var result = await Mediator.Send(command, ct);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// BE-CORE-3.1.5: Release hold early by buyer (Cancel hold &amp; revert listing status to VERIFIED immediately)
+    /// </summary>
+    /// <param name="id">Listing ID to release hold</param>
+    /// <param name="ct">CancellationToken</param>
+    /// <returns>Release hold response including updated listing status</returns>
+    [Authorize]
+    [HttpPost("{id:guid}/release-hold")]
+    [ProducesResponseType(typeof(ApiResponse<ReleaseListingHoldResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ReleaseHold([FromRoute] Guid id, CancellationToken ct)
+    {
+        var command = new ReleaseListingHoldCommand(id);
         var result = await Mediator.Send(command, ct);
         return Ok(result);
     }
