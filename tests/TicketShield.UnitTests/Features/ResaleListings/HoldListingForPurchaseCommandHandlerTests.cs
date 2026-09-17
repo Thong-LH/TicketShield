@@ -141,7 +141,7 @@ public class HoldListingForPurchaseCommandHandlerTests
     }
 
     [Fact]
-    public async Task Handle_WhenBuyerIsSeller_ShouldThrowBusinessRuleViolationException()
+    public async Task Handle_WhenBuyerIsSeller_ShouldThrowBadRequestException()
     {
         // Arrange
         var (dbContext, seller, _) = CreateInMemoryDbContext();
@@ -166,7 +166,8 @@ public class HoldListingForPurchaseCommandHandlerTests
         var command = new HoldListingForPurchaseCommand(listing.Id);
 
         // Act & Assert
-        await Assert.ThrowsAsync<BusinessRuleViolationException>(() => handler.Handle(command, CancellationToken.None));
+        var ex = await Assert.ThrowsAsync<BadRequestException>(() => handler.Handle(command, CancellationToken.None));
+        Assert.Equal("Bạn không thể tự mua vé của chính mình.", ex.Message);
     }
 
     [Fact]

@@ -47,10 +47,10 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
             throw new NotFoundException("Tin đăng bán vé", request.ListingId);
         }
 
-        // 3. Business Rule Validation: Buyer cannot be Seller
+        // 3. Business Rule Validation: Buyer cannot be Seller (BE-CORE-3.1.6)
         if (listing.SellerId == buyerId)
         {
-            throw new BusinessRuleViolationException("Bạn không thể giữ chỗ hoặc mua vé của chính mình.");
+            throw new BadRequestException("Bạn không thể tự mua vé của chính mình.");
         }
 
         // 4. Validate Private Access Token if listing is private

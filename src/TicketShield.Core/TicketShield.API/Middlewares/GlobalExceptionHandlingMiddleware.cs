@@ -51,6 +51,11 @@ public class GlobalExceptionHandlingMiddleware
                 faEx.Message,
                 null as List<string>),
 
+            BadRequestException brqEx => (
+                (int)HttpStatusCode.BadRequest,
+                brqEx.Message,
+                null as List<string>),
+
             BusinessRuleViolationException brEx => (
                 (int)HttpStatusCode.UnprocessableEntity,
                 brEx.Message,
