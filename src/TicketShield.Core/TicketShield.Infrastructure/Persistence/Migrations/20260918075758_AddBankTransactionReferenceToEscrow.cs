@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
@@ -83,17 +83,13 @@ namespace TicketShield.Infrastructure.Persistence.Migrations
                 type: "text",
                 nullable: true);
 
-            migrationBuilder.CreateTable(
-                name: "core_resale_records",
-                columns: table => new
-                {
-                    Id = table.Column<string>(type: "text", nullable: false),
-                    Json = table.Column<string>(type: "jsonb", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_core_resale_records", x => x.Id);
-                });
+            migrationBuilder.Sql(@"
+                CREATE TABLE IF NOT EXISTS core_resale_records (
+                    ""Id"" text NOT NULL,
+                    ""Json"" jsonb NOT NULL,
+                    CONSTRAINT ""PK_core_resale_records"" PRIMARY KEY (""Id"")
+                );
+            ");
 
             migrationBuilder.CreateTable(
                 name: "shadow_users",
@@ -206,8 +202,7 @@ namespace TicketShield.Infrastructure.Persistence.Migrations
                 name: "fk_resale_listings_shadow_users_seller_id",
                 table: "resale_listings");
 
-            migrationBuilder.DropTable(
-                name: "core_resale_records");
+            migrationBuilder.Sql("DROP TABLE IF EXISTS core_resale_records;");
 
             migrationBuilder.DropTable(
                 name: "shadow_users");
