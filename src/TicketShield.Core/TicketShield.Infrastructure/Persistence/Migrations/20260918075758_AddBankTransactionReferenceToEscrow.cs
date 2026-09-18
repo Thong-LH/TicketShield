@@ -84,18 +84,6 @@ namespace TicketShield.Infrastructure.Persistence.Migrations
                 nullable: true);
 
             migrationBuilder.CreateTable(
-                name: "core_resale_records",
-                columns: table => new
-                {
-                    Id = table.Column<string>(type: "text", nullable: false),
-                    Json = table.Column<string>(type: "jsonb", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_core_resale_records", x => x.Id);
-                });
-
-            migrationBuilder.CreateTable(
                 name: "shadow_users",
                 columns: table => new
                 {
@@ -205,9 +193,6 @@ namespace TicketShield.Infrastructure.Persistence.Migrations
             migrationBuilder.DropForeignKey(
                 name: "fk_resale_listings_shadow_users_seller_id",
                 table: "resale_listings");
-
-            migrationBuilder.DropTable(
-                name: "core_resale_records");
 
             migrationBuilder.DropTable(
                 name: "shadow_users");
