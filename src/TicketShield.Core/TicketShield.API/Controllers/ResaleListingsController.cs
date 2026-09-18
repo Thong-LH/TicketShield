@@ -7,6 +7,7 @@ using TicketShield.Application.Features.ResaleListings.Commands.CancelResaleList
 using TicketShield.Application.Features.ResaleListings.Commands.HoldListingForPurchase;
 using TicketShield.Application.Features.ResaleListings.Commands.ReleaseListingHold;
 using TicketShield.Application.Features.ResaleListings.Queries.GetMarketplaceListings;
+using TicketShield.Application.Features.ResaleListings.Queries.GetPaymentStatus;
 using TicketShield.Application.Features.ResaleListings.Queries.GetResaleListingByPrivateToken;
 using TicketShield.Application.Features.ResaleListings.Queries.GetResaleListingDetail;
 using TicketShield.Application.Features.ResaleListings.Queries.GetSellerListings;
@@ -164,6 +165,21 @@ public class ResaleListingsController(
         };
 
         var result = await Mediator.Send(command, ct);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// SCRUM-87 / BE-CORE-3.2.2: Buyer polls escrow payment status after VietQR hold.
+    /// </summary>
+    [Authorize]
+    [HttpGet("{id:guid}/payment-status")]
+    [ProducesResponseType(typeof(ApiResponse<GetPaymentStatusDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetPaymentStatus([FromRoute] Guid id, CancellationToken ct)
+    {
+        var result = await Mediator.Send(new GetPaymentStatusQuery(id), ct);
         return Ok(result);
     }
 

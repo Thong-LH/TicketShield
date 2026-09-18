@@ -25,15 +25,44 @@ public class ProcessSePayWebhookCommandHandlerTests
 
         var seller = new ShadowUser { Id = Guid.NewGuid(), Email = "seller@test.com", FullName = "Seller User" };
         var buyer = new ShadowUser { Id = Guid.NewGuid(), Email = "buyer@test.com", FullName = "Buyer User" };
+        var organizer = new Organizer
+        {
+            Id = Guid.NewGuid(),
+            Name = "Test Organizer",
+            OfficialEmail = "organizer@test.com"
+        };
+        var testEvent = new Event
+        {
+            Id = Guid.NewGuid(),
+            OrganizerId = organizer.Id,
+            Name = "Test Concert",
+            Venue = "Test Venue",
+            EventStartAt = DateTimeOffset.UtcNow.AddDays(15),
+            EventEndAt = DateTimeOffset.UtcNow.AddDays(15).AddHours(3),
+            ResaleDeadline = DateTimeOffset.UtcNow.AddDays(14),
+            Organizer = organizer
+        };
+        var tier = new TicketTier
+        {
+            Id = Guid.NewGuid(),
+            EventId = testEvent.Id,
+            TierName = "VIP",
+            OriginalPrice = 500_000m,
+            Event = testEvent
+        };
 
         var listing = new ResaleListing
         {
             Id = Guid.NewGuid(),
+            EventId = testEvent.Id,
+            TierId = tier.Id,
             SellerId = seller.Id,
             OriginalTicketCode = "TCK12345",
             OriginalPrice = 500_000m,
             ResalePrice = 500_000m,
-            ListingStatus = listingStatus
+            ListingStatus = listingStatus,
+            Event = testEvent,
+            Tier = tier
         };
 
         var escrow = new EscrowTransaction
@@ -54,6 +83,9 @@ public class ProcessSePayWebhookCommandHandlerTests
 
         listing.EscrowTransaction = escrow;
 
+        context.Organizers.Add(organizer);
+        context.Events.Add(testEvent);
+        context.TicketTiers.Add(tier);
         context.ShadowUsers.AddRange(seller, buyer);
         context.ResaleListings.Add(listing);
         context.EscrowTransactions.Add(escrow);
@@ -93,6 +125,7 @@ public class ProcessSePayWebhookCommandHandlerTests
         var dbEscrow = await context.EscrowTransactions.FindAsync(escrow.Id);
         Assert.Equal(EscrowStatus.Locked, dbEscrow!.Status);
         Assert.Equal("FT262615291234", dbEscrow.BankTransactionReference);
+        Assert.True(dbEscrow.InSettlementBuffer);
 
         var dbListing = await context.ResaleListings.FindAsync(listing.Id);
         Assert.Equal(ListingStatus.Sold, dbListing!.ListingStatus);
@@ -213,5 +246,69 @@ public class ProcessSePayWebhookCommandHandlerTests
         // Act & Assert
         await Assert.ThrowsAsync<NotFoundException>(() =>
             handler.Handle(new ProcessSePayWebhookCommand(request), CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Handle_WhenHoldExpired_ShouldNotMarkSold()
+    {
+        var (context, listing, escrow) = CreateTestFixture();
+        listing.ListingStatus = ListingStatus.Verified;
+        escrow.UnlockAt = DateTimeOffset.UtcNow.AddMinutes(-1);
+        await context.SaveChangesAsync();
+        var handler = new ProcessSePayWebhookCommandHandler(context);
+
+        await Assert.ThrowsAsync<BusinessRuleViolationException>(() =>
+            handler.Handle(new ProcessSePayWebhookCommand(new SePayWebhookRequest
+            {
+                Id = 10007,
+                TransferType = "in",
+                TransferAmount = 550_000m,
+                Content = "TS1A2B3C4D thanh toan tre",
+                ReferenceCode = "FTLATE001"
+            }), CancellationToken.None));
+
+        Assert.Equal(EscrowStatus.Pending, (await context.EscrowTransactions.FindAsync(escrow.Id))!.Status);
+        Assert.Equal(ListingStatus.Verified, (await context.ResaleListings.FindAsync(listing.Id))!.ListingStatus);
+    }
+
+    [Fact]
+    public async Task Handle_ValidPaymentWebhook_ShouldOverwriteUnlockAtAndSetSettlementBuffer()
+    {
+        var (context, listing, escrow) = CreateTestFixture("TS1A2B3C4D", 550_000m);
+        var holdExpiry = escrow.UnlockAt;
+        var handler = new ProcessSePayWebhookCommandHandler(context);
+        var before = DateTimeOffset.UtcNow;
+
+        var result = await handler.Handle(new ProcessSePayWebhookCommand(new SePayWebhookRequest
+        {
+            Id = 10001,
+            TransferType = "in",
+            TransferAmount = 550_000m,
+            Content = "TS1A2B3C4D thanh toan ve TicketShield",
+            ReferenceCode = "FT262615291234"
+        }), CancellationToken.None);
+
+        var dbEscrow = await context.EscrowTransactions.FindAsync(escrow.Id);
+        var expected = EscrowTransaction.ComputeSettlementUnlockAt(before, listing.Event.EventStartAt);
+        Assert.True(result.Success);
+        Assert.Equal(EscrowStatus.Locked, dbEscrow!.Status);
+        Assert.True(dbEscrow.InSettlementBuffer);
+        Assert.NotEqual(holdExpiry, dbEscrow.UnlockAt);
+        Assert.True(dbEscrow.UnlockAt >= expected.AddSeconds(-2));
+        Assert.True(dbEscrow.UnlockAt <= expected.AddSeconds(2));
+        Assert.Equal(ListingStatus.Sold, (await context.ResaleListings.FindAsync(listing.Id))!.ListingStatus);
+    }
+
+    [Fact]
+    public void ComputeSettlementUnlockAt_UsesMinOf24hAndEventMinus2h()
+    {
+        var now = new DateTimeOffset(2026, 9, 18, 8, 0, 0, TimeSpan.Zero);
+        var eventStart = now.AddDays(10);
+        var actual = EscrowTransaction.ComputeSettlementUnlockAt(now, eventStart);
+        Assert.Equal(now.AddHours(24), actual);
+
+        var nearEvent = now.AddHours(5);
+        var near = EscrowTransaction.ComputeSettlementUnlockAt(now, nearEvent);
+        Assert.Equal(nearEvent.AddHours(-2), near);
     }
 }

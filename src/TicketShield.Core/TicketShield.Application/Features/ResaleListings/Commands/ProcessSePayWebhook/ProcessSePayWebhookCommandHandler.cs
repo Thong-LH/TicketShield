@@ -3,6 +3,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using TicketShield.Application.Common.Interfaces;
 using TicketShield.Application.Common.Models;
+using TicketShield.Domain.Entities;
 using TicketShield.Domain.Enums;
 using TicketShield.Domain.Exceptions;
 
@@ -67,6 +68,7 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
         // 3. Find EscrowTransaction by PaymentReference
         var escrow = await _dbContext.EscrowTransactions
             .Include(e => e.Listing)
+                .ThenInclude(l => l.Event)
             .FirstOrDefaultAsync(e => e.PaymentReference == paymentReference, cancellationToken);
 
         if (escrow == null)
@@ -111,14 +113,27 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
                 $"Số tiền thanh toán ({payload.TransferAmount:N0} VNĐ) nhỏ hơn tổng số tiền cần trả ({escrow.TotalBuyerPaid:N0} VNĐ).");
         }
 
-        // 7. Lock Escrow and mark Listing as Sold
+        // 7. Lock Escrow and mark Listing as Sold only while the 10-minute hold is still valid
+        var now = DateTimeOffset.UtcNow;
+        var holdStillValid =
+            escrow.Listing.ListingStatus == ListingStatus.Transacting &&
+            escrow.UnlockAt.HasValue &&
+            escrow.UnlockAt.Value > now;
+
+        if (!holdStillValid)
+        {
+            throw new BusinessRuleViolationException(
+                "Thời gian giữ chỗ đã hết hạn. Không thể khóa escrow.");
+        }
+
+        var eventStartAt = escrow.Listing.Event?.EventStartAt
+            ?? throw new BusinessRuleViolationException("Thiếu EventStartAt để tính UnlockAt giải ngân.");
+
         escrow.Status = EscrowStatus.Locked;
         escrow.BankTransactionReference = bankTxRef;
-
-        if (escrow.Listing != null)
-        {
-            escrow.Listing.ListingStatus = ListingStatus.Sold;
-        }
+        escrow.InSettlementBuffer = true;
+        escrow.UnlockAt = EscrowTransaction.ComputeSettlementUnlockAt(now, eventStartAt);
+        escrow.Listing.ListingStatus = ListingStatus.Sold;
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 
