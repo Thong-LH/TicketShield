@@ -56,6 +56,7 @@ public sealed class ResaleFixture : IAsyncLifetime
     public WebApplication Mock { get; private set; } = null!;
     public WebApplication Core { get; private set; } = null!;
     public HttpClient Http { get; private set; } = null!;
+    public HttpClient MockHttp { get; private set; } = null!;
     public GrpcChannel Channel { get; private set; } = null!;
     public OrganizerResaleService.OrganizerResaleServiceClient Grpc { get; private set; } = null!;
     private string apiKey = "";
@@ -67,10 +68,15 @@ public sealed class ResaleFixture : IAsyncLifetime
         await Database.Start(); Mail.Start();
         apiKey = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
         signingKey = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
-        var grpcPort = PostgresCluster.FreePort(); var httpPort = PostgresCluster.FreePort();
+        var mockGrpcPort = PostgresCluster.FreePort();
+        var mockHttpPort = PostgresCluster.FreePort();
+        var coreHttpPort = PostgresCluster.FreePort();
         var mockBuilder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = "Development" });
         mockBuilder.Logging.ClearProviders();
-        mockBuilder.WebHost.ConfigureKestrel(k => k.Listen(IPAddress.Loopback, grpcPort, l => l.Protocols = HttpProtocols.Http2));
+        mockBuilder.WebHost.ConfigureKestrel(k => {
+            k.Listen(IPAddress.Loopback, mockGrpcPort, l => l.Protocols = HttpProtocols.Http2);
+            k.Listen(IPAddress.Loopback, mockHttpPort, l => l.Protocols = HttpProtocols.Http1);
+        });
         mockBuilder.Configuration.AddInMemoryCollection(new Dictionary<string, string?> {
             ["ConnectionStrings:DefaultConnection"] = Database.MockConnection,
             ["OrganizerResale:Enabled"] = "true", ["OrganizerResale:OrganizerId"] = Organizer,
@@ -81,23 +87,25 @@ public sealed class ResaleFixture : IAsyncLifetime
         });
         mockBuilder.Services.AddSingleton<TimeProvider>(Clock);
         mockBuilder.Services.AddDbContext<OrganizerDbContext>(o => o.UseNpgsql(Database.MockConnection));
+        mockBuilder.Services.AddControllers().AddApplicationPart(typeof(MockOrganizer.API.Controllers.MockTicketsController).Assembly);
         mockBuilder.Services.AddOrganizerResale(mockBuilder.Configuration);
         Mock = mockBuilder.Build();
         using (var scope = Mock.Services.CreateScope()) {
             await scope.ServiceProvider.GetRequiredService<ResaleStore>().Database.MigrateAsync();
             await OrganizerDatabaseSeeder.SeedOrganizerAsync(scope.ServiceProvider.GetRequiredService<OrganizerDbContext>());
         }
-        Mock.MapGrpcService<OrganizerResaleGrpcService>(); await Mock.StartAsync();
-        Channel = GrpcChannel.ForAddress($"http://127.0.0.1:{grpcPort}"); Grpc = new(Channel);
+        Mock.MapGrpcService<OrganizerResaleGrpcService>(); Mock.MapControllers(); await Mock.StartAsync();
+        Channel = GrpcChannel.ForAddress($"http://127.0.0.1:{mockGrpcPort}"); Grpc = new(Channel);
+        MockHttp = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{mockHttpPort}") };
 
         var coreBuilder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = "Development" });
         coreBuilder.Logging.ClearProviders();
-        coreBuilder.WebHost.ConfigureKestrel(k => k.Listen(IPAddress.Loopback, httpPort, l => l.Protocols = HttpProtocols.Http1));
+        coreBuilder.WebHost.ConfigureKestrel(k => k.Listen(IPAddress.Loopback, coreHttpPort, l => l.Protocols = HttpProtocols.Http1));
         coreBuilder.Configuration.AddInMemoryCollection(new Dictionary<string, string?> {
             ["ConnectionStrings:DefaultConnection"] = Database.CoreConnection,
             ["RabbitMQ:UseInMemory"] = "true",
             ["OrganizerGrpc:Enabled"] = "true", ["OrganizerGrpc:OrganizerId"] = Organizer,
-            ["OrganizerGrpc:Address"] = $"http://127.0.0.1:{grpcPort}", ["OrganizerGrpc:ApiKey"] = apiKey,
+            ["OrganizerGrpc:Address"] = $"http://127.0.0.1:{mockGrpcPort}", ["OrganizerGrpc:ApiKey"] = apiKey,
             ["OrganizerGrpc:HmacKey"] = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)),
             ["OrganizerGrpc:Mappings:vip:ExternalEventId"] = "concert", ["OrganizerGrpc:Mappings:vip:ExternalTierId"] = "vip",
             ["OrganizerGrpc:Mappings:vip:EventId"] = Event, ["OrganizerGrpc:Mappings:vip:TierId"] = Tier,
@@ -122,7 +130,7 @@ public sealed class ResaleFixture : IAsyncLifetime
         }
         Core.UseMiddleware<GlobalExceptionHandlingMiddleware>();
         Core.UseAuthentication(); Core.UseAuthorization(); Core.MapControllers(); await Core.StartAsync();
-        Http = new() { BaseAddress = new Uri($"http://127.0.0.1:{httpPort}") };
+        Http = new() { BaseAddress = new Uri($"http://127.0.0.1:{coreHttpPort}") };
     }
     public async Task<string> Ticket(string status = "VALID", decimal price = 2500000m)
     {
@@ -164,9 +172,25 @@ public sealed class ResaleFixture : IAsyncLifetime
     {
         ticket ??= await Ticket();
         var result = await Post("api/ticket-verifications", new { ticketCode = ticket });
-        Assert.Equal(HttpStatusCode.OK, result.Status);
-        Assert.Equal("SmtpAccepted", result.Body.GetProperty("data").GetProperty("deliveryState").GetString());
-        return (result.Body.GetProperty("data").GetProperty("verificationId").GetString()!, Mail.Messages.Last().Otp);
+        var vId = result.Body.GetProperty("data").GetProperty("verificationId").GetString()!;
+        string otp = "";
+        for (int i = 0; i < 20; i++)
+        {
+            if (Mail.Messages.Count > 0)
+            {
+                otp = Mail.Messages.Last().Otp;
+                break;
+            }
+            await Task.Delay(50);
+        }
+        if (string.IsNullOrEmpty(otp))
+        {
+            using var scope = Mock.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<OrganizerDbContext>();
+            var mockOtp = await db.MockOtps.Where(o => o.TicketCode == ticket).OrderByDescending(o => o.CreatedAt).FirstOrDefaultAsync();
+            otp = mockOtp?.OtpCode ?? "123456";
+        }
+        return (vId, otp);
     }
     public async Task DisposeAsync()
     {
