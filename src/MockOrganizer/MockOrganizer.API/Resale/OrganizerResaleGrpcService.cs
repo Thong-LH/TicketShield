@@ -324,6 +324,127 @@ public sealed class OrganizerResaleGrpcService(
             await db.Put(LockKey(l.Id), l, ct); await db.Put("current:" + Hash(l.TicketCode), l, ct); await db.Put(SessionKey(s.Id), s, ct);
             return new ReleaseResaleLockResponse { Outcome = ReleaseOutcome.Released, ResaleLock = View(l) };
         });
+    public override Task<TransferOwnershipResponse> TransferOwnership(TransferOwnershipRequest request, ServerCallContext context) =>
+        Mutate(request, request.Operation, OperationKind.TransferOwnership, context, async () => {
+            var ct = context.CancellationToken;
+            Uuid(request.LockId);
+            if (string.IsNullOrWhiteSpace(request.NewOwnerEmail) || string.IsNullOrWhiteSpace(request.NewOwnerName))
+                throw Fail("INVALID_BUYER_INFO", StatusCode.InvalidArgument);
+            if (!string.IsNullOrWhiteSpace(request.NewOwnerRef))
+                Uuid(request.NewOwnerRef);
+
+            var s = await Session(request.Operation.VerificationId, request.Operation.RequesterRef, ct);
+            var l = await db.Read<LockRecord>(LockKey(request.LockId), ct) ?? throw Fail("LOCK_NOT_FOUND", StatusCode.NotFound);
+            if (l.Caller != Caller || l.SessionId != s.Id || l.Requester != s.Requester || l.Generation != request.ExpectedLockGeneration)
+                throw Fail("LOCK_GENERATION_CONFLICT", StatusCode.Aborted);
+
+            if (l.ReleasedAt.HasValue)
+            {
+                var oldT = await Ticket(l.TicketCode, ct);
+                if (oldT.Status == "TRANSFERRED")
+                {
+                    var existingNewTicket = await db.Tickets
+                        .FromSqlInterpolated($"SELECT * FROM mock_tickets WHERE owner_email = {request.NewOwnerEmail} AND event_name = {oldT.EventName} AND seat_zone = {oldT.SeatZone}")
+                        .FirstOrDefaultAsync(ct);
+
+                    TicketSnapshot? existingSnapshot = null;
+                    if (existingNewTicket != null)
+                    {
+                        if (!options.TicketMappings.TryGetValue(existingNewTicket.TicketCode, out var m) || string.IsNullOrEmpty(m.EventId) || string.IsNullOrEmpty(m.TierId))
+                            m = new TicketMapping { EventId = "concert-2026", TierId = "vip-zone-a" };
+
+                        existingSnapshot = new TicketSnapshot
+                        {
+                            Ticket = new TicketReference { OrganizerId = options.OrganizerId, TicketCode = existingNewTicket.TicketCode },
+                            TicketId = existingNewTicket.Id.ToString("D"),
+                            OwnerRevision = Owner(existingNewTicket),
+                            TicketRevision = Hash($"{existingNewTicket.Id}|{existingNewTicket.UpdatedAt:O}|{existingNewTicket.Status}"),
+                            OriginalPrice = decimal.ToInt64(existingNewTicket.OriginalPrice),
+                            ExternalEventId = m.EventId,
+                            ExternalTierId = m.TierId,
+                            EventName = existingNewTicket.EventName,
+                            SeatZone = existingNewTicket.SeatZone
+                        };
+                    }
+
+                    return new TransferOwnershipResponse
+                    {
+                        Outcome = TransferOutcome.AlreadyTransferred,
+                        NewTicket = existingSnapshot,
+                        OldTicket = new TicketReference { OrganizerId = options.OrganizerId, TicketCode = l.TicketCode },
+                        TransferredAt = Timestamp.FromDateTimeOffset(l.ReleasedAt.Value)
+                    };
+                }
+
+                throw Fail("LOCK_ALREADY_RELEASED", StatusCode.FailedPrecondition);
+            }
+
+            var oldTicket = await Ticket(l.TicketCode, ct);
+            var currentLock = await db.Read<LockRecord>("current:" + Hash(l.TicketCode), ct);
+            if (currentLock?.Id != l.Id || oldTicket.Status != "LOCKED_FOR_RESALE" || Owner(oldTicket) != l.OwnerRevision)
+                throw Fail("TICKET_CHANGED");
+
+            oldTicket.Status = "TRANSFERRED";
+            oldTicket.UpdatedAt = Now;
+            l.ReleasedAt = Now;
+            s.Closed = true;
+
+            var newTicketCode = $"{oldTicket.TicketCode}-TR-{Guid.NewGuid().ToString("N")[..8].ToUpperInvariant()}";
+            var newTicket = new MockTicket
+            {
+                Id = Guid.NewGuid(),
+                TicketCode = newTicketCode,
+                EventName = oldTicket.EventName,
+                SeatZone = oldTicket.SeatZone,
+                OriginalPrice = oldTicket.OriginalPrice,
+                OwnerEmail = request.NewOwnerEmail,
+                OwnerName = request.NewOwnerName,
+                OwnerPhone = string.IsNullOrWhiteSpace(request.NewOwnerPhone) ? oldTicket.OwnerPhone : request.NewOwnerPhone,
+                Status = "VALID",
+                CreatedAt = Now,
+                UpdatedAt = Now
+            };
+
+            db.Tickets.Add(newTicket);
+
+            if (!options.TicketMappings.TryGetValue(newTicketCode, out var mapping) || string.IsNullOrEmpty(mapping.EventId) || string.IsNullOrEmpty(mapping.TierId))
+            {
+                if (options.TicketMappings.TryGetValue(oldTicket.TicketCode, out var oldMap))
+                {
+                    mapping = new TicketMapping { EventId = oldMap.EventId, TierId = oldMap.TierId };
+                }
+                else
+                {
+                    mapping = new TicketMapping { EventId = "concert-2026", TierId = "vip-zone-a" };
+                }
+                options.TicketMappings[newTicketCode] = mapping;
+            }
+
+            await db.Put(LockKey(l.Id), l, ct);
+            await db.Put("current:" + Hash(l.TicketCode), l, ct);
+            await db.Put(SessionKey(s.Id), s, ct);
+
+            var newSnapshot = new TicketSnapshot
+            {
+                Ticket = new TicketReference { OrganizerId = options.OrganizerId, TicketCode = newTicket.TicketCode },
+                TicketId = newTicket.Id.ToString("D"),
+                OwnerRevision = Owner(newTicket),
+                TicketRevision = Hash($"{newTicket.Id}|{newTicket.UpdatedAt:O}|{newTicket.Status}"),
+                OriginalPrice = decimal.ToInt64(newTicket.OriginalPrice),
+                ExternalEventId = mapping.EventId,
+                ExternalTierId = mapping.TierId,
+                EventName = newTicket.EventName,
+                SeatZone = newTicket.SeatZone
+            };
+
+            return new TransferOwnershipResponse
+            {
+                Outcome = TransferOutcome.Transferred,
+                NewTicket = newSnapshot,
+                OldTicket = new TicketReference { OrganizerId = options.OrganizerId, TicketCode = oldTicket.TicketCode },
+                TransferredAt = Timestamp.FromDateTimeOffset(Now)
+            };
+        });
     public override Task<VerificationView> CloseVerification(CloseVerificationRequest request, ServerCallContext context) =>
         Mutate(request, request.Operation, OperationKind.CloseVerification, context, async () => {
             var ct = context.CancellationToken;
