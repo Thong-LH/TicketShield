@@ -147,6 +147,15 @@ public sealed class OrganizerResaleGrpcService(
     private async Task<ChallengeView> Deliver(ChallengeView result, string? recipient, string? otp, OperationContext op, OperationKind kind, CancellationToken ct)
     {
         if (otp is null || recipient is null) return result; // Replay does not send another email.
+
+        // Deduplication: Check if session for this verificationId and generation has already sent an email via SMTP
+        var existingSession = await db.Read<SessionState>(SessionKey(op.VerificationId), ct);
+        if (existingSession != null && existingSession.Generation == result.Generation && existingSession.Delivery == "SmtpAccepted")
+        {
+            result.DeliveryState = DeliveryState.SmtpAccepted;
+            return result;
+        }
+
         var state = "SmtpAccepted";
         try { await delivery.Send(recipient, otp, result.ExpiresAt.ToDateTimeOffset(), ct); }
         catch (InvalidOperationException) { state = "Failed"; }

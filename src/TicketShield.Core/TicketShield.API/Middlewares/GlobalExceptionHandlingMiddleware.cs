@@ -79,7 +79,7 @@ public class GlobalExceptionHandlingMiddleware
 
         context.Response.StatusCode = statusCode;
         var response = ApiResponse<object>.FailureResponse(message, errors);
-        var json = JsonSerializer.Serialize(response);
+        var json = JsonSerializer.Serialize(response, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
         await context.Response.WriteAsync(json);
     }
 }
