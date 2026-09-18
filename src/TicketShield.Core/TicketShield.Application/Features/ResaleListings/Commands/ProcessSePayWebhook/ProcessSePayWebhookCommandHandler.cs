@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using TicketShield.Application.Common.Interfaces;
 using TicketShield.Application.Common.Models;
 using TicketShield.Domain.Entities;
@@ -13,10 +14,14 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
 {
     private static readonly Regex PaymentRefRegex = new(@"TS[A-Z0-9]{8}", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private readonly ITicketShieldDbContext _dbContext;
+    private readonly ILogger<ProcessSePayWebhookCommandHandler>? _logger;
 
-    public ProcessSePayWebhookCommandHandler(ITicketShieldDbContext dbContext)
+    public ProcessSePayWebhookCommandHandler(
+        ITicketShieldDbContext dbContext,
+        ILogger<ProcessSePayWebhookCommandHandler>? logger = null)
     {
         _dbContext = dbContext;
+        _logger = logger;
     }
 
     public async Task<ApiResponse<ProcessSePayWebhookResponse>> Handle(ProcessSePayWebhookCommand request, CancellationToken cancellationToken)
@@ -83,7 +88,8 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
         // 4. BR-E02: Payment Idempotency Check
         if ((!string.IsNullOrWhiteSpace(escrow.BankTransactionReference) &&
              string.Equals(escrow.BankTransactionReference, bankTxRef, StringComparison.OrdinalIgnoreCase)) ||
-            escrow.Status == EscrowStatus.Locked)
+            escrow.Status == EscrowStatus.Locked ||
+            escrow.Status == EscrowStatus.RefundQueued)
         {
             return ApiResponse<ProcessSePayWebhookResponse>.SuccessResponse(
                 new ProcessSePayWebhookResponse
@@ -122,8 +128,32 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
 
         if (!holdStillValid)
         {
-            throw new BusinessRuleViolationException(
-                "Thời gian giữ chỗ đã hết hạn. Không thể khóa escrow.");
+            escrow.Status = EscrowStatus.RefundQueued;
+            escrow.BankTransactionReference = bankTxRef;
+            escrow.InSettlementBuffer = false;
+            if (escrow.Listing.ListingStatus == ListingStatus.Transacting)
+            {
+                escrow.Listing.ListingStatus = ListingStatus.Verified;
+            }
+
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            _logger?.LogWarning(
+                "Late SePay payment queued for refund. EscrowId={EscrowId} BankTx={BankTx} PaymentRef={PaymentRef}",
+                escrow.Id, bankTxRef, paymentReference);
+
+            return ApiResponse<ProcessSePayWebhookResponse>.SuccessResponse(
+                new ProcessSePayWebhookResponse
+                {
+                    EscrowId = escrow.Id,
+                    ListingId = escrow.ListingId,
+                    PaymentReference = escrow.PaymentReference ?? paymentReference,
+                    EscrowStatus = nameof(EscrowStatus.RefundQueued),
+                    ListingStatus = escrow.Listing.ListingStatus.ToString(),
+                    TransferAmount = payload.TransferAmount,
+                    BankTransactionReference = bankTxRef,
+                    IsIdempotentDuplicate = false
+                },
+                "Thanh toán đến sau khi hết hạn giữ chỗ. Giao dịch đã đưa vào hàng đợi hoàn tiền.");
         }
 
         var eventStartAt = escrow.Listing.Event?.EventStartAt

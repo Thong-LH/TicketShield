@@ -249,7 +249,7 @@ public class ProcessSePayWebhookCommandHandlerTests
     }
 
     [Fact]
-    public async Task Handle_WhenHoldExpired_ShouldNotMarkSold()
+    public async Task Handle_WhenHoldExpired_ShouldQueueRefundAndKeepListingUnsold()
     {
         var (context, listing, escrow) = CreateTestFixture();
         listing.ListingStatus = ListingStatus.Verified;
@@ -257,18 +257,64 @@ public class ProcessSePayWebhookCommandHandlerTests
         await context.SaveChangesAsync();
         var handler = new ProcessSePayWebhookCommandHandler(context);
 
-        await Assert.ThrowsAsync<BusinessRuleViolationException>(() =>
-            handler.Handle(new ProcessSePayWebhookCommand(new SePayWebhookRequest
-            {
-                Id = 10007,
-                TransferType = "in",
-                TransferAmount = 550_000m,
-                Content = "TS1A2B3C4D thanh toan tre",
-                ReferenceCode = "FTLATE001"
-            }), CancellationToken.None));
+        var result = await handler.Handle(new ProcessSePayWebhookCommand(new SePayWebhookRequest
+        {
+            Id = 10007,
+            TransferType = "in",
+            TransferAmount = 550_000m,
+            Content = "TS1A2B3C4D thanh toan tre",
+            ReferenceCode = "FTLATE001"
+        }), CancellationToken.None);
 
-        Assert.Equal(EscrowStatus.Pending, (await context.EscrowTransactions.FindAsync(escrow.Id))!.Status);
+        Assert.True(result.Success);
+        Assert.Equal("RefundQueued", result.Data.EscrowStatus);
+        Assert.Equal(EscrowStatus.RefundQueued, (await context.EscrowTransactions.FindAsync(escrow.Id))!.Status);
         Assert.Equal(ListingStatus.Verified, (await context.ResaleListings.FindAsync(listing.Id))!.ListingStatus);
+        Assert.False((await context.EscrowTransactions.FindAsync(escrow.Id))!.InSettlementBuffer);
+    }
+
+    [Fact]
+    public async Task Handle_WhenHoldExpiredButListingStillTransacting_ShouldReleaseListingToVerified()
+    {
+        var (context, listing, escrow) = CreateTestFixture();
+        listing.ListingStatus = ListingStatus.Transacting;
+        escrow.UnlockAt = DateTimeOffset.UtcNow.AddMinutes(-2);
+        await context.SaveChangesAsync();
+        var handler = new ProcessSePayWebhookCommandHandler(context);
+
+        var result = await handler.Handle(new ProcessSePayWebhookCommand(new SePayWebhookRequest
+        {
+            Id = 10008,
+            TransferType = "in",
+            TransferAmount = 550_000m,
+            Content = "TS1A2B3C4D",
+            ReferenceCode = "FTLATE002"
+        }), CancellationToken.None);
+
+        Assert.Equal("RefundQueued", result.Data.EscrowStatus);
+        Assert.Equal(ListingStatus.Verified, (await context.ResaleListings.FindAsync(listing.Id))!.ListingStatus);
+    }
+
+    [Fact]
+    public async Task Handle_DuplicateLatePaymentWebhook_ShouldReturnIdempotentSuccess()
+    {
+        var (context, _, escrow) = CreateTestFixture();
+        escrow.Status = EscrowStatus.RefundQueued;
+        escrow.BankTransactionReference = "FTLATE001";
+        await context.SaveChangesAsync();
+        var handler = new ProcessSePayWebhookCommandHandler(context);
+
+        var result = await handler.Handle(new ProcessSePayWebhookCommand(new SePayWebhookRequest
+        {
+            Id = 10009,
+            TransferType = "in",
+            TransferAmount = 550_000m,
+            Content = "TS1A2B3C4D",
+            ReferenceCode = "FTLATE001"
+        }), CancellationToken.None);
+
+        Assert.True(result.Data.IsIdempotentDuplicate);
+        Assert.Equal("RefundQueued", result.Data.EscrowStatus);
     }
 
     [Fact]
