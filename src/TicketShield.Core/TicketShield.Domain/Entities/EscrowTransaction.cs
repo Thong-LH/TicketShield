@@ -14,6 +14,7 @@ public class EscrowTransaction : BaseEntity
     public decimal TotalBuyerPaid { get; set; }
     public decimal NetSellerPayout { get; set; }
     public string? PaymentReference { get; set; }
+    public string? BankTransactionReference { get; set; }
     public EscrowStatus Status { get; set; } = EscrowStatus.Pending;
     public DateTimeOffset? UnlockAt { get; set; }
     public DateTimeOffset? DisputeDeadline { get; set; }
