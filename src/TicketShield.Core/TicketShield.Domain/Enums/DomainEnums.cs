@@ -22,7 +22,8 @@ public enum EscrowStatus
     Locked,
     Released,
     Refunded,
-    Disputed
+    Disputed,
+    RefundQueued
 }
 
 public enum PayoutStatus

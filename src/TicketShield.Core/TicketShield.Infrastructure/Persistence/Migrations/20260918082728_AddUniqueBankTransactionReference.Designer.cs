@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using TicketShield.Infrastructure.Persistence;
@@ -11,9 +12,11 @@ using TicketShield.Infrastructure.Persistence;
 namespace TicketShield.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(TicketShieldDbContext))]
-    partial class TicketShieldDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260918082728_AddUniqueBankTransactionReference")]
+    partial class AddUniqueBankTransactionReference
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -248,10 +251,6 @@ namespace TicketShield.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset?>("DisputeDeadline")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("dispute_deadline");
-
-                    b.Property<bool>("InSettlementBuffer")
-                        .HasColumnType("boolean")
-                        .HasColumnName("in_settlement_buffer");
 
                     b.Property<Guid>("ListingId")
                         .HasColumnType("uuid")

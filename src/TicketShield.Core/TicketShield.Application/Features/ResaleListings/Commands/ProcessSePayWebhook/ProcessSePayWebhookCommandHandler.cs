@@ -1,8 +1,10 @@
 using System.Text.RegularExpressions;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using TicketShield.Application.Common.Interfaces;
 using TicketShield.Application.Common.Models;
+using TicketShield.Domain.Entities;
 using TicketShield.Domain.Enums;
 using TicketShield.Domain.Exceptions;
 
@@ -12,10 +14,20 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
 {
     private static readonly Regex PaymentRefRegex = new(@"TS[A-Z0-9]{8}", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private readonly ITicketShieldDbContext _dbContext;
+    private readonly IEmailTemplateService? _emailTemplates;
+    private readonly IEmailService? _emailService;
+    private readonly ILogger<ProcessSePayWebhookCommandHandler>? _logger;
 
-    public ProcessSePayWebhookCommandHandler(ITicketShieldDbContext dbContext)
+    public ProcessSePayWebhookCommandHandler(
+        ITicketShieldDbContext dbContext,
+        IEmailTemplateService? emailTemplates = null,
+        IEmailService? emailService = null,
+        ILogger<ProcessSePayWebhookCommandHandler>? logger = null)
     {
         _dbContext = dbContext;
+        _emailTemplates = emailTemplates;
+        _emailService = emailService;
+        _logger = logger;
     }
 
     public async Task<ApiResponse<ProcessSePayWebhookResponse>> Handle(ProcessSePayWebhookCommand request, CancellationToken cancellationToken)
@@ -67,6 +79,11 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
         // 3. Find EscrowTransaction by PaymentReference
         var escrow = await _dbContext.EscrowTransactions
             .Include(e => e.Listing)
+                .ThenInclude(l => l.Event)
+            .Include(e => e.Listing)
+                .ThenInclude(l => l.Tier)
+            .Include(e => e.Buyer)
+            .Include(e => e.Seller)
             .FirstOrDefaultAsync(e => e.PaymentReference == paymentReference, cancellationToken);
 
         if (escrow == null)
@@ -81,7 +98,8 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
         // 4. BR-E02: Payment Idempotency Check
         if ((!string.IsNullOrWhiteSpace(escrow.BankTransactionReference) &&
              string.Equals(escrow.BankTransactionReference, bankTxRef, StringComparison.OrdinalIgnoreCase)) ||
-            escrow.Status == EscrowStatus.Locked)
+            escrow.Status == EscrowStatus.Locked ||
+            escrow.Status == EscrowStatus.RefundQueued)
         {
             return ApiResponse<ProcessSePayWebhookResponse>.SuccessResponse(
                 new ProcessSePayWebhookResponse
@@ -111,16 +129,55 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
                 $"Số tiền thanh toán ({payload.TransferAmount:N0} VNĐ) nhỏ hơn tổng số tiền cần trả ({escrow.TotalBuyerPaid:N0} VNĐ).");
         }
 
-        // 7. Lock Escrow and mark Listing as Sold
-        escrow.Status = EscrowStatus.Locked;
-        escrow.BankTransactionReference = bankTxRef;
+        // 7. Lock Escrow and mark Listing as Sold only while the 10-minute hold is still valid
+        var now = DateTimeOffset.UtcNow;
+        var holdStillValid =
+            escrow.Listing.ListingStatus == ListingStatus.Transacting &&
+            escrow.UnlockAt.HasValue &&
+            escrow.UnlockAt.Value > now;
 
-        if (escrow.Listing != null)
+        if (!holdStillValid)
         {
-            escrow.Listing.ListingStatus = ListingStatus.Sold;
+            escrow.Status = EscrowStatus.RefundQueued;
+            escrow.BankTransactionReference = bankTxRef;
+            escrow.InSettlementBuffer = false;
+            if (escrow.Listing.ListingStatus == ListingStatus.Transacting)
+            {
+                escrow.Listing.ListingStatus = ListingStatus.Verified;
+            }
+
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            _logger?.LogWarning(
+                "Late SePay payment queued for refund. EscrowId={EscrowId} BankTx={BankTx} PaymentRef={PaymentRef}",
+                escrow.Id, bankTxRef, paymentReference);
+            await TrySendLatePaymentEmailAsync(escrow, payload.TransferAmount, cancellationToken);
+
+            return ApiResponse<ProcessSePayWebhookResponse>.SuccessResponse(
+                new ProcessSePayWebhookResponse
+                {
+                    EscrowId = escrow.Id,
+                    ListingId = escrow.ListingId,
+                    PaymentReference = escrow.PaymentReference ?? paymentReference,
+                    EscrowStatus = nameof(EscrowStatus.RefundQueued),
+                    ListingStatus = escrow.Listing.ListingStatus.ToString(),
+                    TransferAmount = payload.TransferAmount,
+                    BankTransactionReference = bankTxRef,
+                    IsIdempotentDuplicate = false
+                },
+                "Thanh toán đến sau khi hết hạn giữ chỗ. Giao dịch đã đưa vào hàng đợi hoàn tiền.");
         }
 
+        var eventStartAt = escrow.Listing.Event?.EventStartAt
+            ?? throw new BusinessRuleViolationException("Thiếu EventStartAt để tính UnlockAt giải ngân.");
+
+        escrow.Status = EscrowStatus.Locked;
+        escrow.BankTransactionReference = bankTxRef;
+        escrow.InSettlementBuffer = true;
+        escrow.UnlockAt = EscrowTransaction.ComputeSettlementUnlockAt(now, eventStartAt);
+        escrow.Listing.ListingStatus = ListingStatus.Sold;
+
         await _dbContext.SaveChangesAsync(cancellationToken);
+        await TrySendLockEmailsAsync(escrow, cancellationToken);
 
         var response = new ProcessSePayWebhookResponse
         {
@@ -137,5 +194,72 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
         return ApiResponse<ProcessSePayWebhookResponse>.SuccessResponse(
             response,
             "Xử lý Webhook thanh toán thành công! Đã khóa Escrow và xác nhận bán vé.");
+    }
+
+    private async Task TrySendLockEmailsAsync(EscrowTransaction escrow, CancellationToken cancellationToken)
+    {
+        if (_emailService is null || _emailTemplates is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var ev = escrow.Listing.Event;
+            var buyerHtml = _emailTemplates.GetBuyerTicketIssuedEmailHtml(
+                escrow.Buyer.FullName,
+                ev.Name,
+                ev.EventStartAt.ToString("dd/MM/yyyy HH:mm"),
+                ev.Venue,
+                escrow.Listing.Tier?.TierName ?? string.Empty,
+                string.Empty,
+                escrow.Listing.OriginalTicketCode,
+                string.Empty,
+                escrow.PaymentReference ?? string.Empty,
+                escrow.TotalBuyerPaid);
+            await _emailService.SendEmailAsync(
+                escrow.Buyer.Email,
+                "TicketShield — Xác nhận thanh toán vé",
+                buyerHtml,
+                cancellationToken);
+
+            var sellerHtml = _emailTemplates.GetSellerEscrowLockedEmailHtml(
+                escrow.Seller.FullName,
+                escrow.Buyer.FullName,
+                escrow.Listing.OriginalTicketCode,
+                ev.Name,
+                escrow.NetSellerPayout,
+                escrow.PaymentReference ?? string.Empty);
+            await _emailService.SendEmailAsync(
+                escrow.Seller.Email,
+                "TicketShield — Tiền đã được ký quỹ",
+                sellerHtml,
+                cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "Failed to send escrow confirmation emails for EscrowId {EscrowId}", escrow.Id);
+        }
+    }
+
+    private async Task TrySendLatePaymentEmailAsync(EscrowTransaction escrow, decimal transferAmount, CancellationToken cancellationToken)
+    {
+        if (_emailService is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _emailService.SendEmailAsync(
+                escrow.Buyer.Email,
+                "TicketShield — Thanh toán đến muộn, đang hoàn tiền",
+                $"<p>Xin chào {escrow.Buyer.FullName},</p><p>Tiền chuyển khoản {transferAmount:N0} VNĐ đến sau 10 phút giữ chỗ. Giao dịch {escrow.PaymentReference} đã đưa vào hàng đợi hoàn tiền. Vé đã được mở bán lại.</p>",
+                cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "Failed to send late-payment email for EscrowId {EscrowId}", escrow.Id);
+        }
     }
 }
