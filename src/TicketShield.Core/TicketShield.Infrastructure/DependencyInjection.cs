@@ -22,6 +22,7 @@ public static class DependencyInjection
 
         // Notification & Template Services (Sprint MF-03)
         services.AddSingleton<IEmailTemplateService, Services.EmailTemplateService>();
+        services.AddScoped<IEmailService, Services.SmtpEmailService>();
         // Dynamic Resale Fee Services (BE-CORE-2.6.2)
         services.AddMemoryCache();
         services.AddScoped<ISystemSettingRepository, Persistence.Repositories.SystemSettingRepository>();

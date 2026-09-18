@@ -1,4 +1,6 @@
 using Microsoft.EntityFrameworkCore;
+using Moq;
+using TicketShield.Application.Common.Interfaces;
 using TicketShield.Application.Common.Models;
 using TicketShield.Application.Features.ResaleListings.Commands.ProcessSePayWebhook;
 using TicketShield.Domain.Entities;
@@ -356,5 +358,98 @@ public class ProcessSePayWebhookCommandHandlerTests
         var nearEvent = now.AddHours(5);
         var near = EscrowTransaction.ComputeSettlementUnlockAt(now, nearEvent);
         Assert.Equal(nearEvent.AddHours(-2), near);
+    }
+
+    [Fact]
+    public async Task Handle_ValidPaymentWebhook_ShouldEmailBuyerAndSeller()
+    {
+        var (context, _, _) = CreateTestFixture();
+        var email = new Mock<IEmailService>();
+        var templates = new Mock<IEmailTemplateService>();
+        templates.Setup(t => t.GetBuyerTicketIssuedEmailHtml(
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
+            It.IsAny<string>(), It.IsAny<decimal>())).Returns("<p>buyer</p>");
+        templates.Setup(t => t.GetSellerEscrowLockedEmailHtml(
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
+            It.IsAny<decimal>(), It.IsAny<string>())).Returns("<p>seller</p>");
+        var handler = new ProcessSePayWebhookCommandHandler(context, templates.Object, email.Object);
+
+        await handler.Handle(new ProcessSePayWebhookCommand(new SePayWebhookRequest
+        {
+            Id = 10001,
+            TransferType = "in",
+            TransferAmount = 550_000m,
+            Content = "TS1A2B3C4D thanh toan ve TicketShield",
+            ReferenceCode = "FTMAIL001"
+        }), CancellationToken.None);
+
+        email.Verify(e => e.SendEmailAsync(
+            "buyer@test.com",
+            It.IsAny<string>(),
+            It.IsAny<string>(),
+            It.IsAny<CancellationToken>()), Times.Once);
+        email.Verify(e => e.SendEmailAsync(
+            "seller@test.com",
+            It.IsAny<string>(),
+            It.IsAny<string>(),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Handle_DuplicateWebhook_ShouldNotSendEmail()
+    {
+        var (context, _, escrow) = CreateTestFixture();
+        escrow.Status = EscrowStatus.Locked;
+        escrow.BankTransactionReference = "FTEXISTING123";
+        await context.SaveChangesAsync();
+        var email = new Mock<IEmailService>();
+        var handler = new ProcessSePayWebhookCommandHandler(context, null, email.Object);
+
+        await handler.Handle(new ProcessSePayWebhookCommand(new SePayWebhookRequest
+        {
+            Id = 10003,
+            TransferType = "in",
+            TransferAmount = 550_000m,
+            Content = "TS1A2B3C4D",
+            ReferenceCode = "FTEXISTING123"
+        }), CancellationToken.None);
+
+        email.Verify(e => e.SendEmailAsync(
+            It.IsAny<string>(),
+            It.IsAny<string>(),
+            It.IsAny<string>(),
+            It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Handle_WhenHoldExpired_ShouldEmailBuyerRefundNotice()
+    {
+        var (context, listing, escrow) = CreateTestFixture();
+        listing.ListingStatus = ListingStatus.Verified;
+        escrow.UnlockAt = DateTimeOffset.UtcNow.AddMinutes(-1);
+        await context.SaveChangesAsync();
+        var email = new Mock<IEmailService>();
+        var handler = new ProcessSePayWebhookCommandHandler(context, null, email.Object);
+
+        await handler.Handle(new ProcessSePayWebhookCommand(new SePayWebhookRequest
+        {
+            Id = 10007,
+            TransferType = "in",
+            TransferAmount = 550_000m,
+            Content = "TS1A2B3C4D thanh toan tre",
+            ReferenceCode = "FTLATEMAIL"
+        }), CancellationToken.None);
+
+        email.Verify(e => e.SendEmailAsync(
+            "buyer@test.com",
+            It.Is<string>(s => s.Contains("hoàn tiền") || s.Contains("muộn")),
+            It.IsAny<string>(),
+            It.IsAny<CancellationToken>()), Times.Once);
+        email.Verify(e => e.SendEmailAsync(
+            "seller@test.com",
+            It.IsAny<string>(),
+            It.IsAny<string>(),
+            It.IsAny<CancellationToken>()), Times.Never);
     }
 }
