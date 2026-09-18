@@ -362,6 +362,7 @@ public sealed class OrganizerResaleGrpcService(
             case OperationKind.ConfirmAndLock: view.Receipt = JsonParser.Default.Parse<VerificationReceipt>(o.ResponseJson); break;
             case OperationKind.ReleaseLock: view.Release = JsonParser.Default.Parse<ReleaseResaleLockResponse>(o.ResponseJson); break;
             case OperationKind.CloseVerification: view.ClosedVerification = JsonParser.Default.Parse<VerificationView>(o.ResponseJson); break;
+            case OperationKind.TransferOwnership: view.Transfer = JsonParser.Default.Parse<TransferOwnershipResponse>(o.ResponseJson); break;
         }
         return view;
     });
