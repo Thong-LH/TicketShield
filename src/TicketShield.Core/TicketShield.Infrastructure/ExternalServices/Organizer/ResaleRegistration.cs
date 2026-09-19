@@ -29,6 +29,7 @@ public static class ResaleRegistration
             throw new InvalidOperationException("OrganizerGrpc requires TLS (or Development loopback), identity, keys (32+ characters) and a bounded deadline.");
         }
 
+        AppContext.SetSwitch("System.Net.Http.SocketsHttpHandler.Http2UnencryptedSupport", true);
         services.AddSingleton(options);
         services.TryAddSingleton(TimeProvider.System);
         services.AddGrpcClient<OrganizerResaleService.OrganizerResaleServiceClient>(c => c.Address = uri);

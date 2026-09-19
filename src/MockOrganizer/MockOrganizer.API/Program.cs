@@ -9,9 +9,11 @@ var resaleEnabled = builder.Services.AddOrganizerResale(builder.Configuration);
 if (resaleEnabled && builder.Environment.IsDevelopment())
 {
     var httpPort = builder.Configuration.GetValue("HttpPort", 5001);
+    var grpcPort = builder.Configuration.GetValue("OrganizerResale:DevelopmentGrpcPort", 5004);
     builder.WebHost.ConfigureKestrel(k =>
     {
-        k.ListenLocalhost(httpPort, endpoint => endpoint.Protocols = HttpProtocols.Http1AndHttp2);
+        k.ListenLocalhost(httpPort, endpoint => endpoint.Protocols = HttpProtocols.Http1);
+        k.ListenLocalhost(grpcPort, endpoint => endpoint.Protocols = HttpProtocols.Http2);
     });
 }
 
