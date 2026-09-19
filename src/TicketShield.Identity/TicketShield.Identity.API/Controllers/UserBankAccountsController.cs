@@ -4,6 +4,7 @@ using TicketShield.Identity.Application.Common.Models;
 using TicketShield.Identity.Application.Features.UserBankAccounts.Commands.CreateUserBankAccount;
 using TicketShield.Identity.Application.Features.UserBankAccounts.Dtos;
 using TicketShield.Identity.Application.Features.UserBankAccounts.Queries.GetUserBankAccounts;
+using TicketShield.Identity.Application.Features.UserBankAccounts.Queries.LookupAccountHolderName;
 
 namespace TicketShield.Identity.API.Controllers;
 
@@ -36,4 +37,19 @@ public class UserBankAccountsController : ApiControllerBase
         var result = await Mediator.Send(query);
         return Ok(result);
     }
+
+    /// <summary>
+    /// BE-CORE-3.1.5: Proxy lookup bank account holder name via BankLookup.net API (avoids browser CORS).
+    /// GET /api/v1/user-bank-accounts/lookup-name?bin={bankBin}&amp;accountNumber={accountNumber}
+    /// </summary>
+    [AllowAnonymous]
+    [HttpGet("lookup-name")]
+    [ProducesResponseType(typeof(ApiResponse<LookupAccountHolderNameResult>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> LookupAccountHolderName([FromQuery] string bin, [FromQuery] string accountNumber)
+    {
+        var query = new LookupAccountHolderNameQuery(bin, accountNumber);
+        var result = await Mediator.Send(query);
+        return Ok(result);
+    }
 }
+
