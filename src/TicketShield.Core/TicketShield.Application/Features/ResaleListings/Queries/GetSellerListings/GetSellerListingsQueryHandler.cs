@@ -31,6 +31,8 @@ public class GetSellerListingsQueryHandler : IRequestHandler<GetSellerListingsQu
             .AsNoTracking()
             .Include(l => l.Event)
             .Include(l => l.Tier)
+            .Include(l => l.EscrowTransaction)
+                .ThenInclude(e => e!.PayoutTransaction)
             .Where(l => l.SellerId == sellerId);
 
         if (request.Status.HasValue)
@@ -57,14 +59,23 @@ public class GetSellerListingsQueryHandler : IRequestHandler<GetSellerListingsQu
             ResalePrice = l.ResalePrice,
             DiscountAmount = l.DiscountAmount,
             DiscountPercentage = l.DiscountPercentage,
-                IsPrivate = l.IsPrivate,
-                PrivateAccessToken = l.PrivateAccessToken,
-                ShareUrl = l.IsPrivate && !string.IsNullOrEmpty(l.PrivateAccessToken)
-                    ? $"https://ticketshield.vn/p/{l.PrivateAccessToken}"
-                    : null,
-                VerificationStatus = l.VerificationStatus.ToString(),
-                ListingStatus = l.ListingStatus.ToString(),
-                CreatedAt = l.CreatedAt
+            IsPrivate = l.IsPrivate,
+            PrivateAccessToken = l.PrivateAccessToken,
+            ShareUrl = l.IsPrivate && !string.IsNullOrEmpty(l.PrivateAccessToken)
+                ? $"https://ticketshield.vn/p/{l.PrivateAccessToken}"
+                : null,
+            VerificationStatus = l.VerificationStatus.ToString(),
+            ListingStatus = l.ListingStatus.ToString(),
+            EscrowStatus = l.EscrowTransaction?.Status.ToString(),
+            NetSellerPayout = l.EscrowTransaction?.NetSellerPayout,
+            UnlockAt = l.EscrowTransaction?.UnlockAt,
+            InSettlementBuffer = l.EscrowTransaction?.InSettlementBuffer ?? false,
+            PayoutStatus = l.EscrowTransaction?.PayoutTransaction?.Status.ToString(),
+            PayoutProcessedAt = l.EscrowTransaction?.PayoutTransaction?.ProcessedAt,
+            PayoutBankInfo = l.EscrowTransaction?.PayoutTransaction != null
+                ? $"{l.EscrowTransaction.PayoutTransaction.RecipientBankCode} - {l.EscrowTransaction.PayoutTransaction.RecipientAccountNumber}"
+                : null,
+            CreatedAt = l.CreatedAt
         }).ToList();
 
         return ApiResponse<List<SellerListingDto>>.SuccessResponse(dtos, "Lấy danh sách vé niêm yết của người bán thành công.");

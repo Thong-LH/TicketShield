@@ -33,6 +33,8 @@ public static class DependencyInjection
 
         // Auto-Release Expired Hold Worker (BE-CORE-3.1.3 / BR-E01)
         services.AddHostedService<Workers.ExpiredHoldReleaseWorker>();
+        // Auto-Settlement 2-Minute Escrow Payout Worker
+        services.AddHostedService<Workers.AutomaticSettlementWorker>();
 
         // Event Bus (RabbitMQ + MassTransit)
         services.AddEventBus(configuration);

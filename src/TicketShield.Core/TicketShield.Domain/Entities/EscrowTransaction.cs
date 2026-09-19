@@ -32,8 +32,7 @@ public class EscrowTransaction : BaseEntity
 
     public static DateTimeOffset ComputeSettlementUnlockAt(DateTimeOffset utcNow, DateTimeOffset eventStartAt)
     {
-        var plus24h = utcNow.AddHours(24);
-        var cutoff = eventStartAt.AddHours(-2);
-        return plus24h <= cutoff ? plus24h : cutoff;
+        // Shortened to 2 minutes per requirement: seller receives automatic bank payout 2 minutes after purchase
+        return utcNow.AddMinutes(2);
     }
 }

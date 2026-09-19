@@ -26,5 +26,13 @@ public class SellerListingDto
     public string VerificationStatus { get; set; } = string.Empty;
     public string ListingStatus { get; set; } = string.Empty;
 
+    public string? EscrowStatus { get; set; }
+    public decimal? NetSellerPayout { get; set; }
+    public DateTimeOffset? UnlockAt { get; set; }
+    public bool InSettlementBuffer { get; set; }
+    public string? PayoutStatus { get; set; }
+    public DateTimeOffset? PayoutProcessedAt { get; set; }
+    public string? PayoutBankInfo { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; }
 }
