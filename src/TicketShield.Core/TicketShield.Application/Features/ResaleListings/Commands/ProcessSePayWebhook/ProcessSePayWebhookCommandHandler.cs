@@ -34,8 +34,11 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
     {
         var payload = request.Payload;
 
-        // 1. Ignore outbound transfer webhooks
-        if (!string.Equals(payload.TransferType, "in", StringComparison.OrdinalIgnoreCase))
+        // 1. Check inbound transfer: If transferType is specified, must be 'in'; or if transferAmount > 0
+        var isTransferIn = string.Equals(payload.TransferType, "in", StringComparison.OrdinalIgnoreCase) || 
+                           string.IsNullOrWhiteSpace(payload.TransferType) && payload.TransferAmount > 0;
+
+        if (!isTransferIn)
         {
             return ApiResponse<ProcessSePayWebhookResponse>.SuccessResponse(
                 new ProcessSePayWebhookResponse

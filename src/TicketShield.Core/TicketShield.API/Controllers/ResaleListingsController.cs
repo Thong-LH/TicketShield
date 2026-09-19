@@ -7,6 +7,7 @@ using TicketShield.Application.Features.ResaleListings.Commands.CancelResaleList
 using TicketShield.Application.Features.ResaleListings.Commands.HoldListingForPurchase;
 using TicketShield.Application.Features.ResaleListings.Commands.ReleaseListingHold;
 using TicketShield.Application.Features.ResaleListings.Queries.GetMarketplaceListings;
+using TicketShield.Application.Features.ResaleListings.Queries.GetMyPurchasedTickets;
 using TicketShield.Application.Features.ResaleListings.Queries.GetPaymentStatus;
 using TicketShield.Application.Features.ResaleListings.Queries.GetResaleListingByPrivateToken;
 using TicketShield.Application.Features.ResaleListings.Queries.GetResaleListingDetail;
@@ -114,6 +115,22 @@ public class ResaleListingsController(
     public async Task<IActionResult> GetMyListings([FromQuery] ListingStatus? status = null)
     {
         var query = new GetSellerListingsQuery(status);
+        var result = await Mediator.Send(query);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Get buyer's purchased ticket passes with official digital QR authentication
+    /// </summary>
+    /// <returns>List of purchased digital passes for current buyer</returns>
+    [Authorize]
+    [HttpGet("my-purchased-tickets")]
+    [HttpGet("/api/v1/tickets/my-tickets")]
+    [ProducesResponseType(typeof(ApiResponse<List<PurchasedTicketDto>>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> GetMyPurchasedTickets()
+    {
+        var query = new GetMyPurchasedTicketsQuery();
         var result = await Mediator.Send(query);
         return Ok(result);
     }
