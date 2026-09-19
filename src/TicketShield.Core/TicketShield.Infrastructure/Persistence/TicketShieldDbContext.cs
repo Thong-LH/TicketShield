@@ -124,6 +124,10 @@ public class TicketShieldDbContext : DbContext, ITicketShieldDbContext
                 .WithMany()
                 .HasForeignKey(e => e.SellerId)
                 .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(e => e.BankTransactionReference)
+                .IsUnique()
+                .HasFilter("bank_transaction_reference IS NOT NULL");
         });
 
         // PayoutTransaction

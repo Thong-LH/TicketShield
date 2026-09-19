@@ -21,6 +21,7 @@ public class EscrowTransaction : BaseEntity
     public string? RecipientName { get; set; }
     public string? RecipientEmail { get; set; }
     public string? RecipientIdCard { get; set; }
+    public bool InSettlementBuffer { get; set; }
 
     // Navigation
     public ResaleListing Listing { get; set; } = null!;
@@ -28,4 +29,11 @@ public class EscrowTransaction : BaseEntity
     public ShadowUser Seller { get; set; } = null!;
     public PayoutTransaction? PayoutTransaction { get; set; }
     public Dispute? Dispute { get; set; }
+
+    public static DateTimeOffset ComputeSettlementUnlockAt(DateTimeOffset utcNow, DateTimeOffset eventStartAt)
+    {
+        var plus24h = utcNow.AddHours(24);
+        var cutoff = eventStartAt.AddHours(-2);
+        return plus24h <= cutoff ? plus24h : cutoff;
+    }
 }
