@@ -69,6 +69,13 @@ public static class DependencyInjection
         services.AddScoped<IGoogleAuthService, GoogleAuthService>();
         services.AddScoped<IEmailService, MockEmailService>();
 
+        // HttpClient for VietQR lookup proxy (BE-CORE-3.1.5)
+        services.AddHttpClient("VietQrLookup", client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(10);
+            client.DefaultRequestHeaders.Add("Accept", "application/json");
+        });
+
         return services;
     }
 }
