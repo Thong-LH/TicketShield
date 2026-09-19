@@ -4,13 +4,20 @@
 .context/
 .agents/
 
-# Non-code Documents & Research (Local only)
+# Documents & Guides
 docs/*
 !docs/reports/
 !docs/specs/
 !docs/contracts/
-scripts/
-!scripts/doppler_sync.py
+!docs/*.md
+
+# Scripts (allow script source files, ignore heavy binary executables)
+scripts/*.exe
+!scripts/*.bat
+!scripts/*.ps1
+!scripts/*.md
+!scripts/*.sql
+!scripts/*.py
 
 FA26SE261_Student_Research_Checklist.md
 TicketShield - Antigravity Agent Context (Core & KI) V2.md
