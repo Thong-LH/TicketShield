@@ -176,7 +176,7 @@ public static class DatabaseSeeder
         }
         tierVip.EventId = eventId;
         tierVip.TierName = "VIP Zone A";
-        tierVip.OriginalPrice = 2500000m;
+        tierVip.OriginalPrice = 50000m;
         tierVip.Description = "Khu vực VIP sát sân khấu, tặng kèm lightstick";
 
         var tierGa = await context.TicketTiers.FirstOrDefaultAsync(t => t.Id == tierGaId);
@@ -334,9 +334,9 @@ public static class DatabaseSeeder
         sampleListing.TierId = tierGaId;
         sampleListing.SellerId = sellerId;
         sampleListing.OriginalTicketCode = "ATSH-GA-999";
-        sampleListing.OriginalPrice = 1200000m;
-        sampleListing.ResalePrice = 1000000m;
-        sampleListing.AppliedMarkupPercentage = 10m;
+        sampleListing.OriginalPrice = 50000m;
+        sampleListing.ResalePrice = 50000m;
+        sampleListing.AppliedMarkupPercentage = 0m;
         sampleListing.IsPrivate = false;
         sampleListing.PrivateAccessToken = null;
         sampleListing.VerificationStatus = VerificationStatus.Verified;

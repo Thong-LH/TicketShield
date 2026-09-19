@@ -40,7 +40,7 @@ public static class OrganizerDatabaseSeeder
         ticket1.TicketCode = "ATSH-VIP-888";
         ticket1.EventName = "Anh Trai Say Hi Concert 2026";
         ticket1.SeatZone = "VIP Zone A - Row 1 Seat 12";
-        ticket1.OriginalPrice = 2500000;
+        ticket1.OriginalPrice = 50000;
         ticket1.OwnerEmail = "linhtranlatao2004@gmail.com";
         ticket1.OwnerPhone = "0901234567";
         ticket1.OwnerName = "Nguyen Van Seller";
@@ -55,7 +55,7 @@ public static class OrganizerDatabaseSeeder
         ticket2.TicketCode = "ATSH-GA-999";
         ticket2.EventName = "Anh Trai Say Hi Concert 2026";
         ticket2.SeatZone = "GA Standing Zone 2";
-        ticket2.OriginalPrice = 1200000;
+        ticket2.OriginalPrice = 50000;
         ticket2.OwnerEmail = "linhtranlatao2004@gmail.com";
         ticket2.OwnerPhone = "0901234567";
         ticket2.OwnerName = "Nguyen Van Seller";
