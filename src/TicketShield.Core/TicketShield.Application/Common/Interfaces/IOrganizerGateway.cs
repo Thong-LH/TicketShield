@@ -15,4 +15,5 @@ public interface IOrganizerGateway
     Task<ResaleLockView> Lock(GetResaleLockRequest request, CancellationToken ct);
     Task<VerificationView> Close(CloseVerificationRequest request, CancellationToken ct);
     Task<ReleaseResaleLockResponse> Release(ReleaseResaleLockRequest request, CancellationToken ct);
+    Task<TransferOwnershipResponse> TransferOwnership(TransferOwnershipRequest request, CancellationToken ct);
 }

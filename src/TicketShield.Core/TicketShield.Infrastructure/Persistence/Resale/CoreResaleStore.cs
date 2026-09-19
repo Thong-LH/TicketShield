@@ -47,18 +47,17 @@ public sealed class CoreResaleRecords : Migration
 {
     protected override void Up(MigrationBuilder m)
     {
-        m.CreateTable(
-            name: "core_resale_records",
-            columns: t => new
-            {
-                Id = t.Column<string>("text", nullable: false),
-                Json = t.Column<string>("jsonb", nullable: false)
-            },
-            constraints: t => t.PrimaryKey("PK_core_resale_records", x => x.Id));
+        m.Sql(@"
+            CREATE TABLE IF NOT EXISTS core_resale_records (
+                ""Id"" text NOT NULL,
+                ""Json"" jsonb NOT NULL,
+                CONSTRAINT ""PK_core_resale_records"" PRIMARY KEY (""Id"")
+            );
+        ");
     }
 
     protected override void Down(MigrationBuilder m)
     {
-        m.DropTable("core_resale_records");
+        m.Sql("DROP TABLE IF EXISTS core_resale_records;");
     }
 }

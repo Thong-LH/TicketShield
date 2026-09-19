@@ -12,11 +12,11 @@ public static class DatabaseSeeder
         await context.Database.MigrateAsync();
 
         await context.Database.ExecuteSqlRawAsync(@"
-            ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255);
-            ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id VARCHAR(255);
-            ALTER TABLE users ADD COLUMN IF NOT EXISTS password_reset_otp VARCHAR(20);
-            ALTER TABLE users ADD COLUMN IF NOT EXISTS password_reset_otp_expires_at TIMESTAMPTZ;
-            ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
+            ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255);
+            ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS google_id VARCHAR(255);
+            ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS password_reset_otp VARCHAR(20);
+            ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS password_reset_otp_expires_at TIMESTAMPTZ;
+            ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
             ALTER TABLE organizers ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
             ALTER TABLE events ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
             ALTER TABLE events ADD COLUMN IF NOT EXISTS artist VARCHAR(255);

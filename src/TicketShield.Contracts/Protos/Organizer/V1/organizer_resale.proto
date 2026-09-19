@@ -16,6 +16,7 @@ service OrganizerResaleService {
   rpc GetResaleLock(GetResaleLockRequest) returns (ResaleLockView);
   rpc ReleaseResaleLock(ReleaseResaleLockRequest) returns (ReleaseResaleLockResponse);
   rpc CloseVerification(CloseVerificationRequest) returns (VerificationView);
+  rpc TransferOwnership(TransferOwnershipRequest) returns (TransferOwnershipResponse);
 }
 
 message OperationContext {
@@ -72,6 +73,16 @@ message CloseVerificationRequest {
   OperationContext operation = 1;
   // Close must durably fence late request/resend/confirm, even if session creation hasn't arrived.
   // Does not release a lock. Return any existing lock for Core reconciliation.
+}
+
+message TransferOwnershipRequest {
+  OperationContext operation = 1;
+  string lock_id = 2;
+  uint64 expected_lock_generation = 3;
+  string new_owner_ref = 4;
+  string new_owner_email = 5;
+  string new_owner_name = 6;
+  optional string new_owner_phone = 7;
 }
 
 message ChallengeView {
@@ -135,6 +146,13 @@ message ReleaseResaleLockResponse {
   ResaleLockView resale_lock = 2;
 }
 
+message TransferOwnershipResponse {
+  TransferOutcome outcome = 1;
+  TicketSnapshot new_ticket = 2;
+  TicketReference old_ticket = 3;
+  google.protobuf.Timestamp transferred_at = 4;
+}
+
 message OperationView {
   OperationContext operation = 1;
   OperationKind kind = 2;
@@ -145,6 +163,7 @@ message OperationView {
     ReleaseResaleLockResponse release = 6;
     VerificationView closed_verification = 7;
     BusinessError rejection = 8;
+    TransferOwnershipResponse transfer = 9;
   }
   // PENDING has no result. SUCCEEDED has the result corresponding to kind.
   // REJECTED has rejection. NOT_FOUND is a gRPC error, not proof a late request cannot arrive.
@@ -189,6 +208,7 @@ enum OperationKind {
   OPERATION_KIND_CONFIRM_AND_LOCK = 3;
   OPERATION_KIND_RELEASE_LOCK = 4;
   OPERATION_KIND_CLOSE_VERIFICATION = 5;
+  OPERATION_KIND_TRANSFER_OWNERSHIP = 6;
 }
 enum OperationState {
   OPERATION_STATE_UNSPECIFIED = 0;
@@ -205,4 +225,9 @@ enum ReleaseOutcome {
   RELEASE_OUTCOME_UNSPECIFIED = 0;
   RELEASE_OUTCOME_RELEASED = 1;
   RELEASE_OUTCOME_ALREADY_RELEASED = 2;
+}
+enum TransferOutcome {
+  TRANSFER_OUTCOME_UNSPECIFIED = 0;
+  TRANSFER_OUTCOME_TRANSFERRED = 1;
+  TRANSFER_OUTCOME_ALREADY_TRANSFERRED = 2;
 }

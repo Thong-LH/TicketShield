@@ -58,4 +58,19 @@ public interface ITicketVerificationService
     /// Tiến trình ngầm phục hồi các giao dịch phân tán đang bị treo (Reconciliation).
     /// </summary>
     Task RecoverPending(CancellationToken ct);
+
+    /// <summary>
+    /// Sang tên vé chính chủ từ Seller sang Buyer qua gRPC với 100% Rollback Protection.
+    /// Nếu gRPC đứt kết nối hoặc lỗi, tự động rollback toàn bộ DB transaction không để treo tiền.
+    /// </summary>
+    Task<TicketShield.Contracts.Organizer.V1.TransferOwnershipResponse> TransferOwnership(
+        string seller,
+        string verificationId,
+        string lockId,
+        ulong expectedLockGeneration,
+        string buyerRef,
+        string buyerEmail,
+        string buyerName,
+        string? buyerPhone,
+        CancellationToken ct);
 }

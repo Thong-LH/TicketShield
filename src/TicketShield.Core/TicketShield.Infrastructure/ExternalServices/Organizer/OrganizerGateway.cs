@@ -77,4 +77,10 @@ public sealed class OrganizerGateway : IOrganizerGateway
         using var call = _client.ReleaseResaleLockAsync(request, CreateCallOptions(ct));
         return await call.ResponseAsync;
     }
+
+    public async Task<TransferOwnershipResponse> TransferOwnership(TransferOwnershipRequest request, CancellationToken ct)
+    {
+        using var call = _client.TransferOwnershipAsync(request, CreateCallOptions(ct));
+        return await call.ResponseAsync;
+    }
 }

@@ -62,6 +62,35 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
             }
         }
 
+        // Auto-heal: Ensure Buyer & Seller exist in ShadowUsers table to prevent FK constraint errors
+        var buyerShadowUser = await _dbContext.ShadowUsers.FirstOrDefaultAsync(u => u.Id == buyerId, cancellationToken);
+        if (buyerShadowUser == null)
+        {
+            buyerShadowUser = new ShadowUser
+            {
+                Id = buyerId,
+                Email = _currentUserService?.Email ?? request.RecipientEmail ?? "buyer@ticketshield.vn",
+                FullName = request.RecipientName ?? "Buyer User",
+                PhoneNumber = "",
+                CreatedAt = DateTimeOffset.UtcNow
+            };
+            _dbContext.ShadowUsers.Add(buyerShadowUser);
+        }
+
+        var sellerShadowUser = await _dbContext.ShadowUsers.FirstOrDefaultAsync(u => u.Id == listing.SellerId, cancellationToken);
+        if (sellerShadowUser == null)
+        {
+            sellerShadowUser = new ShadowUser
+            {
+                Id = listing.SellerId,
+                Email = "seller@ticketshield.vn",
+                FullName = "Seller User",
+                PhoneNumber = "",
+                CreatedAt = DateTimeOffset.UtcNow
+            };
+            _dbContext.ShadowUsers.Add(sellerShadowUser);
+        }
+
         // 5. Validate Listing Status & Active 10-Minute Lock
         var now = DateTimeOffset.UtcNow;
         if (listing.ListingStatus == ListingStatus.Sold || listing.ListingStatus == ListingStatus.Cancelled)

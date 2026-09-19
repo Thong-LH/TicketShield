@@ -104,7 +104,7 @@ public sealed class SmtpOtpDelivery(ResaleOptions options, IHostEnvironment envi
         };
 
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        timeout.CancelAfter(TimeSpan.FromSeconds(10));
+        timeout.CancelAfter(TimeSpan.FromSeconds(15));
         await client.SendMailAsync(message, timeout.Token);
     }
 }

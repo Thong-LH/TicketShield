@@ -210,7 +210,10 @@ public class CancelResaleListingCommandHandlerTests
         }
         public Task<List<TicketShield.Application.Resale.ListingResult>> Marketplace(int page, int size, CancellationToken ct) => throw new NotImplementedException();
         public Task RecoverPending(CancellationToken ct) => throw new NotImplementedException();
+        public Task<TicketShield.Contracts.Organizer.V1.TransferOwnershipResponse> TransferOwnership(
+            string seller, string verificationId, string lockId, ulong expectedLockGeneration, string buyerRef, string buyerEmail, string buyerName, string? buyerPhone, CancellationToken ct) => throw new NotImplementedException();
     }
+
 
     [Fact]
     public async Task Handle_WhenVerificationServiceUnlockFails_ShouldThrowAndNotCancelInDb()

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
@@ -82,6 +82,14 @@ namespace TicketShield.Infrastructure.Persistence.Migrations
                 table: "escrow_transactions",
                 type: "text",
                 nullable: true);
+
+            migrationBuilder.Sql(@"
+                CREATE TABLE IF NOT EXISTS core_resale_records (
+                    ""Id"" text NOT NULL,
+                    ""Json"" jsonb NOT NULL,
+                    CONSTRAINT ""PK_core_resale_records"" PRIMARY KEY (""Id"")
+                );
+            ");
 
             migrationBuilder.CreateTable(
                 name: "shadow_users",
@@ -193,6 +201,8 @@ namespace TicketShield.Infrastructure.Persistence.Migrations
             migrationBuilder.DropForeignKey(
                 name: "fk_resale_listings_shadow_users_seller_id",
                 table: "resale_listings");
+
+            migrationBuilder.Sql("DROP TABLE IF EXISTS core_resale_records;");
 
             migrationBuilder.DropTable(
                 name: "shadow_users");

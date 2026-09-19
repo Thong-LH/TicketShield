@@ -65,6 +65,8 @@ services:
       dockerfile: src/TicketShield.Identity/TicketShield.Identity.API/Dockerfile
     container_name: ticketshield_identity_api
     restart: always
+    env_file:
+      - .env
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       ConnectionStrings__IdentityConnection: "Host=postgres;Port=5432;Database=identity_db;Username=postgres;Password=postgres"
@@ -90,6 +92,8 @@ services:
       dockerfile: src/TicketShield.Core/TicketShield.API/Dockerfile
     container_name: ticketshield_core_api
     restart: always
+    env_file:
+      - .env
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       ConnectionStrings__DefaultConnection: "Host=postgres;Port=5432;Database=ticketshield_db;Username=postgres;Password=postgres"

@@ -97,7 +97,10 @@ public class PrivateShareTokenSecurityTests
         public Task<VerificationResult> Cancel(string seller, string id, string key, CancellationToken ct) => throw new NotImplementedException();
         public Task<List<ListingResult>> Marketplace(int page, int size, CancellationToken ct) => throw new NotImplementedException();
         public Task RecoverPending(CancellationToken ct) => throw new NotImplementedException();
+        public Task<TicketShield.Contracts.Organizer.V1.TransferOwnershipResponse> TransferOwnership(
+            string seller, string verificationId, string lockId, ulong expectedLockGeneration, string buyerRef, string buyerEmail, string buyerName, string? buyerPhone, CancellationToken ct) => throw new NotImplementedException();
     }
+
 
     // ───────────────────────── Share token lookup ─────────────────────────
 

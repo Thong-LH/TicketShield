@@ -97,10 +97,18 @@ public class TicketVerificationService : ITicketVerificationService
         long lockKey = ComputeLockKey(lockTarget);
         await _db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock({lockKey})", ct);
 
-        var result = await action();
-        await _db.SaveChangesAsync(ct);
-        await tx.CommitAsync(ct);
-        return result;
+        try
+        {
+            var result = await action();
+            await _db.SaveChangesAsync(ct);
+            await tx.CommitAsync(ct);
+            return result;
+        }
+        catch (Exception)
+        {
+            await tx.RollbackAsync(ct);
+            throw;
+        }
     }
 
     private async Task<CoreSession> Owned(string seller, string id, CancellationToken ct)
@@ -943,5 +951,67 @@ public class TicketVerificationService : ITicketVerificationService
         }
 
         await Cancel(seller, index.VerificationId, key, ct);
+    }
+
+    /// <summary>
+    /// Sang tên vé chính chủ từ Seller sang Buyer qua gRPC với 100% Rollback Protection.
+    /// Nếu gRPC đứt kết nối hoặc lỗi, tự động rollback toàn bộ DB transaction không để treo tiền.
+    /// </summary>
+    public async Task<TransferOwnershipResponse> TransferOwnership(
+        string seller,
+        string verificationId,
+        string lockId,
+        ulong expectedLockGeneration,
+        string buyerRef,
+        string buyerEmail,
+        string buyerName,
+        string? buyerPhone,
+        CancellationToken ct)
+    {
+        ValidateUuid(seller);
+        ValidateUuid(verificationId);
+        ValidateUuid(lockId);
+        ValidateUuid(buyerRef);
+
+        if (string.IsNullOrWhiteSpace(buyerEmail) || string.IsNullOrWhiteSpace(buyerName))
+        {
+            throw Error("INVALID_BUYER_INFO", 400);
+        }
+
+        return await Transaction(async () =>
+        {
+            var s = await Owned(seller, verificationId, ct);
+            var opId = Guid.NewGuid().ToString("D");
+            var op = new OperationContext
+            {
+                OperationId = opId,
+                VerificationId = s.Id,
+                RequesterRef = s.Seller
+            };
+
+            var request = new TransferOwnershipRequest
+            {
+                Operation = op,
+                LockId = lockId,
+                ExpectedLockGeneration = expectedLockGeneration,
+                NewOwnerRef = buyerRef,
+                NewOwnerEmail = buyerEmail,
+                NewOwnerName = buyerName,
+                NewOwnerPhone = buyerPhone
+            };
+
+            // Call gRPC over network
+            var response = await _gateway.TransferOwnership(request, ct);
+
+            if (response.Outcome == TransferOutcome.Unspecified)
+            {
+                throw Error("ORGANIZER_TRANSFER_FAILED", 502);
+            }
+
+            s.State = "Transferred";
+            await Put(SessionKey(s.Id), s, ct);
+
+            return response;
+        }, ct, verificationId);
     }
 }
