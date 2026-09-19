@@ -22,6 +22,7 @@ public class WebhooksController : ApiControllerBase
     /// SCRUM-80 / US-3.2: Receive SePay VietQR payment webhook and lock escrow transaction
     /// </summary>
     [HttpPost("sepay")]
+    [HttpPost("/api/v1/payments/sepay-webhook")]
     [ProducesResponseType(typeof(ApiResponse<ProcessSePayWebhookResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> HandleSePayWebhook([FromBody] SePayWebhookRequest payload)
