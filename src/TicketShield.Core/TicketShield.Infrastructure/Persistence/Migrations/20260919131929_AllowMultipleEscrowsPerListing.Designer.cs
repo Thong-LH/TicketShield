@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using TicketShield.Infrastructure.Persistence;
@@ -11,9 +12,11 @@ using TicketShield.Infrastructure.Persistence;
 namespace TicketShield.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(TicketShieldDbContext))]
-    partial class TicketShieldDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260919131929_AllowMultipleEscrowsPerListing")]
+    partial class AllowMultipleEscrowsPerListing
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -262,11 +265,6 @@ namespace TicketShield.Infrastructure.Persistence.Migrations
                         .HasColumnType("numeric(15,2)")
                         .HasColumnName("net_seller_payout");
 
-                    b.Property<string>("NewTicketCode")
-                        .HasMaxLength(255)
-                        .HasColumnType("character varying(255)")
-                        .HasColumnName("new_ticket_code");
-
                     b.Property<decimal>("OriginalTicketPrice")
                         .HasPrecision(15, 2)
                         .HasColumnType("numeric(15,2)")
@@ -275,10 +273,6 @@ namespace TicketShield.Infrastructure.Persistence.Migrations
                     b.Property<string>("PaymentReference")
                         .HasColumnType("text")
                         .HasColumnName("payment_reference");
-
-                    b.Property<string>("QrCodeData")
-                        .HasColumnType("text")
-                        .HasColumnName("qr_code_data");
 
                     b.Property<string>("RecipientEmail")
                         .HasColumnType("text")

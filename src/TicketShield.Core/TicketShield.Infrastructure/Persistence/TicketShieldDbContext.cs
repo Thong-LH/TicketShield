@@ -97,6 +97,8 @@ public class TicketShieldDbContext : DbContext, ITicketShieldDbContext
 
             // Index for fast lookup by private access token
             entity.HasIndex(e => e.PrivateAccessToken);
+
+            entity.Ignore(l => l.EscrowTransaction);
         });
 
         // EscrowTransaction
@@ -109,10 +111,11 @@ public class TicketShieldDbContext : DbContext, ITicketShieldDbContext
             entity.Property(e => e.TotalBuyerPaid).HasPrecision(15, 2);
             entity.Property(e => e.NetSellerPayout).HasPrecision(15, 2);
             entity.Property(e => e.Status).HasConversion<string>();
+            entity.Property(e => e.NewTicketCode).HasMaxLength(255);
 
             entity.HasOne(e => e.Listing)
-                .WithOne(l => l.EscrowTransaction)
-                .HasForeignKey<EscrowTransaction>(e => e.ListingId)
+                .WithMany(l => l.EscrowTransactions)
+                .HasForeignKey(e => e.ListingId)
                 .OnDelete(DeleteBehavior.Restrict);
 
             entity.HasOne(e => e.Buyer)
@@ -259,4 +262,23 @@ public class TicketShieldDbContext : DbContext, ITicketShieldDbContext
         if (string.IsNullOrEmpty(input)) return input;
         return Regex.Replace(input, @"([a-z0-9])([A-Z])", "$1_$2").ToLower();
     }
+
+    public async Task<IDbContextTransactionProxy?> BeginAdvisoryLockTransactionAsync(long lockKey, CancellationToken cancellationToken = default)
+    {
+        if (Database.IsRelational())
+        {
+            var tx = await Database.BeginTransactionAsync(cancellationToken);
+            await Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock({lockKey})", cancellationToken);
+            return new DbContextTransactionProxy(tx);
+        }
+        return null;
+    }
+
+    private sealed class DbContextTransactionProxy(Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction tx) : IDbContextTransactionProxy
+    {
+        public Task CommitAsync(CancellationToken cancellationToken = default) => tx.CommitAsync(cancellationToken);
+        public Task RollbackAsync(CancellationToken cancellationToken = default) => tx.RollbackAsync(cancellationToken);
+        public ValueTask DisposeAsync() => tx.DisposeAsync();
+    }
 }
+

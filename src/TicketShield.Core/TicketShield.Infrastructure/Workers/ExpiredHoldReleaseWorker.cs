@@ -48,11 +48,11 @@ public class ExpiredHoldReleaseWorker : BackgroundService
 
         var now = DateTimeOffset.UtcNow;
         var expiredListings = await dbContext.ResaleListings
-            .Include(l => l.EscrowTransaction)
+            .Include(l => l.EscrowTransactions)
             .Where(l => l.ListingStatus == ListingStatus.Transacting &&
-                        l.EscrowTransaction != null &&
-                        l.EscrowTransaction.UnlockAt.HasValue &&
-                        l.EscrowTransaction.UnlockAt.Value <= now)
+                        l.EscrowTransactions.Any(e => e.Status == EscrowStatus.Pending &&
+                                                     e.UnlockAt.HasValue &&
+                                                     e.UnlockAt.Value <= now))
             .ToListAsync(ct);
 
         if (!expiredListings.Any())
@@ -63,9 +63,14 @@ public class ExpiredHoldReleaseWorker : BackgroundService
         foreach (var listing in expiredListings)
         {
             listing.ListingStatus = ListingStatus.Verified;
+            var expiredEscrow = listing.EscrowTransactions
+                .Where(e => e.Status == EscrowStatus.Pending && e.UnlockAt.HasValue && e.UnlockAt.Value <= now)
+                .OrderByDescending(e => e.CreatedAt)
+                .FirstOrDefault();
+
             _logger.LogInformation(
                 "Released expired hold for ListingId: {ListingId} (Hold expired at {UnlockAt}). Status reset to VERIFIED.",
-                listing.Id, listing.EscrowTransaction?.UnlockAt);
+                listing.Id, expiredEscrow?.UnlockAt);
         }
 
         await dbContext.SaveChangesAsync(ct);

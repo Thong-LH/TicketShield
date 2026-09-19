@@ -14,6 +14,7 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
 {
     private static readonly Regex PaymentRefRegex = new(@"TS[A-Z0-9]{8}", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private readonly ITicketShieldDbContext _dbContext;
+    private readonly ITicketVerificationService? _ticketVerificationService;
     private readonly IEmailTemplateService? _emailTemplates;
     private readonly IEmailService? _emailService;
     private readonly ILogger<ProcessSePayWebhookCommandHandler>? _logger;
@@ -22,12 +23,14 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
         ITicketShieldDbContext dbContext,
         IEmailTemplateService? emailTemplates = null,
         IEmailService? emailService = null,
-        ILogger<ProcessSePayWebhookCommandHandler>? logger = null)
+        ILogger<ProcessSePayWebhookCommandHandler>? logger = null,
+        ITicketVerificationService? ticketVerificationService = null)
     {
         _dbContext = dbContext;
         _emailTemplates = emailTemplates;
         _emailService = emailService;
         _logger = logger;
+        _ticketVerificationService = ticketVerificationService;
     }
 
     public async Task<ApiResponse<ProcessSePayWebhookResponse>> Handle(ProcessSePayWebhookCommand request, CancellationToken cancellationToken)
@@ -173,10 +176,34 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
         var eventStartAt = escrow.Listing.Event?.EventStartAt
             ?? throw new BusinessRuleViolationException("Thiếu EventStartAt để tính UnlockAt giải ngân.");
 
+        string? newTicketCode = null;
+        string? qrCodeData = null;
+
+        // Call gRPC TransferOwnership to BTC Organizer (Issue 2)
+        if (_ticketVerificationService != null)
+        {
+            var buyerName = escrow.RecipientName ?? escrow.Buyer?.FullName ?? "Buyer";
+            var buyerEmail = escrow.RecipientEmail ?? escrow.Buyer?.Email ?? "buyer@ticketshield.vn";
+            var buyerPhone = escrow.Buyer?.PhoneNumber;
+
+            var transferResponse = await _ticketVerificationService.TransferOwnershipByListingId(
+                escrow.ListingId,
+                escrow.BuyerId,
+                buyerEmail,
+                buyerName,
+                buyerPhone,
+                cancellationToken);
+
+            newTicketCode = transferResponse.NewTicket?.Ticket?.TicketCode;
+            qrCodeData = transferResponse.NewTicket?.Ticket?.TicketCode;
+        }
+
         escrow.Status = EscrowStatus.Locked;
         escrow.BankTransactionReference = bankTxRef;
         escrow.InSettlementBuffer = true;
         escrow.UnlockAt = EscrowTransaction.ComputeSettlementUnlockAt(now, eventStartAt);
+        escrow.NewTicketCode = newTicketCode;
+        escrow.QrCodeData = qrCodeData;
         escrow.Listing.ListingStatus = ListingStatus.Sold;
 
         await _dbContext.SaveChangesAsync(cancellationToken);
@@ -216,8 +243,8 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
                 ev.Venue,
                 escrow.Listing.Tier?.TierName ?? string.Empty,
                 string.Empty,
-                escrow.Listing.OriginalTicketCode,
-                string.Empty,
+                escrow.NewTicketCode ?? escrow.Listing.OriginalTicketCode,
+                escrow.QrCodeData ?? escrow.NewTicketCode ?? string.Empty,
                 escrow.PaymentReference ?? string.Empty,
                 escrow.TotalBuyerPaid);
             await _emailService.SendEmailAsync(

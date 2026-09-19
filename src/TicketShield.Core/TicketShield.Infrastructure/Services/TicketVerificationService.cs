@@ -954,6 +954,38 @@ public class TicketVerificationService : ITicketVerificationService
     }
 
     /// <summary>
+    /// Sang tên vé chính chủ qua ListingId: Tra cứu verificationId từ index, lấy LockId và gọi TransferOwnership sang BTC.
+    /// </summary>
+    public async Task<TransferOwnershipResponse> TransferOwnershipByListingId(
+        Guid listingId,
+        Guid buyerId,
+        string buyerEmail,
+        string buyerName,
+        string? buyerPhone,
+        CancellationToken ct)
+    {
+        var index = await Read<ListingIndex>(ListingIndexKey(listingId), ct);
+        if (index == null)
+        {
+            throw Error("VERIFICATION_SESSION_NOT_FOUND", 404);
+        }
+
+        var session = await Owned(index.Seller, index.VerificationId, ct);
+        var receipt = Receipt(session);
+
+        return await TransferOwnership(
+            index.Seller,
+            index.VerificationId,
+            receipt.ResaleLock.LockId,
+            receipt.ResaleLock.Generation,
+            buyerId.ToString("D"),
+            buyerEmail,
+            buyerName,
+            buyerPhone,
+            ct);
+    }
+
+    /// <summary>
     /// Sang tên vé chính chủ từ Seller sang Buyer qua gRPC với 100% Rollback Protection.
     /// Nếu gRPC đứt kết nối hoặc lỗi, tự động rollback toàn bộ DB transaction không để treo tiền.
     /// </summary>

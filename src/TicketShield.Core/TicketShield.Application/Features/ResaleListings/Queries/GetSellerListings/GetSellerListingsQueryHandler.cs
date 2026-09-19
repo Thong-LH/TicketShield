@@ -31,8 +31,8 @@ public class GetSellerListingsQueryHandler : IRequestHandler<GetSellerListingsQu
             .AsNoTracking()
             .Include(l => l.Event)
             .Include(l => l.Tier)
-            .Include(l => l.EscrowTransaction)
-                .ThenInclude(e => e!.PayoutTransaction)
+            .Include(l => l.EscrowTransactions)
+                .ThenInclude(e => e.PayoutTransaction)
             .Where(l => l.SellerId == sellerId);
 
         if (request.Status.HasValue)
@@ -45,37 +45,44 @@ public class GetSellerListingsQueryHandler : IRequestHandler<GetSellerListingsQu
             .ToListAsync(cancellationToken);
 
         // 3. Map entities to DTOs
-        var dtos = listings.Select(l => new SellerListingDto
+        var dtos = listings.Select(l =>
         {
-            ListingId = l.Id,
-            EventId = l.EventId,
-            EventName = l.Event?.Name ?? string.Empty,
-            EventVenue = l.Event?.Venue ?? string.Empty,
-            EventStartAt = l.Event?.EventStartAt ?? default,
-            TierId = l.TierId,
-            TierName = l.Tier?.TierName ?? string.Empty,
-            OriginalTicketCode = l.OriginalTicketCode,
-            OriginalPrice = l.OriginalPrice,
-            ResalePrice = l.ResalePrice,
-            DiscountAmount = l.DiscountAmount,
-            DiscountPercentage = l.DiscountPercentage,
-            IsPrivate = l.IsPrivate,
-            PrivateAccessToken = l.PrivateAccessToken,
-            ShareUrl = l.IsPrivate && !string.IsNullOrEmpty(l.PrivateAccessToken)
-                ? $"https://ticketshield.vn/p/{l.PrivateAccessToken}"
-                : null,
-            VerificationStatus = l.VerificationStatus.ToString(),
-            ListingStatus = l.ListingStatus.ToString(),
-            EscrowStatus = l.EscrowTransaction?.Status.ToString(),
-            NetSellerPayout = l.EscrowTransaction?.NetSellerPayout,
-            UnlockAt = l.EscrowTransaction?.UnlockAt,
-            InSettlementBuffer = l.EscrowTransaction?.InSettlementBuffer ?? false,
-            PayoutStatus = l.EscrowTransaction?.PayoutTransaction?.Status.ToString(),
-            PayoutProcessedAt = l.EscrowTransaction?.PayoutTransaction?.ProcessedAt,
-            PayoutBankInfo = l.EscrowTransaction?.PayoutTransaction != null
-                ? $"{l.EscrowTransaction.PayoutTransaction.RecipientBankCode} - {l.EscrowTransaction.PayoutTransaction.RecipientAccountNumber}"
-                : null,
-            CreatedAt = l.CreatedAt
+            var latestEscrow = l.EscrowTransactions
+                .OrderByDescending(e => e.CreatedAt)
+                .FirstOrDefault();
+
+            return new SellerListingDto
+            {
+                ListingId = l.Id,
+                EventId = l.EventId,
+                EventName = l.Event?.Name ?? string.Empty,
+                EventVenue = l.Event?.Venue ?? string.Empty,
+                EventStartAt = l.Event?.EventStartAt ?? default,
+                TierId = l.TierId,
+                TierName = l.Tier?.TierName ?? string.Empty,
+                OriginalTicketCode = l.OriginalTicketCode,
+                OriginalPrice = l.OriginalPrice,
+                ResalePrice = l.ResalePrice,
+                DiscountAmount = l.DiscountAmount,
+                DiscountPercentage = l.DiscountPercentage,
+                IsPrivate = l.IsPrivate,
+                PrivateAccessToken = l.PrivateAccessToken,
+                ShareUrl = l.IsPrivate && !string.IsNullOrEmpty(l.PrivateAccessToken)
+                    ? $"https://ticketshield.vn/p/{l.PrivateAccessToken}"
+                    : null,
+                VerificationStatus = l.VerificationStatus.ToString(),
+                ListingStatus = l.ListingStatus.ToString(),
+                EscrowStatus = latestEscrow?.Status.ToString(),
+                NetSellerPayout = latestEscrow?.NetSellerPayout,
+                UnlockAt = latestEscrow?.UnlockAt,
+                InSettlementBuffer = latestEscrow?.InSettlementBuffer ?? false,
+                PayoutStatus = latestEscrow?.PayoutTransaction?.Status.ToString(),
+                PayoutProcessedAt = latestEscrow?.PayoutTransaction?.ProcessedAt,
+                PayoutBankInfo = latestEscrow?.PayoutTransaction != null
+                    ? $"{latestEscrow.PayoutTransaction.RecipientBankCode} - {latestEscrow.PayoutTransaction.RecipientAccountNumber}"
+                    : null,
+                CreatedAt = l.CreatedAt
+            };
         }).ToList();
 
         return ApiResponse<List<SellerListingDto>>.SuccessResponse(dtos, "Lấy danh sách vé niêm yết của người bán thành công.");

@@ -452,4 +452,79 @@ public class ProcessSePayWebhookCommandHandlerTests
             It.IsAny<string>(),
             It.IsAny<CancellationToken>()), Times.Never);
     }
+
+    [Fact]
+    public async Task Handle_ValidPayment_WhenVerificationServiceProvided_ShouldCallTransferOwnershipAndStoreNewTicketCodeAndQr()
+    {
+        var (context, listing, escrow) = CreateTestFixture();
+        escrow.RecipientEmail = "buyer_recipient@test.com";
+        escrow.RecipientName = "Buyer Recipient";
+        await context.SaveChangesAsync();
+
+        var templates = new Mock<IEmailTemplateService>();
+        var email = new Mock<IEmailService>();
+        var verification = new Mock<ITicketVerificationService>();
+
+        verification.Setup(v => v.TransferOwnershipByListingId(
+            listing.Id,
+            escrow.BuyerId,
+            "buyer_recipient@test.com",
+            "Buyer Recipient",
+            null,
+            It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new TicketShield.Contracts.Organizer.V1.TransferOwnershipResponse
+            {
+                Outcome = TicketShield.Contracts.Organizer.V1.TransferOutcome.Transferred,
+                NewTicket = new TicketShield.Contracts.Organizer.V1.TicketSnapshot
+                {
+                    Ticket = new TicketShield.Contracts.Organizer.V1.TicketReference
+                    {
+                        TicketCode = "BTC-NEW-PASS-9999"
+                    }
+                }
+            });
+
+        string? capturedTicketCode = null;
+        string? capturedQr = null;
+
+        templates.Setup(t => t.GetBuyerTicketIssuedEmailHtml(
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
+            It.IsAny<string>(), It.IsAny<string>(),
+            It.IsAny<string>(), It.IsAny<string>(),
+            It.IsAny<string>(), It.IsAny<decimal>()))
+            .Callback<string, string, string, string, string, string, string, string, string, decimal>(
+                (bName, evName, evDate, venue, tier, seat, tCode, qr, escCode, amt) =>
+                {
+                    capturedTicketCode = tCode;
+                    capturedQr = qr;
+                })
+            .Returns("<p>buyer email</p>");
+
+        var handler = new ProcessSePayWebhookCommandHandler(context, templates.Object, email.Object, null, verification.Object);
+
+        var result = await handler.Handle(new ProcessSePayWebhookCommand(new SePayWebhookRequest
+        {
+            Id = 99991,
+            TransferType = "in",
+            TransferAmount = 550_000m,
+            Content = "TS1A2B3C4D test btc grpc transfer",
+            ReferenceCode = "FTGRPC001"
+        }), CancellationToken.None);
+
+        Assert.True(result.Success);
+
+        var updatedEscrow = await context.EscrowTransactions.FirstAsync(e => e.Id == escrow.Id);
+        Assert.Equal("BTC-NEW-PASS-9999", updatedEscrow.NewTicketCode);
+        Assert.Equal("BTC-NEW-PASS-9999", updatedEscrow.QrCodeData);
+        Assert.Equal("BTC-NEW-PASS-9999", capturedTicketCode);
+        Assert.Equal("BTC-NEW-PASS-9999", capturedQr);
+
+        verification.Verify(v => v.TransferOwnershipByListingId(
+            listing.Id,
+            escrow.BuyerId,
+            "buyer_recipient@test.com",
+            "Buyer Recipient",
+            null,
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
 }

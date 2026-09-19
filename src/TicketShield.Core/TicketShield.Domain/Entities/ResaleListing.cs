@@ -27,7 +27,18 @@ public class ResaleListing : BaseEntity
     public Event Event { get; set; } = null!;
     public TicketTier Tier { get; set; } = null!;
     public ShadowUser Seller { get; set; } = null!;
-    public EscrowTransaction? EscrowTransaction { get; set; }
+    public ICollection<EscrowTransaction> EscrowTransactions { get; set; } = new List<EscrowTransaction>();
+    public EscrowTransaction? EscrowTransaction
+    {
+        get => EscrowTransactions.OrderByDescending(e => e.CreatedAt).FirstOrDefault();
+        set
+        {
+            if (value != null && !EscrowTransactions.Contains(value))
+            {
+                EscrowTransactions.Add(value);
+            }
+        }
+    }
 
     // Computed Domain Properties
     public decimal DiscountAmount => OriginalPrice > ResalePrice ? OriginalPrice - ResalePrice : 0;

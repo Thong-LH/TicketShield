@@ -212,6 +212,8 @@ public class CancelResaleListingCommandHandlerTests
         public Task RecoverPending(CancellationToken ct) => throw new NotImplementedException();
         public Task<TicketShield.Contracts.Organizer.V1.TransferOwnershipResponse> TransferOwnership(
             string seller, string verificationId, string lockId, ulong expectedLockGeneration, string buyerRef, string buyerEmail, string buyerName, string? buyerPhone, CancellationToken ct) => throw new NotImplementedException();
+        public Task<TicketShield.Contracts.Organizer.V1.TransferOwnershipResponse> TransferOwnershipByListingId(
+            Guid listingId, Guid buyerId, string buyerEmail, string buyerName, string? buyerPhone, CancellationToken ct) => throw new NotImplementedException();
     }
 
 

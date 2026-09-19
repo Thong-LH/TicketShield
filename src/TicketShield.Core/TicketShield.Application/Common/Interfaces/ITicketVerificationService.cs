@@ -73,4 +73,16 @@ public interface ITicketVerificationService
         string buyerName,
         string? buyerPhone,
         CancellationToken ct);
+
+    /// <summary>
+    /// Sang tên vé chính chủ qua ListingId: Tra cứu session và thực hiện TransferOwnership sang BTC qua gRPC.
+    /// Dùng trong SePay Webhook khi người mua chuyển khoản thành công để cấp vé mới chính chủ.
+    /// </summary>
+    Task<TicketShield.Contracts.Organizer.V1.TransferOwnershipResponse> TransferOwnershipByListingId(
+        Guid listingId,
+        Guid buyerId,
+        string buyerEmail,
+        string buyerName,
+        string? buyerPhone,
+        CancellationToken ct);
 }

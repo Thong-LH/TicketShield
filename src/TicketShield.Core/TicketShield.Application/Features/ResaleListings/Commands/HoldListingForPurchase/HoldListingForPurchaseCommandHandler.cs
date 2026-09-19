@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Text;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using TicketShield.Application.Common.Interfaces;
@@ -37,10 +38,15 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
             throw new UnauthorizedException("Bạn phải đăng nhập để giữ chỗ mua vé.");
         }
 
-        // 2. Fetch Resale Listing
-        var listing = await _dbContext.ResaleListings
-            .Include(l => l.EscrowTransaction)
-            .FirstOrDefaultAsync(l => l.Id == request.ListingId, cancellationToken);
+        // Concurrency Control: Acquire PostgreSQL transaction advisory lock hashed by ListingId
+        await using var tx = await _dbContext.BeginAdvisoryLockTransactionAsync(ComputeLockKey(request.ListingId), cancellationToken);
+
+        try
+        {
+            // 2. Fetch Resale Listing
+            var listing = await _dbContext.ResaleListings
+                .Include(l => l.EscrowTransactions)
+                .FirstOrDefaultAsync(l => l.Id == request.ListingId, cancellationToken);
 
         if (listing == null)
         {
@@ -98,12 +104,14 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
             throw new BusinessRuleViolationException($"Vé này hiện ở trạng thái '{listing.ListingStatus}' và không thể đặt mua.");
         }
 
+        var activePendingEscrow = listing.EscrowTransactions
+            .Where(e => e.Status == EscrowStatus.Pending && e.UnlockAt.HasValue && e.UnlockAt.Value > now)
+            .OrderByDescending(e => e.CreatedAt)
+            .FirstOrDefault();
+
         if (listing.ListingStatus == ListingStatus.Transacting)
         {
-            if (listing.EscrowTransaction != null &&
-                listing.EscrowTransaction.UnlockAt.HasValue &&
-                listing.EscrowTransaction.UnlockAt.Value > now &&
-                listing.EscrowTransaction.BuyerId != buyerId)
+            if (activePendingEscrow != null && activePendingEscrow.BuyerId != buyerId)
             {
                 throw new BusinessRuleViolationException("Vé này đang được giữ chỗ bởi người mua khác. Vui lòng thử lại sau.");
             }
@@ -112,19 +120,38 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
         // 6. Calculate Fees via Dynamic DynamicResaleFeeCalculator
         var feeResult = await _feeCalculator.CalculateFeeAsync(listing.ResalePrice, listing.IsPrivate, cancellationToken);
 
-        // 7. Generate Unique Payment Reference (transfer_content for VietQR / NAPAS 247)
-        var paymentReference = await GenerateUniquePaymentReferenceAsync(cancellationToken);
+        // 7. Determine Payment Reference (transfer_content for VietQR / NAPAS 247)
+        string paymentReference;
+        if (activePendingEscrow != null && activePendingEscrow.BuyerId == buyerId && !string.IsNullOrWhiteSpace(activePendingEscrow.PaymentReference))
+        {
+            paymentReference = activePendingEscrow.PaymentReference;
+        }
+        else
+        {
+            paymentReference = await GenerateUniquePaymentReferenceAsync(cancellationToken);
+        }
 
         // 8. Generate VietQR QuickLink (BE-CORE-3.1.2)
         var vietQrResult = _vietQrService?.GenerateSystemQuickLink(feeResult.TotalBuyerPaid, paymentReference);
 
-        // 9. Update Listing Status & Create / Update EscrowTransaction
+        // 9. Update Listing Status & Create / Renew EscrowTransaction
         var unlockAt = now.AddMinutes(10);
         listing.ListingStatus = ListingStatus.Transacting;
 
         EscrowTransaction escrow;
-        if (listing.EscrowTransaction == null)
+        if (activePendingEscrow != null && activePendingEscrow.BuyerId == buyerId)
         {
+            // Same buyer renewing their existing active hold session
+            escrow = activePendingEscrow;
+            escrow.UnlockAt = unlockAt;
+            if (!string.IsNullOrWhiteSpace(request.RecipientName)) escrow.RecipientName = request.RecipientName;
+            if (!string.IsNullOrWhiteSpace(request.RecipientEmail)) escrow.RecipientEmail = request.RecipientEmail;
+            if (!string.IsNullOrWhiteSpace(request.RecipientIdCard)) escrow.RecipientIdCard = request.RecipientIdCard;
+        }
+        else
+        {
+            // Always create a NEW independent EscrowTransaction for new hold attempts.
+            // Preserves historical records (especially RefundQueued, Cancelled, Expired) intact.
             escrow = new EscrowTransaction
             {
                 Id = Guid.NewGuid(),
@@ -144,27 +171,14 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
                 RecipientIdCard = request.RecipientIdCard
             };
             _dbContext.EscrowTransactions.Add(escrow);
-            listing.EscrowTransaction = escrow;
-        }
-        else
-        {
-            escrow = listing.EscrowTransaction;
-            escrow.BuyerId = buyerId;
-            escrow.SellerId = listing.SellerId;
-            escrow.OriginalTicketPrice = listing.ResalePrice;
-            escrow.BuyerFee = feeResult.BuyerFee;
-            escrow.SellerFee = feeResult.SellerFee;
-            escrow.TotalBuyerPaid = feeResult.TotalBuyerPaid;
-            escrow.NetSellerPayout = feeResult.NetSellerPayout;
-            escrow.PaymentReference = paymentReference;
-            escrow.Status = EscrowStatus.Pending;
-            escrow.UnlockAt = unlockAt;
-            escrow.RecipientName = request.RecipientName ?? escrow.RecipientName;
-            escrow.RecipientEmail = request.RecipientEmail ?? escrow.RecipientEmail;
-            escrow.RecipientIdCard = request.RecipientIdCard ?? escrow.RecipientIdCard;
         }
 
         await _dbContext.SaveChangesAsync(cancellationToken);
+
+        if (tx != null)
+        {
+            await tx.CommitAsync(cancellationToken);
+        }
 
         var response = new HoldListingForPurchaseResponse
         {
@@ -189,6 +203,22 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
         return ApiResponse<HoldListingForPurchaseResponse>.SuccessResponse(
             response,
             "Giữ chỗ vé thành công! Vui lòng thanh toán trong vòng 10 phút.");
+        }
+        catch
+        {
+            if (tx != null)
+            {
+                await tx.RollbackAsync(cancellationToken);
+            }
+            throw;
+        }
+    }
+
+
+    private static long ComputeLockKey(Guid listingId)
+    {
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes("ts:hold:listing:" + listingId));
+        return BitConverter.ToInt64(hash, 0);
     }
 
     private async Task<string> GenerateUniquePaymentReferenceAsync(CancellationToken cancellationToken)
@@ -223,3 +253,4 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
         return code;
     }
 }
+

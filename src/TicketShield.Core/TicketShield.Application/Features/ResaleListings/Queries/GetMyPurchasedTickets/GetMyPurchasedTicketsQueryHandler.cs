@@ -64,12 +64,18 @@ public class GetMyPurchasedTicketsQueryHandler : IRequestHandler<GetMyPurchasedT
             var eventName = e.Listing?.Event?.Name ?? "Concert Pass";
             var eventVenue = e.Listing?.Event?.Venue ?? "Sân Vận Động";
             var eventStart = e.Listing?.Event?.EventStartAt ?? e.CreatedAt.AddDays(30);
-            var tierName = e.Listing?.Tier?.TierName ?? "VIP Pass";
-            var rawCode = !string.IsNullOrWhiteSpace(e.PaymentReference)
-                ? e.PaymentReference.Replace("TSPAY", "").Trim()
-                : e.Id.ToString("N")[..6].ToUpperInvariant();
-            var passCode = $"TS-{rawCode}-PASS";
-            var qrPayload = $"TICKETSHIELD:OFFICIAL_PASS:{e.Id}:{e.ListingId}:{passCode}";
+            var tierName = e.Listing?.Tier?.TierName ?? "Standard Pass";
+            // Authentic ticket code and QR issued by BTC Organizer (Issue 3)
+            var passCode = !string.IsNullOrWhiteSpace(e.NewTicketCode)
+                ? e.NewTicketCode
+                : (e.Listing != null && !string.IsNullOrWhiteSpace(e.Listing.OriginalTicketCode)
+                    ? e.Listing.OriginalTicketCode
+                    : (e.PaymentReference ?? e.Id.ToString("N")[..8].ToUpperInvariant()));
+
+            var qrPayload = !string.IsNullOrWhiteSpace(e.QrCodeData)
+                ? e.QrCodeData
+                : passCode;
+
             var qrUrl = $"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={Uri.EscapeDataString(qrPayload)}";
 
             var status = e.Status switch

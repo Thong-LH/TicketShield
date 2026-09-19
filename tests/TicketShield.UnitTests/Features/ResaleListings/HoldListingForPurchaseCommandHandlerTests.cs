@@ -133,7 +133,7 @@ public class HoldListingForPurchaseCommandHandlerTests
         Assert.Equal(10, result.Data.PaymentReference.Length); // TS + 8 chars = 10 chars total
         Assert.Equal(1_050_000m, result.Data.TotalBuyerPaid); // 1,000,000 + 5%
 
-        var updatedListing = await dbContext.ResaleListings.Include(l => l.EscrowTransaction).FirstAsync(l => l.Id == listing.Id);
+        var updatedListing = await dbContext.ResaleListings.Include(l => l.EscrowTransactions).FirstAsync(l => l.Id == listing.Id);
         Assert.Equal(ListingStatus.Transacting, updatedListing.ListingStatus);
         Assert.NotNull(updatedListing.EscrowTransaction);
         Assert.Equal(buyer.Id, updatedListing.EscrowTransaction.BuyerId);
@@ -285,7 +285,80 @@ public class HoldListingForPurchaseCommandHandlerTests
         // Assert
         Assert.NotNull(result);
         Assert.True(result.Success);
-        Assert.Equal(buyer.Id, expiredEscrow.BuyerId); // Replaced buyer ID
+        Assert.Equal(previousBuyerId, expiredEscrow.BuyerId); // Original expired escrow buyer preserved!
         Assert.NotEqual("TSEXPIRED1", result.Data.PaymentReference); // New unique payment reference
+
+        var updatedListing = await dbContext.ResaleListings.Include(l => l.EscrowTransactions).FirstAsync(l => l.Id == listing.Id);
+        Assert.Equal(2, updatedListing.EscrowTransactions.Count);
+        var newEscrow = updatedListing.EscrowTransactions.First(e => e.Id != expiredEscrow.Id);
+        Assert.Equal(buyer.Id, newEscrow.BuyerId);
+        Assert.Equal(EscrowStatus.Pending, newEscrow.Status);
+    }
+
+    [Fact]
+    public async Task Handle_WhenListingHasRefundQueuedEscrow_ShouldCreateNewEscrowAndPreserveRefundQueuedRecord()
+    {
+        // Arrange
+        var (dbContext, seller, buyer) = CreateInMemoryDbContext();
+        var previousBuyerId = Guid.NewGuid();
+        var feeCalculator = new MockResaleFeeCalculator();
+        var currentUserService = new MockCurrentUserService(buyer.Id);
+
+        var listing = new ResaleListing
+        {
+            Id = Guid.NewGuid(),
+            EventId = (await dbContext.Events.FirstAsync()).Id,
+            TierId = (await dbContext.TicketTiers.FirstAsync()).Id,
+            SellerId = seller.Id,
+            OriginalTicketCode = "TCK-HOLD-REFUND-001",
+            OriginalPrice = 1_000_000m,
+            ResalePrice = 1_000_000m,
+            ListingStatus = ListingStatus.Verified
+        };
+
+        // Escrow of previous buyer who transferred late -> RefundQueued with bank transaction reference
+        var refundQueuedEscrow = new EscrowTransaction
+        {
+            Id = Guid.NewGuid(),
+            ListingId = listing.Id,
+            BuyerId = previousBuyerId,
+            SellerId = seller.Id,
+            OriginalTicketPrice = 1_000_000m,
+            TotalBuyerPaid = 1_050_000m,
+            PaymentReference = "TSREFUND99",
+            BankTransactionReference = "SEPAY_TX_987654321",
+            Status = EscrowStatus.RefundQueued,
+            UnlockAt = DateTimeOffset.UtcNow.AddMinutes(-30)
+        };
+        listing.EscrowTransactions.Add(refundQueuedEscrow);
+        dbContext.ResaleListings.Add(listing);
+        await dbContext.SaveChangesAsync();
+
+        var handler = new HoldListingForPurchaseCommandHandler(dbContext, feeCalculator, currentUserService);
+        var command = new HoldListingForPurchaseCommand(listing.Id);
+
+        // Act
+        var result = await handler.Handle(command, CancellationToken.None);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.True(result.Success);
+
+        // 1. Critical Verification: The RefundQueued record must NOT be overwritten
+        var dbRefundEscrow = await dbContext.EscrowTransactions.FindAsync(refundQueuedEscrow.Id);
+        Assert.NotNull(dbRefundEscrow);
+        Assert.Equal(EscrowStatus.RefundQueued, dbRefundEscrow.Status);
+        Assert.Equal("SEPAY_TX_987654321", dbRefundEscrow.BankTransactionReference);
+        Assert.Equal(previousBuyerId, dbRefundEscrow.BuyerId);
+        Assert.Equal("TSREFUND99", dbRefundEscrow.PaymentReference);
+
+        // 2. A brand new escrow must be created for the new buyer
+        var updatedListing = await dbContext.ResaleListings.Include(l => l.EscrowTransactions).FirstAsync(l => l.Id == listing.Id);
+        Assert.Equal(2, updatedListing.EscrowTransactions.Count);
+        var newEscrow = updatedListing.EscrowTransactions.First(e => e.Id != refundQueuedEscrow.Id);
+        Assert.Equal(buyer.Id, newEscrow.BuyerId);
+        Assert.Equal(EscrowStatus.Pending, newEscrow.Status);
+        Assert.NotEqual("TSREFUND99", newEscrow.PaymentReference);
+        Assert.Null(newEscrow.BankTransactionReference);
     }
 }

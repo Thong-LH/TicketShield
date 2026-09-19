@@ -29,7 +29,7 @@ public sealed class GetPaymentStatusQueryHandler : IRequestHandler<GetPaymentSta
 
         var listing = await _dbContext.ResaleListings
             .AsNoTracking()
-            .Include(l => l.EscrowTransaction)
+            .Include(l => l.EscrowTransactions)
             .FirstOrDefaultAsync(l => l.Id == request.ListingId, cancellationToken);
 
         if (listing == null)
@@ -37,15 +37,18 @@ public sealed class GetPaymentStatusQueryHandler : IRequestHandler<GetPaymentSta
             throw new NotFoundException("Tin đăng bán vé", request.ListingId);
         }
 
-        var escrow = listing.EscrowTransaction;
+        var escrow = listing.EscrowTransactions
+            .Where(e => e.BuyerId == buyerId)
+            .OrderByDescending(e => e.CreatedAt)
+            .FirstOrDefault();
+
         if (escrow == null)
         {
+            if (listing.EscrowTransactions.Any())
+            {
+                throw new ForbiddenAccessException("Bạn không có quyền xem trạng thái thanh toán của giao dịch này.");
+            }
             throw new NotFoundException("Giao dịch ký quỹ", request.ListingId);
-        }
-
-        if (escrow.BuyerId != buyerId)
-        {
-            throw new ForbiddenAccessException("Bạn không có quyền xem trạng thái thanh toán của giao dịch này.");
         }
 
         var dto = new GetPaymentStatusDto

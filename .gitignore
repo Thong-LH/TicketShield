@@ -75,6 +75,7 @@ yarn-error.log*
 appsettings.Local.json
 appsettings.*.Local.json
 *.Secret.json
+scripts/jira_config.json
 
 # Docker / Volumes
 postgres_data/
