@@ -15,6 +15,16 @@ Write-Host ""
 $choice = Read-Host "Enter choice [1-3] (Default: 1)"
 if ([string]::IsNullOrWhiteSpace($choice)) { $choice = "1" }
 
+function Start-NgrokTunnel {
+    Write-Host "  -> Launching Ngrok Webhook Tunnel..." -ForegroundColor Magenta
+    $ngrokBat = Join-Path $PSScriptRoot "run-ngrok.bat"
+    if (Test-Path $ngrokBat) {
+        Start-Process -FilePath "cmd.exe" -ArgumentList "/c", "`"$ngrokBat`""
+    } else {
+        Write-Host "[Warning] File run-ngrok.bat not found at $ngrokBat" -ForegroundColor Yellow
+    }
+}
+
 switch ($choice) {
     "1" {
         Write-Host "`nGenerating .env from Doppler secrets..." -ForegroundColor Cyan
@@ -34,14 +44,22 @@ switch ($choice) {
         if ($LASTEXITCODE -eq 0) {
             Write-Host "`n[Success] Microservices containers started successfully!" -ForegroundColor Green
             docker ps --format "table {{.Names}}`t{{.Status}}`t{{.Ports}}"
+            Start-NgrokTunnel
         } else {
             Write-Host "`n[Error] Could not start Docker Compose. Please check if Docker Desktop is running." -ForegroundColor Red
         }
     }
     "2" {
         Write-Host "`nStopping any existing microservice processes..." -ForegroundColor Yellow
-        Stop-Process -Name "MockOrganizer.API", "TicketShield.Identity.API", "TicketShield.API", "TicketShield.Gateway" -Force -ErrorAction SilentlyContinue
+        Stop-Process -Name "MockOrganizer.API", "TicketShield.Identity.API", "TicketShield.API", "TicketShield.Gateway", "dotnet", "ngrok" -Force -ErrorAction SilentlyContinue
         Start-Sleep -Seconds 1
+
+        Write-Host "`nBuilding solution first to prevent simultaneous compile file locks..." -ForegroundColor Cyan
+        dotnet build TicketShield.sln
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "[Error] Build failed! Please fix compiler errors before running." -ForegroundColor Red
+            return
+        }
 
         Write-Host "`nLaunching .NET CLI microservices in separate windows..." -ForegroundColor Green
 
@@ -57,14 +75,17 @@ switch ($choice) {
             $svcName = $svc.Name
             $svcPath = $svc.Path
             $runCmd = if ($svc.UseDoppler) {
-                "doppler run -- dotnet run --project `"$svcPath`""
+                "doppler run -- dotnet run --no-build --project `"$svcPath`""
             } else {
-                "dotnet run --project `"$svcPath`""
+                "dotnet run --no-build --project `"$svcPath`""
             }
             $psCmd = "Set-Location '$ProjectRoot'; Write-Host '=== $svcName ===' -ForegroundColor Yellow; $runCmd"
             Start-Process powershell -ArgumentList "-NoExit", "-Command", $psCmd
         }
-        Write-Host "`n[Success] All 4 microservice windows opened!" -ForegroundColor Green
+
+        Start-NgrokTunnel
+
+        Write-Host "`n[Success] All 4 microservices and Ngrok tunnel opened in separate windows!" -ForegroundColor Green
     }
     "3" {
         Write-Host "Exiting..." -ForegroundColor Gray
@@ -74,3 +95,4 @@ switch ($choice) {
         Write-Host "Invalid option." -ForegroundColor Red
     }
 }
+
