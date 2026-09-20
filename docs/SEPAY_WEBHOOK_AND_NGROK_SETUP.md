@@ -47,7 +47,7 @@ Webhook trên [Dashboard SePAY](https://my.sepay.vn/webhooks) đã được cấ
    ```
 3. **Cơ chế tự động của script**:
    - Nếu máy đồng nghiệp **chưa có `ngrok`**, script sẽ tự động tải bản zip chính thức của Ngrok về và giải nén.
-   - Tự động nạp AuthToken dùng chung: `3JPOHWF0ec1eSouECUMVeiWXD4C_38MZP8E7mPAHSkfmq1gjt`.
+   - Tự động nạp AuthToken dùng chung: `3JXNY7QYKZqBhfWaoBKuWnIqGCz_6AuVRJZ4PtYmznzR8tWi2`.
    - Tự động mở đúng URL cố định: `https://chest-huddling-asleep.ngrok-free.dev` trỏ về `localhost:5000`.
 4. Giữ cửa sổ terminal mở trong suốt quá trình test thanh toán.
 
@@ -75,7 +75,7 @@ Nếu đồng nghiệp muốn tự gõ lệnh hoặc dùng hệ điều hành kh
 
 #### Bước 2.2: Nạp AuthToken của team (chỉ làm 1 lần)
 ```bash
-ngrok config add-authtoken 3JPOHWF0ec1eSouECUMVeiWXD4C_38MZP8E7mPAHSkfmq1gjt
+ngrok config add-authtoken 3JXNY7QYKZqBhfWaoBKuWnIqGCz_6AuVRJZ4PtYmznzR8tWi2
 ```
 
 #### Bước 2.3: Chạy tunnel tới Gateway

@@ -43,7 +43,8 @@ echo [+] Domain co dinh: https://chest-huddling-asleep.ngrok-free.dev
 echo.
 
 :: Thiet lap authtoken dung chung cua team
-%NGROK_CMD% config add-authtoken 3JPOHWF0ec1eSouECUMVeiWXD4C_38MZP8E7mPAHSkfmq1gjt >nul 2>&1
+%NGROK_CMD% config add-authtoken 3JXNY7QYKZqBhfWaoBKuWnIqGCz_6AuVRJZ4PtYmznzR8tWi2 >nul 2>&1
+
 
 :: Khoi chay tunnel toi Gateway port 5000 voi URL co dinh
 %NGROK_CMD% http 5000 --url=https://chest-huddling-asleep.ngrok-free.dev
