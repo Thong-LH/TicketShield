@@ -251,6 +251,14 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
         try
         {
             var ev = escrow.Listing.Event;
+
+            // Build a publicly-loadable QR image URL for the email.
+            // Gmail blocks inline base64 images; qrserver.com returns a PNG via HTTPS that all clients can display.
+            var qrPayloadForEmail = escrow.NewTicketCode ?? escrow.Listing.OriginalTicketCode ?? string.Empty;
+            var qrImageUrlForEmail = string.IsNullOrWhiteSpace(qrPayloadForEmail)
+                ? string.Empty
+                : $"https://api.qrserver.com/v1/create-qr-code/?size=200x200&data={Uri.EscapeDataString(qrPayloadForEmail)}";
+
             var buyerHtml = _emailTemplates.GetBuyerTicketIssuedEmailHtml(
                 escrow.Buyer.FullName,
                 ev.Name,
@@ -259,7 +267,7 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
                 escrow.Listing.Tier?.TierName ?? string.Empty,
                 string.Empty,
                 escrow.NewTicketCode ?? escrow.Listing.OriginalTicketCode,
-                escrow.QrCodeData ?? escrow.NewTicketCode ?? string.Empty,
+                qrImageUrlForEmail,
                 escrow.PaymentReference ?? string.Empty,
                 escrow.TotalBuyerPaid);
             var buyerTo = string.IsNullOrWhiteSpace(escrow.RecipientEmail)
