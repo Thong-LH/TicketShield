@@ -47,33 +47,43 @@ public class ExpiredHoldReleaseWorker : BackgroundService
         var dbContext = scope.ServiceProvider.GetRequiredService<ITicketShieldDbContext>();
 
         var now = DateTimeOffset.UtcNow;
-        var expiredListings = await dbContext.ResaleListings
+        var listings = await dbContext.ResaleListings
             .Include(l => l.EscrowTransactions)
-            .Where(l => l.ListingStatus == ListingStatus.Transacting &&
-                        l.EscrowTransactions.Any(e => e.Status == EscrowStatus.Pending &&
+            .Where(l => l.EscrowTransactions.Any(e => e.Status == EscrowStatus.Pending &&
                                                      e.UnlockAt.HasValue &&
                                                      e.UnlockAt.Value <= now))
             .ToListAsync(ct);
 
-        if (!expiredListings.Any())
+        if (!listings.Any())
         {
             return 0;
         }
 
-        foreach (var listing in expiredListings)
+        var revertedCount = 0;
+        foreach (var listing in listings)
         {
-            listing.ListingStatus = ListingStatus.Verified;
-            var expiredEscrow = listing.EscrowTransactions
+            var expiredEscrows = listing.EscrowTransactions
                 .Where(e => e.Status == EscrowStatus.Pending && e.UnlockAt.HasValue && e.UnlockAt.Value <= now)
-                .OrderByDescending(e => e.CreatedAt)
-                .FirstOrDefault();
+                .ToList();
+            foreach (var expired in expiredEscrows)
+            {
+                expired.Status = EscrowStatus.Released;
+            }
 
-            _logger.LogInformation(
-                "Released expired hold for ListingId: {ListingId} (Hold expired at {UnlockAt}). Status reset to VERIFIED.",
-                listing.Id, expiredEscrow?.UnlockAt);
+            var hasActiveHold = listing.EscrowTransactions.Any(e =>
+                e.Status == EscrowStatus.Pending && e.UnlockAt.HasValue && e.UnlockAt.Value > now);
+
+            if (listing.ListingStatus == ListingStatus.Transacting && !hasActiveHold)
+            {
+                listing.ListingStatus = ListingStatus.Verified;
+                revertedCount++;
+                _logger.LogInformation(
+                    "Released expired hold for ListingId: {ListingId} (Hold expired at {UnlockAt}). Status reset to VERIFIED.",
+                    listing.Id, expiredEscrows.Max(e => e.UnlockAt));
+            }
         }
 
         await dbContext.SaveChangesAsync(ct);
-        return expiredListings.Count;
+        return revertedCount;
     }
 }

@@ -40,7 +40,8 @@ public class SmtpEmailService : IEmailService
             if (!string.IsNullOrEmpty(_settings.Username) && !string.IsNullOrEmpty(_settings.Password))
             {
                 client.UseDefaultCredentials = false;
-                client.Credentials = new NetworkCredential(_settings.Username, _settings.Password);
+                var password = _settings.Password.Replace(" ", "");
+                client.Credentials = new NetworkCredential(_settings.Username, password);
             }
 
             using var mailMessage = new MailMessage

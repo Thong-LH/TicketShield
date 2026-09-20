@@ -162,6 +162,63 @@ public class ExpiredHoldReleaseWorkerTests
     }
 
     [Fact]
+    public async Task ReleaseExpiredHolds_WhenOldPendingExpiredButNewHoldActive_ShouldKeepTransacting()
+    {
+        var (dbContext, serviceProvider) = CreateInMemoryDbContextWithServices();
+        var scopeFactory = serviceProvider.GetRequiredService<IServiceScopeFactory>();
+        var sellerId = (await dbContext.ShadowUsers.FirstAsync()).Id;
+        var buyerId = (await dbContext.ShadowUsers.Skip(1).FirstAsync()).Id;
+
+        var listing = new ResaleListing
+        {
+            Id = Guid.NewGuid(),
+            EventId = (await dbContext.Events.FirstAsync()).Id,
+            TierId = (await dbContext.TicketTiers.FirstAsync()).Id,
+            SellerId = sellerId,
+            OriginalTicketCode = "TCK-MIXED-001",
+            OriginalPrice = 1_000_000m,
+            ResalePrice = 1_000_000m,
+            ListingStatus = ListingStatus.Transacting
+        };
+        var expiredEscrow = new EscrowTransaction
+        {
+            Id = Guid.NewGuid(),
+            ListingId = listing.Id,
+            BuyerId = buyerId,
+            SellerId = sellerId,
+            PaymentReference = "TSEXPIRED01",
+            Status = EscrowStatus.Pending,
+            UnlockAt = DateTimeOffset.UtcNow.AddMinutes(-2)
+        };
+        var activeEscrow = new EscrowTransaction
+        {
+            Id = Guid.NewGuid(),
+            ListingId = listing.Id,
+            BuyerId = buyerId,
+            SellerId = sellerId,
+            PaymentReference = "TSACTIVE01",
+            Status = EscrowStatus.Pending,
+            UnlockAt = DateTimeOffset.UtcNow.AddMinutes(8)
+        };
+        listing.EscrowTransactions.Add(expiredEscrow);
+        listing.EscrowTransactions.Add(activeEscrow);
+        dbContext.ResaleListings.Add(listing);
+        dbContext.EscrowTransactions.AddRange(expiredEscrow, activeEscrow);
+        await dbContext.SaveChangesAsync();
+
+        var worker = new ExpiredHoldReleaseWorker(scopeFactory, NullLogger<ExpiredHoldReleaseWorker>.Instance);
+        var releasedCount = await worker.ReleaseExpiredHoldsAsync(CancellationToken.None);
+
+        Assert.Equal(0, releasedCount);
+        await dbContext.Entry(listing).ReloadAsync();
+        await dbContext.Entry(expiredEscrow).ReloadAsync();
+        await dbContext.Entry(activeEscrow).ReloadAsync();
+        Assert.Equal(ListingStatus.Transacting, listing.ListingStatus);
+        Assert.Equal(EscrowStatus.Released, expiredEscrow.Status);
+        Assert.Equal(EscrowStatus.Pending, activeEscrow.Status);
+    }
+
+    [Fact]
     public async Task ReleaseExpiredHolds_WhenListingIsSoldOrCancelled_ShouldNotChangeStatus()
     {
         // Arrange

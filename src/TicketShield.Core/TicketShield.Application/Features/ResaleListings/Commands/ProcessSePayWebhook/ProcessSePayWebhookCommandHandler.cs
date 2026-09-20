@@ -135,10 +135,15 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
                 $"Số tiền thanh toán ({payload.TransferAmount:N0} VNĐ) nhỏ hơn tổng số tiền cần trả ({escrow.TotalBuyerPaid:N0} VNĐ).");
         }
 
-        // 7. Lock Escrow and mark Listing as Sold only while the 10-minute hold is still valid
+        // 7. Lock Escrow while THIS hold window is still open.
+        // Do not require listing.Transacting: ExpiredHoldReleaseWorker can flip the listing
+        // to Verified because an older Pending escrow expired, while this escrow is still live.
         var now = DateTimeOffset.UtcNow;
+        var listingUnavailable =
+            escrow.Listing.ListingStatus == ListingStatus.Sold ||
+            escrow.Listing.ListingStatus == ListingStatus.Cancelled;
         var holdStillValid =
-            escrow.Listing.ListingStatus == ListingStatus.Transacting &&
+            !listingUnavailable &&
             escrow.UnlockAt.HasValue &&
             escrow.UnlockAt.Value > now;
 
@@ -178,6 +183,7 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
 
         string? newTicketCode = null;
         string? qrCodeData = null;
+        var escrowId = escrow.Id;
 
         // Call gRPC TransferOwnership to BTC Organizer (Issue 2)
         if (_ticketVerificationService != null)
@@ -196,6 +202,15 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
 
             newTicketCode = transferResponse.NewTicket?.Ticket?.TicketCode;
             qrCodeData = transferResponse.NewTicket?.Ticket?.TicketCode;
+
+            // TicketVerificationService.Transaction() calls ChangeTracker.Clear() on this same
+            // scoped DbContext. Mutations on the pre-transfer escrow instance would not persist.
+            escrow = await _dbContext.EscrowTransactions
+                .Include(e => e.Listing)
+                    .ThenInclude(l => l.Event)
+                .Include(e => e.Buyer)
+                .Include(e => e.Seller)
+                .FirstAsync(e => e.Id == escrowId, cancellationToken);
         }
 
         escrow.Status = EscrowStatus.Locked;
@@ -247,8 +262,11 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
                 escrow.QrCodeData ?? escrow.NewTicketCode ?? string.Empty,
                 escrow.PaymentReference ?? string.Empty,
                 escrow.TotalBuyerPaid);
+            var buyerTo = string.IsNullOrWhiteSpace(escrow.RecipientEmail)
+                ? escrow.Buyer.Email
+                : escrow.RecipientEmail;
             await _emailService.SendEmailAsync(
-                escrow.Buyer.Email,
+                buyerTo,
                 "TicketShield — Xác nhận thanh toán vé",
                 buyerHtml,
                 cancellationToken);
@@ -281,8 +299,11 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
 
         try
         {
+            var buyerTo = string.IsNullOrWhiteSpace(escrow.RecipientEmail)
+                ? escrow.Buyer.Email
+                : escrow.RecipientEmail;
             await _emailService.SendEmailAsync(
-                escrow.Buyer.Email,
+                buyerTo,
                 "TicketShield — Thanh toán đến muộn, đang hoàn tiền",
                 $"<p>Xin chào {escrow.Buyer.FullName},</p><p>Tiền chuyển khoản {transferAmount:N0} VNĐ đến sau 10 phút giữ chỗ. Giao dịch {escrow.PaymentReference} đã đưa vào hàng đợi hoàn tiền. Vé đã được mở bán lại.</p>",
                 cancellationToken);

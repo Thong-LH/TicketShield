@@ -967,7 +967,9 @@ public class TicketVerificationService : ITicketVerificationService
         var index = await Read<ListingIndex>(ListingIndexKey(listingId), ct);
         if (index == null)
         {
-            throw Error("VERIFICATION_SESSION_NOT_FOUND", 404);
+            // Seeded marketplace listings (e.g. ATSH-GA-999) have no OTP verification session.
+            // Payment still locks escrow; BTC transfer applies only to listings published via verify/lock.
+            return new TransferOwnershipResponse();
         }
 
         var session = await Owned(index.Seller, index.VerificationId, ct);

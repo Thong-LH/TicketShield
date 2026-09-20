@@ -251,6 +251,30 @@ public class ProcessSePayWebhookCommandHandlerTests
     }
 
     [Fact]
+    public async Task Handle_WhenListingVerifiedButThisHoldStillOpen_ShouldLockEscrow()
+    {
+        var (context, listing, escrow) = CreateTestFixture();
+        listing.ListingStatus = ListingStatus.Verified;
+        escrow.UnlockAt = DateTimeOffset.UtcNow.AddMinutes(9);
+        await context.SaveChangesAsync();
+        var handler = new ProcessSePayWebhookCommandHandler(context);
+
+        var result = await handler.Handle(new ProcessSePayWebhookCommand(new SePayWebhookRequest
+        {
+            Id = 10017,
+            TransferType = "in",
+            TransferAmount = 550_000m,
+            Content = "TS1A2B3C4D",
+            ReferenceCode = "FTRACE001"
+        }), CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.Equal("Locked", result.Data.EscrowStatus);
+        Assert.Equal(EscrowStatus.Locked, (await context.EscrowTransactions.FindAsync(escrow.Id))!.Status);
+        Assert.Equal(ListingStatus.Sold, (await context.ResaleListings.FindAsync(listing.Id))!.ListingStatus);
+    }
+
+    [Fact]
     public async Task Handle_WhenHoldExpired_ShouldQueueRefundAndKeepListingUnsold()
     {
         var (context, listing, escrow) = CreateTestFixture();
@@ -526,5 +550,46 @@ public class ProcessSePayWebhookCommandHandlerTests
             "Buyer Recipient",
             null,
             It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Handle_ValidPayment_WhenTransferClearsChangeTracker_ShouldStillPersistLockedSold()
+    {
+        var (context, listing, escrow) = CreateTestFixture();
+        await context.SaveChangesAsync();
+
+        var verification = new Mock<ITicketVerificationService>();
+        verification.Setup(v => v.TransferOwnershipByListingId(
+            listing.Id,
+            escrow.BuyerId,
+            It.IsAny<string>(),
+            It.IsAny<string>(),
+            It.IsAny<string?>(),
+            It.IsAny<CancellationToken>()))
+            .Callback(() => context.ChangeTracker.Clear())
+            .ReturnsAsync(new TicketShield.Contracts.Organizer.V1.TransferOwnershipResponse());
+
+        var handler = new ProcessSePayWebhookCommandHandler(context, null, null, null, verification.Object);
+
+        var result = await handler.Handle(new ProcessSePayWebhookCommand(new SePayWebhookRequest
+        {
+            Id = 99992,
+            TransferType = "in",
+            TransferAmount = 550_000m,
+            Content = "TS1A2B3C4D tracker clear",
+            ReferenceCode = "FTCLEAR001"
+        }), CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.Equal(nameof(EscrowStatus.Locked), result.Data!.EscrowStatus);
+        Assert.Equal(nameof(ListingStatus.Sold), result.Data.ListingStatus);
+
+        context.ChangeTracker.Clear();
+        var persisted = await context.EscrowTransactions
+            .Include(e => e.Listing)
+            .FirstAsync(e => e.Id == escrow.Id);
+        Assert.Equal(EscrowStatus.Locked, persisted.Status);
+        Assert.Equal(ListingStatus.Sold, persisted.Listing.ListingStatus);
+        Assert.Equal("FTCLEAR001", persisted.BankTransactionReference);
     }
 }
