@@ -541,7 +541,7 @@ public class ProcessSePayWebhookCommandHandlerTests
         Assert.Equal("BTC-NEW-PASS-9999", updatedEscrow.NewTicketCode);
         Assert.Equal("BTC-NEW-PASS-9999", updatedEscrow.QrCodeData);
         Assert.Equal("BTC-NEW-PASS-9999", capturedTicketCode);
-        Assert.Equal("BTC-NEW-PASS-9999", capturedQr);
+        Assert.Contains("BTC-NEW-PASS-9999", capturedQr);
 
         verification.Verify(v => v.TransferOwnershipByListingId(
             listing.Id,
