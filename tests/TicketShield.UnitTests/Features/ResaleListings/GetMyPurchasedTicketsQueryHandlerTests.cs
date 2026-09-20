@@ -131,9 +131,133 @@ public class GetMyPurchasedTicketsQueryHandlerTests
         var ticket = result.Data!.First();
         Assert.Equal("BTC-AUTHENTIC-PASS-777", ticket.TicketPassCode);
         Assert.Equal("https://organizer.ticket/authentic-pass-777", ticket.QrCodeData);
-        Assert.DoesNotContain("TS-OLD-SELLER", ticket.TicketPassCode);
+        Assert.DoesNotContain("OLD-SELLER-TICKET-001", ticket.TicketPassCode);
+        Assert.DoesNotContain("OLD-SELLER-TICKET-001", ticket.QrCodeData);
+        Assert.DoesNotContain("OLD-SELLER-TICKET-001", ticket.QrCodeImageUrl);
         Assert.DoesNotContain("TICKETSHIELD:OFFICIAL_PASS", ticket.QrCodeData);
         Assert.Equal("IN_ESCROW", ticket.Status);
+    }
+
+    [Fact]
+    public async Task Handle_WhenEscrowIsPendingHold_ShouldNotReturnItAsPurchasedTicket()
+    {
+        var (context, buyerId, buyerEmail) = CreateTestFixture();
+        var paid = context.EscrowTransactions.Single();
+        paid.Status = EscrowStatus.Pending;
+        paid.NewTicketCode = null;
+        paid.QrCodeData = null;
+        context.SaveChanges();
+
+        var currentUserService = new Mock<ICurrentUserService>();
+        currentUserService.Setup(u => u.UserId).Returns(buyerId);
+        currentUserService.Setup(u => u.Email).Returns(buyerEmail);
+
+        var handler = new GetMyPurchasedTicketsQueryHandler(context, currentUserService.Object);
+        var result = await handler.Handle(new GetMyPurchasedTicketsQuery(), CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.NotNull(result.Data);
+        Assert.Empty(result.Data!);
+    }
+
+    [Fact]
+    public async Task Handle_WhenPendingHoldExistsBesidePaidTicket_ShouldNotLeakSellerOriginalTicketCode()
+    {
+        var (context, buyerId, buyerEmail) = CreateTestFixture();
+        var listing = context.ResaleListings.Single();
+        var paid = context.EscrowTransactions.Single();
+
+        context.EscrowTransactions.Add(new EscrowTransaction
+        {
+            Id = Guid.NewGuid(),
+            ListingId = listing.Id,
+            BuyerId = buyerId,
+            SellerId = listing.SellerId,
+            OriginalTicketPrice = 1_500_000m,
+            BuyerFee = 50_000m,
+            SellerFee = 50_000m,
+            TotalBuyerPaid = 1_550_000m,
+            NetSellerPayout = 1_450_000m,
+            Status = EscrowStatus.Pending,
+            PaymentReference = "TSPENDHOLD1",
+            RecipientEmail = buyerEmail,
+            RecipientName = "Buyer User",
+            NewTicketCode = null,
+            QrCodeData = null,
+            Listing = listing
+        });
+        context.SaveChanges();
+
+        var currentUserService = new Mock<ICurrentUserService>();
+        currentUserService.Setup(u => u.UserId).Returns(buyerId);
+        currentUserService.Setup(u => u.Email).Returns(buyerEmail);
+
+        var handler = new GetMyPurchasedTicketsQueryHandler(context, currentUserService.Object);
+        var result = await handler.Handle(new GetMyPurchasedTicketsQuery(), CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.NotNull(result.Data);
+        Assert.Single(result.Data!);
+        Assert.Equal(paid.Id, result.Data![0].EscrowId);
+        Assert.All(result.Data, ticket =>
+        {
+            Assert.NotEqual("PENDING_PAYMENT", ticket.Status);
+            Assert.DoesNotContain("OLD-SELLER-TICKET-001", ticket.TicketPassCode);
+            Assert.DoesNotContain("OLD-SELLER-TICKET-001", ticket.QrCodeData);
+            Assert.DoesNotContain("OLD-SELLER-TICKET-001", ticket.QrCodeImageUrl);
+        });
+    }
+
+    [Fact]
+    public async Task Handle_WhenPaidButOrganizerCodeMissing_ShouldNotFallbackToSellerOriginalTicketCode()
+    {
+        var (context, buyerId, buyerEmail) = CreateTestFixture();
+        var paid = context.EscrowTransactions.Single();
+        paid.NewTicketCode = null;
+        paid.QrCodeData = null;
+        context.SaveChanges();
+
+        var currentUserService = new Mock<ICurrentUserService>();
+        currentUserService.Setup(u => u.UserId).Returns(buyerId);
+        currentUserService.Setup(u => u.Email).Returns(buyerEmail);
+
+        var handler = new GetMyPurchasedTicketsQueryHandler(context, currentUserService.Object);
+        var result = await handler.Handle(new GetMyPurchasedTicketsQuery(), CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.NotNull(result.Data);
+        Assert.Single(result.Data!);
+        var ticket = result.Data![0];
+        Assert.Equal("IN_ESCROW", ticket.Status);
+        Assert.True(string.IsNullOrWhiteSpace(ticket.TicketPassCode));
+        Assert.True(string.IsNullOrWhiteSpace(ticket.QrCodeData));
+        Assert.DoesNotContain("OLD-SELLER-TICKET-001", ticket.TicketPassCode ?? string.Empty);
+        Assert.DoesNotContain("OLD-SELLER-TICKET-001", ticket.QrCodeData ?? string.Empty);
+        Assert.DoesNotContain("OLD-SELLER-TICKET-001", ticket.QrCodeImageUrl ?? string.Empty);
+    }
+
+    [Theory]
+    [InlineData(EscrowStatus.Refunded)]
+    [InlineData(EscrowStatus.RefundQueued)]
+    public async Task Handle_WhenEscrowIsRefundState_ShouldNotReturnAsPurchasedTicket(EscrowStatus refundStatus)
+    {
+        var (context, buyerId, buyerEmail) = CreateTestFixture();
+        var paid = context.EscrowTransactions.Single();
+        paid.Status = refundStatus;
+        paid.NewTicketCode = null;
+        paid.QrCodeData = null;
+        context.SaveChanges();
+
+        var currentUserService = new Mock<ICurrentUserService>();
+        currentUserService.Setup(u => u.UserId).Returns(buyerId);
+        currentUserService.Setup(u => u.Email).Returns(buyerEmail);
+
+        var handler = new GetMyPurchasedTicketsQueryHandler(context, currentUserService.Object);
+        var result = await handler.Handle(new GetMyPurchasedTicketsQuery(), CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.NotNull(result.Data);
+        Assert.Empty(result.Data!);
     }
 }
 

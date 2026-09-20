@@ -54,7 +54,11 @@ public class GetMyPurchasedTicketsQueryHandler : IRequestHandler<GetMyPurchasedT
                                      (e.Buyer != null && e.Buyer.Email.ToLower() == buyerEmail));
         }
 
-        // Include all valid purchased states: Locked, Released, Disputed, Resolved, or Pending
+        query = query.Where(e =>
+            e.Status == EscrowStatus.Locked ||
+            e.Status == EscrowStatus.Released ||
+            e.Status == EscrowStatus.Disputed);
+
         var purchases = await query
             .OrderByDescending(e => e.CreatedAt)
             .ToListAsync(cancellationToken);
@@ -65,18 +69,15 @@ public class GetMyPurchasedTicketsQueryHandler : IRequestHandler<GetMyPurchasedT
             var eventVenue = e.Listing?.Event?.Venue ?? "Sân Vận Động";
             var eventStart = e.Listing?.Event?.EventStartAt ?? e.CreatedAt.AddDays(30);
             var tierName = e.Listing?.Tier?.TierName ?? "Standard Pass";
-            // Authentic ticket code and QR issued by BTC Organizer (Issue 3)
-            var passCode = !string.IsNullOrWhiteSpace(e.NewTicketCode)
-                ? e.NewTicketCode
-                : (e.Listing != null && !string.IsNullOrWhiteSpace(e.Listing.OriginalTicketCode)
-                    ? e.Listing.OriginalTicketCode
-                    : (e.PaymentReference ?? e.Id.ToString("N")[..8].ToUpperInvariant()));
-
+            // Only BTC-issued codes after payment. Never fall back to the seller's original ticket.
+            var passCode = e.NewTicketCode?.Trim() ?? string.Empty;
             var qrPayload = !string.IsNullOrWhiteSpace(e.QrCodeData)
-                ? e.QrCodeData
+                ? e.QrCodeData.Trim()
                 : passCode;
 
-            var qrUrl = $"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={Uri.EscapeDataString(qrPayload)}";
+            var qrUrl = string.IsNullOrWhiteSpace(qrPayload)
+                ? string.Empty
+                : $"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={Uri.EscapeDataString(qrPayload)}";
 
             var status = e.Status switch
             {
@@ -97,12 +98,12 @@ public class GetMyPurchasedTicketsQueryHandler : IRequestHandler<GetMyPurchasedT
                 EventVenue = eventVenue,
                 EventStartAt = eventStart,
                 TierName = tierName,
-                SeatZone = $"{tierName} • {(status == "PENDING_PAYMENT" ? "Đang giữ chỗ" : "Chính chủ")}",
+                SeatZone = $"{tierName} • Chính chủ",
                 TicketPassCode = passCode,
                 TotalAmountPaid = e.TotalBuyerPaid,
                 Status = status,
                 PaymentReference = e.PaymentReference,
-                HoldExpiresAt = e.Status == EscrowStatus.Pending ? (e.UnlockAt ?? e.CreatedAt.AddMinutes(10)) : null,
+                HoldExpiresAt = null,
                 RecipientName = e.RecipientName ?? e.Buyer?.FullName ?? "Buyer",
                 RecipientEmail = e.RecipientEmail ?? e.Buyer?.Email ?? "",
                 QrCodeData = qrPayload,
