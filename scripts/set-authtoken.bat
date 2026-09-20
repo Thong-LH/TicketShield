@@ -5,15 +5,14 @@ echo ==========================================================
 echo        TICKETSHIELD NGROK AUTHTOKEN CONFIGURATION
 echo ==========================================================
 echo.
-echo 1. Neu ban chua co Authtoken, hay dang ky/dang nhap tai:
-echo    https://dashboard.ngrok.com/get-started/your-authtoken
+echo Domain co dinh cua team: https://chest-huddling-asleep.ngrok-free.dev
+echo Authtoken chinh chủ cua team: 3JXNY7QYKZqBhfWaoBKuWnIqGCz_6AuVRJZ4PtYmznzR8tWi2
 echo.
-set /p TOKEN="Nhap ma Authtoken cua ban roi nhan Enter: "
+set "DEFAULT_TOKEN=3JXNY7QYKZqBhfWaoBKuWnIqGCz_6AuVRJZ4PtYmznzR8tWi2"
+set /p TOKEN="Nhap Authtoken (Nhan Enter de dung Authtoken dung chung cua team): "
 
 if "%TOKEN%"=="" (
-    echo [ERROR] Ban chua nhap authtoken!
-    pause
-    exit /b 1
+    set "TOKEN=%DEFAULT_TOKEN%"
 )
 
 "%~dp0ngrok.exe" config add-authtoken %TOKEN%
@@ -27,3 +26,4 @@ if %errorlevel% equ 0 (
 )
 echo.
 pause
+
