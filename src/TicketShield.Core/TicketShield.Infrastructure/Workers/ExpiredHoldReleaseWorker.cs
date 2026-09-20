@@ -67,7 +67,7 @@ public class ExpiredHoldReleaseWorker : BackgroundService
                 .ToList();
             foreach (var expired in expiredEscrows)
             {
-                expired.Status = EscrowStatus.Released;
+                expired.Status = EscrowStatus.Expired;
             }
 
             var hasActiveHold = listing.EscrowTransactions.Any(e =>

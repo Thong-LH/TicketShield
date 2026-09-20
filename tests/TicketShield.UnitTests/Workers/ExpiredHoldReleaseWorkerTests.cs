@@ -214,7 +214,7 @@ public class ExpiredHoldReleaseWorkerTests
         await dbContext.Entry(expiredEscrow).ReloadAsync();
         await dbContext.Entry(activeEscrow).ReloadAsync();
         Assert.Equal(ListingStatus.Transacting, listing.ListingStatus);
-        Assert.Equal(EscrowStatus.Released, expiredEscrow.Status);
+        Assert.Equal(EscrowStatus.Expired, expiredEscrow.Status);
         Assert.Equal(EscrowStatus.Pending, activeEscrow.Status);
     }
 

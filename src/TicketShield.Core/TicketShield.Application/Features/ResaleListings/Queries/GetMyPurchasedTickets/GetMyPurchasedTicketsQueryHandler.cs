@@ -56,8 +56,10 @@ public class GetMyPurchasedTicketsQueryHandler : IRequestHandler<GetMyPurchasedT
 
         query = query.Where(e =>
             e.Status == EscrowStatus.Locked ||
-            e.Status == EscrowStatus.Released ||
-            e.Status == EscrowStatus.Disputed);
+            e.Status == EscrowStatus.Disputed ||
+            (e.Status == EscrowStatus.Released &&
+             (!string.IsNullOrEmpty(e.BankTransactionReference) ||
+              !string.IsNullOrEmpty(e.NewTicketCode))));
 
         var purchases = await query
             .OrderByDescending(e => e.CreatedAt)

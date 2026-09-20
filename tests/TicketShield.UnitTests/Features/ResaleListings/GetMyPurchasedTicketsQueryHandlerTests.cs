@@ -259,5 +259,53 @@ public class GetMyPurchasedTicketsQueryHandlerTests
         Assert.NotNull(result.Data);
         Assert.Empty(result.Data!);
     }
+
+    [Fact]
+    public async Task Handle_WhenHoldExpiredAndMarkedReleasedWithoutPayment_ShouldNotReturnAsPurchasedTicket()
+    {
+        var (context, buyerId, buyerEmail) = CreateTestFixture();
+        var hold = context.EscrowTransactions.Single();
+        hold.Status = EscrowStatus.Released;
+        hold.NewTicketCode = null;
+        hold.QrCodeData = null;
+        hold.BankTransactionReference = null;
+        hold.InSettlementBuffer = false;
+        context.SaveChanges();
+
+        var currentUserService = new Mock<ICurrentUserService>();
+        currentUserService.Setup(u => u.UserId).Returns(buyerId);
+        currentUserService.Setup(u => u.Email).Returns(buyerEmail);
+
+        var handler = new GetMyPurchasedTicketsQueryHandler(context, currentUserService.Object);
+        var result = await handler.Handle(new GetMyPurchasedTicketsQuery(), CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.NotNull(result.Data);
+        Assert.Empty(result.Data!);
+    }
+
+    [Fact]
+    public async Task Handle_WhenReleasedAfterPaidSettlement_ShouldReturnValidTicket()
+    {
+        var (context, buyerId, buyerEmail) = CreateTestFixture();
+        var paid = context.EscrowTransactions.Single();
+        paid.Status = EscrowStatus.Released;
+        paid.BankTransactionReference = "FT12345678";
+        paid.InSettlementBuffer = false;
+        context.SaveChanges();
+
+        var currentUserService = new Mock<ICurrentUserService>();
+        currentUserService.Setup(u => u.UserId).Returns(buyerId);
+        currentUserService.Setup(u => u.Email).Returns(buyerEmail);
+
+        var handler = new GetMyPurchasedTicketsQueryHandler(context, currentUserService.Object);
+        var result = await handler.Handle(new GetMyPurchasedTicketsQuery(), CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.NotNull(result.Data);
+        Assert.Single(result.Data!);
+        Assert.Equal("VALID", result.Data![0].Status);
+        Assert.Equal("BTC-AUTHENTIC-PASS-777", result.Data![0].TicketPassCode);
+    }
 }
 
