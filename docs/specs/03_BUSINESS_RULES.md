@@ -34,18 +34,19 @@ Tài liệu quy định chi tiết toàn bộ các **Quy tắc Nghiệp vụ (Bu
 ### 1.3. BR-G03: Quy Tắc Giải Ngân Điều Kiện Kép & Kích Hoạt Kép (Dual-Condition Settlement & Dual-Trigger Law)
 - **Nội dung:** Tiền thanh toán của Buyer và Vé chuyển nhượng của Buyer đều được đặt trong trạng thái tạm giữ an toàn:
   - **Khóa tiền (Seller Escrow):** Tiền nằm trong Escrow với trạng thái `LOCKED`.
-  - **Khóa vé (Buyer Provisional Hold):** Vé mới cấp cho Buyer được gắn cờ `IN_SETTLEMENT_BUFFER` (Buyer sở hữu vé để chuẩn bị đi sự kiện, nhưng **bị khóa tính năng đăng bán lại** trong thời gian này).
-- **Cơ chế Kích hoạt Giải ngân Kép (Dual-Trigger Settlement — Điều kiện nào đến trước thì kích hoạt trước):**
-  1. **Trigger 1 — Giải ngân tức thì theo Sự kiện vào cổng (Event-Driven / Gate Entry Success):**
-     - Khi Buyer đến sự kiện và máy quét tại cổng của BTC chấp thuận mã vé thành công (hệ thống BTC ghi nhận `ScannedAt`, trạng thái vé đổi sang `USED`):
-     - Giao dịch đã hoàn tất mục tiêu tối thượng 100% (Buyer đã vào bên trong xem sự kiện, không còn rủi ro bị từ chối vé tại cổng).
-     - Hệ thống **kích hoạt lệnh Payout giải ngân ngay lập tức cho Seller** mà **không cần chờ đợi hết 24h**. Quy chế này giúp Seller nhận tiền sớm liền tay, tối ưu hóa vòng quay dòng tiền trên sàn.
-  2. **Trigger 2 — Giải ngân theo Bộ đếm thời gian (Timer Timeout — T+24h):**
-     - Áp dụng khi giao dịch diễn ra trước sự kiện nhiều ngày/tuần (hoặc trong trường hợp Buyer bận việc riêng không đến quét vé):
-     - Hết đúng **24h kể từ thời điểm sang tên chính chủ thành công (`TransferTime`)**, nếu Buyer không có Khiếu nại (`has_dispute = false`), hệ thống tự động Payout chuyển khoản NAPAS 247 cho Seller và gỡ cờ `IN_SETTLEMENT_BUFFER` trên vé của Buyer.
-- **Xử lý giao dịch cận giờ G (Mua sát giờ sự kiện diễn ra):**
-  - Tiền của Seller tiếp tục được giữ an toàn trong Escrow (`LOCKED`) cho tới khi vé được quét vào cổng thành công (Trigger 1).
-  - Nếu gặp sự cố tại cổng (máy quét báo lỗi, bị từ chối vào cổng) -> Buyer bấm Report ngay tại hiện trường -> Hệ thống lập tức đóng băng Escrow (`DISPUTED`) và trích 100% tiền từ két Ký quỹ hoàn trả ngay cho Buyer theo quy tắc BR-D02 và BR-D03.
+  - **Khóa vé (Buyer Provisional Hold):** Vé mới cấp cho Buyer được gắn cờ `IN_SETTLEMENT_BUFFER` (Buyer sở hữu vé chính chủ, nhưng **bị khóa tính năng đăng bán lại** trong thời gian đệm này).
+- **Phân rã 2 Kịch Bản Vận Hành Cốt Lõi:**
+  1. **Kịch bản A — Giao dịch khi sự kiện còn xa (Thời gian mua cách giờ G > 24h):**
+     - **Khoảng đệm 24h đối soát giao nhận vé chính chủ (T+24h Verification Window):** `UnlockAt = TransferTime + 24h`.
+     - Vì hệ thống đã gọi gRPC hủy vé cũ và cấp vé mới chính chủ đứng tên Buyer bên BTC, Seller không thể can thiệp hay gian lận vé được nữa. 24h này là thời gian để Buyer kiểm tra trên app/email của BTC (đúng họ tên, đúng sơ đồ/khán đài/hạng vé).
+     - Hết 24h kể từ thời điểm sang tên (`TransferTime`), nếu Buyer không có khiếu nại (`has_dispute = false`), hệ thống tự động Payout chuyển khoản NAPAS 247 cho Seller và gỡ cờ `IN_SETTLEMENT_BUFFER`.
+     - *Ngoại lệ quét cổng sớm:* Nếu sự kiện diễn ra sớm hơn hoặc Buyer vào cổng sớm trong 24h, ngay khi vé đổi sang `USED`, hệ thống giải ngân ngay lập tức.
+  2. **Kịch bản B — Giao dịch cận giờ G (Thời gian mua cách giờ G <= 24h đến hạn cut-off 2h):**
+     - **Bảo lưu ký quỹ tuyệt đối:** Tuyệt đối **KHÔNG** giải ngân cho Seller trước giờ khai mạc để tránh rủi ro Người mua bị từ chối tại cổng mà tiền đã chuyển đi.
+     - **Giải ngân tức thì theo Sự kiện vào cổng (Gate Entry Trigger):** Khi Buyer đến sự kiện và máy quét tại cổng BTC chấp thuận mã vé thành công (`scannedAt` ghi nhận, vé chuyển sang `USED` với kết quả `VALID_ENTRY`) -> Hệ thống kích hoạt lệnh Payout giải ngân ngay lập tức cho Seller.
+     - **Kênh dự phòng (Buyer không đi quét vé):** Nếu Buyer bận đột xuất không quét vé tại cổng, lệnh giải ngân sẽ được thực thi sau khi sự kiện kết thúc an toàn nếu không phát sinh khiếu nại.
+- **Xử lý khiếu nại sự cố:**
+  - Trong vòng 24h (Kịch bản A) hoặc trước khi quét cổng thành công (Kịch bản B), nếu Buyer gửi khiếu nại -> Escrow lập tức chuyển sang `DISPUTED` và đình chỉ toàn bộ bộ đếm giải ngân. Tiền tiếp tục nằm an toàn 100% trong két ký quỹ của sàn.
 
 ### 1.4. BR-G04: Tính Toàn Vẹn Giao Dịch Tài Chính (ACID Law)
 - **Nội dung:** Mọi thao tác thay đổi trạng thái của `resale_listings` và `escrow_transactions` bắt buộc phải thực thi trong cùng một Database Transaction trên PostgreSQL (`ReadCommitted` hoặc `Serializable`).
@@ -97,7 +98,7 @@ Tài liệu quy định chi tiết toàn bộ các **Quy tắc Nghiệp vụ (Bu
 
 | Mã luật | Tên quy tắc | Mô tả chi tiết |
 | :--- | :--- | :--- |
-| **BR-D01** | Báo cáo khiếu nại sự cố tại cổng (Gate Dispute Submission) | Khi gặp sự cố tại cổng (bị từ chối vào cổng, máy quét báo lỗi mã vé không hợp lệ), Buyer gửi báo cáo khiếu nại thủ công ngay trên ứng dụng: <br>- Nhập lý do sự cố (`reason`).<br>- Tải lên bằng chứng xác thực (`evidence_url`): ảnh chụp màn hình máy quét báo lỗi, hoặc ảnh chụp biên bản sự cố viết tay do nhân viên soát vé tại hiện trường lập và ký nhận. |
+| **BR-D01** | Báo cáo khiếu nại sự cố (Dispute Submission) | Buyer có quyền gửi báo cáo khiếu nại thủ công ngay trên ứng dụng trong 2 tình huống:<br>1. **Trong 24h đối soát vé chính chủ (Kịch bản A):** Vé cấp bị sai lệch thông tin niêm yết (sai hạng vé, sai khán đài) hoặc không xuất hiện trong tài khoản BTC.<br>2. **Khi vào cổng đối với giao dịch cận giờ G (Kịch bản B):** Máy quét tại cổng báo lỗi hoặc bị từ chối vào cổng.<br>• Yêu cầu nộp: Nhập lý do sự cố (`reason`), tải lên bằng chứng xác thực (`evidence_url`): ảnh chụp màn hình thông tin vé sai lệch trên app BTC, ảnh máy quét báo lỗi, hoặc ảnh chụp biên bản sự cố viết tay của nhân viên soát vé. |
 | **BR-D02** | Đóng băng ký quỹ tự động tức thì (Instant Escrow Freeze) | Khi Buyer gửi Dispute trong lúc giao dịch **chưa giải ngân** (tiền đang ở `LOCKED`):<br>• Hệ thống tự động chuyển trạng thái Escrow sang **`DISPUTED`** (`has_dispute = true`).<br>• Bộ đếm tự động giải ngân lập tức bị đình chỉ, ngăn chặn tuyệt đối lệnh Payout chuyển tiền sang tài khoản Seller.<br>• Vé tiếp tục bị giữ cờ `IN_SETTLEMENT_BUFFER = true` để ngăn chặn Buyer đem vé tranh chấp đi bán lại. |
 | **BR-D03** | Nguồn tiền hoàn trả & Cơ chế Payout Refund (Escrow Refund Source) | **Nguồn tiền hoàn trả lấy trực tiếp từ Quỹ Ký quỹ (Escrow):** Vì giao dịch chưa giải ngân, 100% tiền thanh toán của Buyer vẫn đang nằm trong két Escrow của TicketShield, chưa hề chuyển cho Seller.<br>• Sau khi Admin đối soát xác nhận vé bị lỗi thật từ phía BTC/Seller, Admin bấm duyệt hoàn tiền.<br>• Hệ thống kích hoạt lệnh hoàn tiền 100% từ Quỹ Ký quỹ về số tài khoản của Buyer qua cổng thanh toán ngân hàng.<br>• Đổi trạng thái Escrow sang **`REFUNDED`**, vé chuyển sang `CANCELLED_DISPUTED`. |
 | **BR-D04** | Đối soát nhật ký cổng BTC (Manual Investigation) | Admin / CSKH của TicketShield đóng vai trò trọng tài độc lập:<br>- Thẩm định bằng chứng ảnh chụp máy quét lỗi / biên bản hiện trường do Buyer cung cấp.<br>- Tra cứu lịch sử quét vé trên API đối soát chỉ đọc (Read-Only) của Ban tổ chức (`GET /api/v1/gate/access-logs` hoặc qua gRPC) để kiểm tra thời điểm quét và mã phản hồi của máy quét tại cổng. |
