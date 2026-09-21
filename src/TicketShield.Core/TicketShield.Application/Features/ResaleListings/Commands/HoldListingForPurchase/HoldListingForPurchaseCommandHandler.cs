@@ -46,6 +46,7 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
             // 2. Fetch Resale Listing
             var listing = await _dbContext.ResaleListings
                 .Include(l => l.EscrowTransactions)
+                .Include(l => l.Event)
                 .FirstOrDefaultAsync(l => l.Id == request.ListingId, cancellationToken);
 
         if (listing == null)
@@ -102,6 +103,14 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
         if (listing.ListingStatus == ListingStatus.Sold || listing.ListingStatus == ListingStatus.Cancelled)
         {
             throw new BusinessRuleViolationException($"Vé này hiện ở trạng thái '{listing.ListingStatus}' và không thể đặt mua.");
+        }
+
+        // BR-L04: Enforce Event Resale Deadline — chặn nếu sự kiện cận giờ (< 2h) hoặc đã qua
+        var eventStartAt = listing.Event?.EventStartAt;
+        if (eventStartAt.HasValue && eventStartAt.Value.AddHours(-2) <= now)
+        {
+            throw new BusinessRuleViolationException(
+                $"Không thể đặt mua vé. Sự kiện sẽ bắt đầu lúc {eventStartAt.Value:dd/MM/yyyy HH:mm} UTC và đã qua thời hạn mua vé (trước 2 giờ khai mạc).");
         }
 
         var activePendingEscrow = listing.EscrowTransactions
