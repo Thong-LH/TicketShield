@@ -71,11 +71,14 @@ public class GetMyPurchasedTicketsQueryHandler : IRequestHandler<GetMyPurchasedT
             var eventVenue = e.Listing?.Event?.Venue ?? "Sân Vận Động";
             var eventStart = e.Listing?.Event?.EventStartAt ?? e.CreatedAt.AddDays(30);
             var tierName = e.Listing?.Tier?.TierName ?? "Standard Pass";
-            // Only BTC-issued codes after payment. Never fall back to the seller's original ticket.
+            // NewTicketCode là nguồn duy nhất chuẩn BTC sau TransferOwnership.
+            // Không bao giờ fallback về OriginalTicketCode của Seller.
+            // Chỉ fallback về QrCodeData để backward-compat với escrow cũ trong DB
+            // (trước khi NewTicketCode được thêm vào schema).
             var passCode = e.NewTicketCode?.Trim() ?? string.Empty;
-            var qrPayload = !string.IsNullOrWhiteSpace(e.QrCodeData)
-                ? e.QrCodeData.Trim()
-                : passCode;
+            var qrPayload = !string.IsNullOrWhiteSpace(passCode)
+                ? passCode
+                : e.QrCodeData?.Trim() ?? string.Empty;
 
             var qrUrl = string.IsNullOrWhiteSpace(qrPayload)
                 ? string.Empty
