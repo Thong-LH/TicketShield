@@ -29,9 +29,8 @@ public class ReleaseListingHoldCommandHandler : IRequestHandler<ReleaseListingHo
             throw new UnauthorizedException("Bạn phải đăng nhập để hủy giữ chỗ vé.");
         }
 
-        // 2. Fetch Resale Listing
+        // 2. Fetch Resale Listing (không load EscrowTransactions — sẽ query riêng với SQL filter)
         var listing = await _dbContext.ResaleListings
-            .Include(l => l.EscrowTransactions)
             .FirstOrDefaultAsync(l => l.Id == request.ListingId, cancellationToken);
 
         if (listing == null)
@@ -45,10 +44,11 @@ public class ReleaseListingHoldCommandHandler : IRequestHandler<ReleaseListingHo
             throw new BusinessRuleViolationException($"Bài đăng bán vé hiện không ở trạng thái giữ chỗ (TRANSACTING). Trạng thái hiện tại: '{listing.ListingStatus}'.");
         }
 
-        var activeEscrow = listing.EscrowTransactions
-            .Where(e => e.Status == EscrowStatus.Pending)
+        // SQL-level filter: chỉ lấy escrow Pending của listing này
+        var activeEscrow = await _dbContext.EscrowTransactions
+            .Where(e => e.ListingId == request.ListingId && e.Status == EscrowStatus.Pending)
             .OrderByDescending(e => e.CreatedAt)
-            .FirstOrDefault();
+            .FirstOrDefaultAsync(cancellationToken);
 
         // 4. Validate Buyer Ownership: Only the holding buyer can cancel their hold
         if (activeEscrow != null && activeEscrow.BuyerId != buyerId)

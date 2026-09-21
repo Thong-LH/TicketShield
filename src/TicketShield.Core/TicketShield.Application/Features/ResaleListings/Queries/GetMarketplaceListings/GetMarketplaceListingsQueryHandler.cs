@@ -54,6 +54,9 @@ public class GetMarketplaceListingsQueryHandler : IRequestHandler<GetMarketplace
             .Take(size)
             .ToListAsync(cancellationToken);
 
+        // NOTE: Không áp dụng .Select() DTO projection ở SQL vì ResaleListing có computed properties
+        // (DiscountAmount, DiscountPercentage, MaskedTicketCode) không thể translate sang SQL.
+        // Entity được load đầy đủ, DTO mapping thực hiện in-memory qua ToDetailDto().
         var dtos = listings.Select(l => l.ToDetailDto()).ToList();
         var paginatedList = new PaginatedList<ResaleListingDetailDto>(dtos, totalCount, page, size);
 
