@@ -27,17 +27,20 @@ public class TicketVerificationService : ITicketVerificationService
     private readonly IOrganizerGateway _gateway;
     private readonly OrganizerConnectionOptions _options;
     private readonly TimeProvider _clock;
+    private readonly ISystemSettingRepository _settingRepository;
 
     public TicketVerificationService(
         TicketShieldDbContext db,
         IOrganizerGateway gateway,
         OrganizerConnectionOptions options,
-        TimeProvider clock)
+        TimeProvider clock,
+        ISystemSettingRepository settingRepository)
     {
         _db = db;
         _gateway = gateway;
         _options = options;
         _clock = clock;
+        _settingRepository = settingRepository;
     }
 
     private static ResaleWorkflowException Error(string code, int status = 409) => new(code, status);
@@ -572,6 +575,12 @@ public class TicketVerificationService : ITicketVerificationService
         if (body.ResalePrice <= 0 || body.ResalePrice > VndAmount.MaxDatabaseValue)
         {
             throw Error("INVALID_VND_PRICE", 422);
+        }
+
+        var feeConfig = await _settingRepository.GetResaleFeeConfigAsync(ct);
+        if (body.ResalePrice < feeConfig.MinimumSellerFee)
+        {
+            throw Error("PRICE_BELOW_MINIMUM_SELLER_FEE", 422);
         }
 
         var (s, op) = await Begin(seller, key, "Publish", body.VerificationId, body, null, ct);
