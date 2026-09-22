@@ -361,4 +361,32 @@ public class HoldListingForPurchaseCommandHandlerTests
         Assert.NotEqual("TSREFUND99", newEscrow.PaymentReference);
         Assert.Null(newEscrow.BankTransactionReference);
     }
+
+    [Fact]
+    public async Task Handle_WhenListingIsExpired_ShouldThrowBusinessRuleViolationException()
+    {
+        var (dbContext, seller, buyer) = CreateInMemoryDbContext();
+        var feeCalculator = new MockResaleFeeCalculator();
+        var currentUserService = new MockCurrentUserService(buyer.Id);
+
+        var listing = new ResaleListing
+        {
+            Id = Guid.NewGuid(),
+            EventId = (await dbContext.Events.FirstAsync()).Id,
+            TierId = (await dbContext.TicketTiers.FirstAsync()).Id,
+            SellerId = seller.Id,
+            OriginalTicketCode = "TCK-EXPIRED-001",
+            OriginalPrice = 1_000_000m,
+            ResalePrice = 1_000_000m,
+            ListingStatus = ListingStatus.Expired
+        };
+        dbContext.ResaleListings.Add(listing);
+        await dbContext.SaveChangesAsync();
+
+        var handler = new HoldListingForPurchaseCommandHandler(dbContext, feeCalculator, currentUserService);
+        var command = new HoldListingForPurchaseCommand(listing.Id);
+
+        var ex = await Assert.ThrowsAsync<BusinessRuleViolationException>(() => handler.Handle(command, CancellationToken.None));
+        Assert.Contains("Expired", ex.Message);
+    }
 }

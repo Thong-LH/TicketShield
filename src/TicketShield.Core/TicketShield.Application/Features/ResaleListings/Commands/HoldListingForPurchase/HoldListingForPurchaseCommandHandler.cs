@@ -100,7 +100,9 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
 
         // 5. Validate Listing Status & Active 10-Minute Lock
         var now = DateTimeOffset.UtcNow;
-        if (listing.ListingStatus == ListingStatus.Sold || listing.ListingStatus == ListingStatus.Cancelled)
+        if (listing.ListingStatus == ListingStatus.Sold ||
+            listing.ListingStatus == ListingStatus.Cancelled ||
+            listing.ListingStatus == ListingStatus.Expired)
         {
             throw new BusinessRuleViolationException($"Vé này hiện ở trạng thái '{listing.ListingStatus}' và không thể đặt mua.");
         }

@@ -49,6 +49,7 @@ public class ExpiredHoldReleaseWorker : BackgroundService
         var now = DateTimeOffset.UtcNow;
         var listings = await dbContext.ResaleListings
             .Include(l => l.EscrowTransactions)
+            .Include(l => l.Event)
             .Where(l => l.EscrowTransactions.Any(e => e.Status == EscrowStatus.Pending &&
                                                      e.UnlockAt.HasValue &&
                                                      e.UnlockAt.Value <= now))
@@ -75,11 +76,15 @@ public class ExpiredHoldReleaseWorker : BackgroundService
 
             if (listing.ListingStatus == ListingStatus.Transacting && !hasActiveHold)
             {
-                listing.ListingStatus = ListingStatus.Verified;
+                var pastResaleCutoff = listing.Event != null &&
+                    listing.Event.EventStartAt.AddHours(-2) <= now;
+                listing.ListingStatus = pastResaleCutoff
+                    ? ListingStatus.Expired
+                    : ListingStatus.Verified;
                 revertedCount++;
                 _logger.LogInformation(
-                    "Released expired hold for ListingId: {ListingId} (Hold expired at {UnlockAt}). Status reset to VERIFIED.",
-                    listing.Id, expiredEscrows.Max(e => e.UnlockAt));
+                    "Released expired hold for ListingId: {ListingId} (Hold expired at {UnlockAt}). Status set to {ListingStatus}.",
+                    listing.Id, expiredEscrows.Max(e => e.UnlockAt), listing.ListingStatus);
             }
         }
 

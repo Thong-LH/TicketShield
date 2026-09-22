@@ -6,7 +6,8 @@ public enum ListingStatus
     Verified,
     Transacting,
     Sold,
-    Cancelled
+    Cancelled,
+    Expired
 }
 
 public enum VerificationStatus
