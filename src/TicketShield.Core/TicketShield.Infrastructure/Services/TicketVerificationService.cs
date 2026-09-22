@@ -81,18 +81,18 @@ public class TicketVerificationService : ITicketVerificationService
         }
     }
 
-    private static long ComputeLockKey(string? target)
+    private static long ComputeLockKey(string target)
     {
         if (string.IsNullOrEmpty(target))
         {
-            return 84722002L;
+            throw Error("INVALID_REFERENCE", 400);
         }
 
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes("ts:resale:" + target));
         return BitConverter.ToInt64(hash, 0);
     }
 
-    private async Task<T> Transaction<T>(Func<Task<T>> action, CancellationToken ct, string? lockTarget = null)
+    private async Task<T> Transaction<T>(Func<Task<T>> action, CancellationToken ct, string lockTarget)
     {
         _db.ChangeTracker.Clear();
         await using var tx = await _db.Database.BeginTransactionAsync(ct);
@@ -224,6 +224,11 @@ public class TicketVerificationService : ITicketVerificationService
         ValidateUuid(operationId);
 
         var fingerprint = Fingerprint(new { sessionId, payload });
+        var lockTarget = ticket ?? sessionId;
+        if (string.IsNullOrEmpty(lockTarget))
+        {
+            throw Error("INVALID_REFERENCE", 400);
+        }
 
         return await Transaction(async () =>
         {
@@ -310,7 +315,7 @@ public class TicketVerificationService : ITicketVerificationService
             await Put(SessionKey(session.Id), session, ct);
 
             return (session, op);
-        }, ct, ticket ?? sessionId);
+        }, ct, lockTarget);
     }
 
     public async Task<VerificationResult> Request(string seller, string key, string ticket, CancellationToken ct)

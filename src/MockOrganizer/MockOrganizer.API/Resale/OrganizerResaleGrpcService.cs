@@ -30,7 +30,8 @@ public sealed class OrganizerResaleGrpcService(
     private static string OpKey(OperationKind kind, string id) => $"op:{Caller}:{kind}:{id}";
     private static long ComputeLockKey(string? target)
     {
-        if (string.IsNullOrEmpty(target)) return 84722001L;
+        if (string.IsNullOrEmpty(target))
+            throw Fail("INVALID_REFERENCE", StatusCode.InvalidArgument);
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes("mo:resale:" + target));
         return BitConverter.ToInt64(hash, 0);
     }
