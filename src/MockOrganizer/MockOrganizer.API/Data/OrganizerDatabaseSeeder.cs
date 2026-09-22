@@ -23,8 +23,10 @@ public static class OrganizerDatabaseSeeder
         context.GateAccessLogs.RemoveRange(await context.GateAccessLogs.ToListAsync());
         await context.Database.ExecuteSqlRawAsync("DELETE FROM organizer_resale_records");
 
-        // Remove any non-seed tickets
-        var extraTickets = await context.MockTickets.Where(t => !seedIds.Contains(t.Id)).ToListAsync();
+        // Drop leftover non-seed tickets, but keep VALID ones so a transferred buyer ticket survives restart.
+        var extraTickets = await context.MockTickets
+            .Where(t => !seedIds.Contains(t.Id) && t.Status != "VALID")
+            .ToListAsync();
         if (extraTickets.Any())
         {
             context.MockTickets.RemoveRange(extraTickets);
