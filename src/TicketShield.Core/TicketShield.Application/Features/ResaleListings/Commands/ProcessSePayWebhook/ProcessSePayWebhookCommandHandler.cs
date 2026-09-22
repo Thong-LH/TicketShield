@@ -122,8 +122,10 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
                 "Giao dịch thanh toán này đã được xử lý trước đó (Payment Idempotency).");
         }
 
-        // 5. Validate Listing & Escrow status
-        if (escrow.Status != EscrowStatus.Pending)
+        // 5. Validate Listing & Escrow status.
+        // Cancelled holds still accept a late SePay credit so money is queued for refund
+        // instead of throwing (buyer may transfer after clicking cancel).
+        if (escrow.Status != EscrowStatus.Pending && escrow.Status != EscrowStatus.Cancelled)
         {
             throw new BusinessRuleViolationException($"Giao dịch ký quỹ đang ở trạng thái '{escrow.Status}' và không thể khóa.");
         }
@@ -143,6 +145,7 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
             escrow.Listing.ListingStatus == ListingStatus.Sold ||
             escrow.Listing.ListingStatus == ListingStatus.Cancelled;
         var holdStillValid =
+            escrow.Status == EscrowStatus.Pending &&
             !listingUnavailable &&
             escrow.UnlockAt.HasValue &&
             escrow.UnlockAt.Value > now;

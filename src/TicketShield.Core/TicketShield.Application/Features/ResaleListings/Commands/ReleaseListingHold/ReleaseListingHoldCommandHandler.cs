@@ -60,6 +60,7 @@ public class ReleaseListingHoldCommandHandler : IRequestHandler<ReleaseListingHo
         listing.ListingStatus = ListingStatus.Verified;
         if (activeEscrow != null)
         {
+            activeEscrow.Status = EscrowStatus.Cancelled;
             activeEscrow.UnlockAt = DateTimeOffset.UtcNow;
         }
 
