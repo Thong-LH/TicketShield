@@ -389,4 +389,56 @@ public class HoldListingForPurchaseCommandHandlerTests
         var ex = await Assert.ThrowsAsync<BusinessRuleViolationException>(() => handler.Handle(command, CancellationToken.None));
         Assert.Contains("Expired", ex.Message);
     }
+
+    [Fact]
+    public async Task Handle_WhenBuyerNotAuthenticated_ShouldThrowUnauthorizedException()
+    {
+        // Arrange
+        var (dbContext, _, _) = CreateInMemoryDbContext();
+        var feeCalculator = new MockResaleFeeCalculator();
+        var currentUserService = new MockCurrentUserService(null); // Anonymous / No JWT
+
+        var handler = new HoldListingForPurchaseCommandHandler(dbContext, feeCalculator, currentUserService);
+        var command = new HoldListingForPurchaseCommand(Guid.NewGuid());
+
+        // Act & Assert
+        var ex = await Assert.ThrowsAsync<UnauthorizedException>(() => handler.Handle(command, CancellationToken.None));
+        Assert.Equal("Bạn phải đăng nhập để giữ chỗ mua vé.", ex.Message);
+    }
+
+    [Fact]
+    public async Task Handle_WhenBuyerNotInShadowUsers_ShouldThrowUnauthorizedException()
+    {
+        // Arrange: Valid JWT token with UserId, but user is not synced in ShadowUsers table (Auto-Heal removed)
+        var (dbContext, _, _) = CreateInMemoryDbContext();
+        var feeCalculator = new MockResaleFeeCalculator();
+        var unsyncedBuyerId = Guid.NewGuid();
+        var currentUserService = new MockCurrentUserService(unsyncedBuyerId);
+
+        var handler = new HoldListingForPurchaseCommandHandler(dbContext, feeCalculator, currentUserService);
+        var command = new HoldListingForPurchaseCommand(Guid.NewGuid());
+
+        // Act & Assert
+        var ex = await Assert.ThrowsAsync<UnauthorizedException>(() => handler.Handle(command, CancellationToken.None));
+        Assert.Equal("Tài khoản người dùng không tồn tại hoặc chưa được đồng bộ.", ex.Message);
+    }
+
+    [Fact]
+    public async Task Handle_WhenBuyerIsInactive_ShouldThrowUnauthorizedException()
+    {
+        // Arrange: Buyer exists in ShadowUsers but account is deactivated
+        var (dbContext, _, buyer) = CreateInMemoryDbContext();
+        buyer.IsActive = false;
+        await dbContext.SaveChangesAsync();
+
+        var feeCalculator = new MockResaleFeeCalculator();
+        var currentUserService = new MockCurrentUserService(buyer.Id);
+
+        var handler = new HoldListingForPurchaseCommandHandler(dbContext, feeCalculator, currentUserService);
+        var command = new HoldListingForPurchaseCommand(Guid.NewGuid());
+
+        // Act & Assert
+        var ex = await Assert.ThrowsAsync<UnauthorizedException>(() => handler.Handle(command, CancellationToken.None));
+        Assert.Equal("Tài khoản của bạn đã bị vô hiệu hóa.", ex.Message);
+    }
 }
