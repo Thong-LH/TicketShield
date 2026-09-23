@@ -140,4 +140,32 @@ public class UserSyncConsumerTests
         Assert.Equal(UserRole.Admin, updated.Role);
         Assert.False(updated.IsActive);
     }
+
+    [Fact]
+    public async Task Consume_UserProfileUpdatedEvent_WhenUserDoesNotExist_ShouldNotThrow()
+    {
+        // Arrange
+        using var db = CreateInMemoryDbContext();
+        var userId = Guid.NewGuid();
+
+        var consumer = new UserProfileUpdatedConsumer(db, NullLogger<UserProfileUpdatedConsumer>.Instance);
+        var eventMsg = new UserProfileUpdatedEvent(
+            UserId: userId,
+            FullName: "Ghost User",
+            PhoneNumber: "0999999999",
+            Role: "User",
+            IsActive: true,
+            UpdatedAt: DateTimeOffset.UtcNow
+        );
+
+        var contextMock = new Mock<ConsumeContext<IUserProfileUpdatedEvent>>();
+        contextMock.Setup(c => c.Message).Returns(eventMsg);
+        contextMock.Setup(c => c.CancellationToken).Returns(CancellationToken.None);
+
+        // Act & Assert (Should not throw and nothing inserted)
+        await consumer.Consume(contextMock.Object);
+
+        var user = await db.ShadowUsers.FirstOrDefaultAsync(u => u.Id == userId);
+        Assert.Null(user);
+    }
 }

@@ -39,5 +39,9 @@ public class UserProfileUpdatedConsumer : IConsumer<IUserProfileUpdatedEvent>
             await _context.SaveChangesAsync(context.CancellationToken);
             _logger.LogInformation("[EventBus] Đã cập nhật thành công ShadowUser cho UserId: {UserId}", msg.UserId);
         }
+        else
+        {
+            _logger.LogWarning("[EventBus] Không tìm thấy ShadowUser cho UserId: {UserId} để cập nhật profile", msg.UserId);
+        }
     }
 }
