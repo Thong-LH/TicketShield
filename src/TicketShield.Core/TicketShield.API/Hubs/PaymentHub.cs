@@ -19,4 +19,20 @@ public class PaymentHub : Hub
             await Groups.RemoveFromGroupAsync(Context.ConnectionId, $"listing_{listingId.Trim().ToLowerInvariant()}");
         }
     }
+
+    public async Task JoinPayment(string paymentReference)
+    {
+        if (!string.IsNullOrWhiteSpace(paymentReference))
+        {
+            await Groups.AddToGroupAsync(Context.ConnectionId, $"payment_{paymentReference.Trim().ToUpperInvariant()}");
+        }
+    }
+
+    public async Task LeavePayment(string paymentReference)
+    {
+        if (!string.IsNullOrWhiteSpace(paymentReference))
+        {
+            await Groups.RemoveFromGroupAsync(Context.ConnectionId, $"payment_{paymentReference.Trim().ToUpperInvariant()}");
+        }
+    }
 }

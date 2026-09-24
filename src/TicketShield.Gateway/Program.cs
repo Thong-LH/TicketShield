@@ -24,6 +24,7 @@ builder.Services.AddReverseProxy()
 var app = builder.Build();
 
 app.UseCors("AllowFrontend");
+app.UseWebSockets();
 
 // Health check / Gateway status endpoint
 app.MapGet("/", () => Results.Ok(new
@@ -34,7 +35,8 @@ app.MapGet("/", () => Results.Ok(new
     routes = new[]
     {
         "/api/v1/auth/** -> TicketShield.Identity (:5002)",
-        "/api/v1/**      -> TicketShield.TradingCore (:5003)"
+        "/api/v1/**      -> TicketShield.TradingCore (:5003)",
+        "/hubs/**        -> TicketShield.TradingCore SignalR (:5003)"
     }
 }));
 
