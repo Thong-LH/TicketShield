@@ -3,6 +3,7 @@
 # Security & Local Context
 .context/
 .agents/
+local_docs/
 
 # Documents & Guides
 docs/*
@@ -76,6 +77,8 @@ appsettings.Local.json
 appsettings.*.Local.json
 *.Secret.json
 scripts/jira_config.json
+scripts/jira/
+scripts/*jira*
 
 # Docker / Volumes
 postgres_data/

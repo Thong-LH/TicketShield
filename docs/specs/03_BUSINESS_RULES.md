@@ -63,6 +63,14 @@ Tài liệu quy định chi tiết toàn bộ các **Quy tắc Nghiệp vụ (Bu
   - Chi phí giao dịch sàn (biểu phí 2 đầu) tự động làm hao mòn lợi nhuận nếu ai đó cố tình mua đi bán lại liên tục, tự triệt tiêu động cơ lướt sóng vé.
 - **Điều kiện mở khóa bán lại (Settlement Cooldown):** Để triệt tiêu rủi ro "Tranh chấp dây chuyền" (Chained Dispute Loop), chủ vé mới chỉ được phép đăng bán lại sau khi giao dịch mua trước đó đã hoàn tất thời gian đệm ký quỹ an toàn (`IN_SETTLEMENT_BUFFER` hết hạn và Escrow đã giải ngân xong).
 
+### 1.6. BR-G06: Quy Tắc Bán Theo Gói / Combo Không Tách Rời (All-or-Nothing Bundle Listing Law)
+- **Bản chất nghiệp vụ:** Người bán có nhiều vé (kể cả vé ghế liền kề hoặc vé ở các khán đài khác nhau) có quyền gộp chung vào 1 tin đăng bán dạng **Gói / Combo trọn bộ**.
+- **Nguyên tắc không thể tách rời (Indivisible / All-or-Nothing):** Người mua bắt buộc phải mua trọn gói toàn bộ các vé con trong Combo. Hệ thống tuyệt đối không cho phép xé lẻ mua từng vé đơn lẻ để bảo vệ người bán khỏi rủi ro bán được 1 vé và bị ế vé còn lại.
+- **Ràng buộc Trần giá Gói (Bundle Price Ceiling):** Tổng giá bán lại của cả gói phải tuân thủ nghiêm ngặt luật trần giá tổng:
+  `TotalResalePrice <= Sum(PriceCeiling của từng vé con)`
+- **Toàn vẹn giao dịch All-or-Nothing qua gRPC:** Khi thanh toán thành công, hệ thống kích hoạt đổi chủ đồng thời cho tất cả các vé con trong gói. Nếu có bất kỳ vé nào bị lỗi bên Ban tổ chức, toàn bộ giao dịch mua gói vé phải được Rollback 100% và hoàn tiền cho Người mua.
+- **Phân kỳ triển khai (Roadmap):** Nghiệp vụ bán trọn gói Combo vé thuộc phạm vi mở rộng kiến trúc chuyển nhượng ở Sprint tiếp theo (hậu Hardening Sprint 2). Xem chi tiết tại [07_MULTI_TICKET_BUNDLE_SPEC.md](file:///d:/Capstone/docs/specs/07_MULTI_TICKET_BUNDLE_SPEC.md).
+
 ---
 
 ## 2. Quy Tắc Vòng Đời Đăng Bán Lại (Resale Listing Rules)
