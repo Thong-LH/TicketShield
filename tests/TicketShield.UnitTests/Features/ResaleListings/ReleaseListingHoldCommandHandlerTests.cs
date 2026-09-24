@@ -128,6 +128,9 @@ public class ReleaseListingHoldCommandHandlerTests
 
         var updatedListing = await dbContext.ResaleListings.FirstAsync(l => l.Id == listing.Id);
         Assert.Equal(ListingStatus.Verified, updatedListing.ListingStatus);
+
+        var updatedEscrow = await dbContext.EscrowTransactions.FirstAsync(e => e.Id == escrow.Id);
+        Assert.Equal(EscrowStatus.Cancelled, updatedEscrow.Status);
     }
 
     [Fact]

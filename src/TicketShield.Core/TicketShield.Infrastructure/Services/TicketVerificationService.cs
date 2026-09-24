@@ -27,17 +27,20 @@ public class TicketVerificationService : ITicketVerificationService
     private readonly IOrganizerGateway _gateway;
     private readonly OrganizerConnectionOptions _options;
     private readonly TimeProvider _clock;
+    private readonly ISystemSettingRepository _settingRepository;
 
     public TicketVerificationService(
         TicketShieldDbContext db,
         IOrganizerGateway gateway,
         OrganizerConnectionOptions options,
-        TimeProvider clock)
+        TimeProvider clock,
+        ISystemSettingRepository settingRepository)
     {
         _db = db;
         _gateway = gateway;
         _options = options;
         _clock = clock;
+        _settingRepository = settingRepository;
     }
 
     private static ResaleWorkflowException Error(string code, int status = 409) => new(code, status);
@@ -78,18 +81,18 @@ public class TicketVerificationService : ITicketVerificationService
         }
     }
 
-    private static long ComputeLockKey(string? target)
+    private static long ComputeLockKey(string target)
     {
         if (string.IsNullOrEmpty(target))
         {
-            return 84722002L;
+            throw Error("INVALID_REFERENCE", 400);
         }
 
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes("ts:resale:" + target));
         return BitConverter.ToInt64(hash, 0);
     }
 
-    private async Task<T> Transaction<T>(Func<Task<T>> action, CancellationToken ct, string? lockTarget = null)
+    private async Task<T> Transaction<T>(Func<Task<T>> action, CancellationToken ct, string lockTarget)
     {
         await using var tx = await _db.Database.BeginTransactionAsync(ct);
 
@@ -220,6 +223,11 @@ public class TicketVerificationService : ITicketVerificationService
         ValidateUuid(operationId);
 
         var fingerprint = Fingerprint(new { sessionId, payload });
+        var lockTarget = ticket ?? sessionId;
+        if (string.IsNullOrEmpty(lockTarget))
+        {
+            throw Error("INVALID_REFERENCE", 400);
+        }
 
         return await Transaction(async () =>
         {
@@ -306,7 +314,7 @@ public class TicketVerificationService : ITicketVerificationService
             await Put(SessionKey(session.Id), session, ct);
 
             return (session, op);
-        }, ct, ticket ?? sessionId);
+        }, ct, lockTarget);
     }
 
     public async Task<VerificationResult> Request(string seller, string key, string ticket, CancellationToken ct)
@@ -571,6 +579,12 @@ public class TicketVerificationService : ITicketVerificationService
         if (body.ResalePrice <= 0 || body.ResalePrice > VndAmount.MaxDatabaseValue)
         {
             throw Error("INVALID_VND_PRICE", 422);
+        }
+
+        var feeConfig = await _settingRepository.GetResaleFeeConfigAsync(ct);
+        if (body.ResalePrice < feeConfig.MinimumSellerFee)
+        {
+            throw Error("PRICE_BELOW_MINIMUM_SELLER_FEE", 422);
         }
 
         var (s, op) = await Begin(seller, key, "Publish", body.VerificationId, body, null, ct);

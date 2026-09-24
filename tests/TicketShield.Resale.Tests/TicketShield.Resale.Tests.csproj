@@ -12,5 +12,6 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="3.0.2" PrivateAssets="All" />
     <ProjectReference Include="../../src/MockOrganizer/MockOrganizer.API/MockOrganizer.API.csproj" />
     <ProjectReference Include="../../src/TicketShield.Core/TicketShield.API/TicketShield.API.csproj" />
+    <ProjectReference Include="../../src/TicketShield.Core/TicketShield.Infrastructure/TicketShield.Infrastructure.csproj" />
   </ItemGroup>
 </Project>

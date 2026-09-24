@@ -7,6 +7,7 @@ using TicketShield.Identity.Application.Features.Auth.Commands.Login;
 using TicketShield.Identity.Application.Features.Auth.Commands.RefreshToken;
 using TicketShield.Identity.Application.Features.Auth.Commands.Register;
 using TicketShield.Identity.Application.Features.Auth.Commands.ResetPassword;
+using TicketShield.Identity.Application.Features.Auth.Commands.UpdateProfile;
 using TicketShield.Identity.Application.Features.Auth.Models;
 using TicketShield.Identity.Application.Features.Auth.Queries.GetCurrentUser;
 
@@ -67,6 +68,21 @@ public class AuthController : ApiControllerBase
     public async Task<IActionResult> GetCurrentUser()
     {
         var result = await Mediator.Send(new GetCurrentUserQuery());
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// BE-ID-4.4.1: Update profile of currently authenticated user
+    /// </summary>
+    [Authorize]
+    [HttpPut("profile")]
+    [ProducesResponseType(typeof(ApiResponse<UserProfileDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> UpdateProfile([FromBody] UpdateProfileCommand command)
+    {
+        var result = await Mediator.Send(command);
         return Ok(result);
     }
 

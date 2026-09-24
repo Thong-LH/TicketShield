@@ -6,7 +6,8 @@ public enum ListingStatus
     Verified,
     Transacting,
     Sold,
-    Cancelled
+    Cancelled,
+    Expired
 }
 
 public enum VerificationStatus
@@ -24,7 +25,8 @@ public enum EscrowStatus
     Refunded,
     Disputed,
     RefundQueued,
-    Expired
+    Expired,
+    Cancelled
 }
 
 public enum PayoutStatus

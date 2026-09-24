@@ -125,8 +125,10 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
                 "Giao dịch thanh toán này đã được xử lý trước đó (Payment Idempotency).");
         }
 
-        // 5. Validate Listing & Escrow status
-        if (escrow.Status != EscrowStatus.Pending)
+        // 5. Validate Listing & Escrow status.
+        // Cancelled holds still accept a late SePay credit so money is queued for refund
+        // instead of throwing (buyer may transfer after clicking cancel).
+        if (escrow.Status != EscrowStatus.Pending && escrow.Status != EscrowStatus.Cancelled)
         {
             throw new BusinessRuleViolationException($"Giao dịch ký quỹ đang ở trạng thái '{escrow.Status}' và không thể khóa.");
         }
@@ -146,6 +148,7 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
             escrow.Listing.ListingStatus == ListingStatus.Sold ||
             escrow.Listing.ListingStatus == ListingStatus.Cancelled;
         var holdStillValid =
+            escrow.Status == EscrowStatus.Pending &&
             !listingUnavailable &&
             escrow.UnlockAt.HasValue &&
             escrow.UnlockAt.Value > now;
@@ -216,6 +219,12 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
 
             newTicketCode = transferResponse.NewTicket?.Ticket?.TicketCode;
             qrCodeData = transferResponse.NewTicket?.Ticket?.TicketCode;
+
+            if (newTicketCode is null)
+            {
+                throw new BusinessRuleViolationException(
+                    "Không nhận được mã vé mới từ BTC Organizer sau khi chuyển quyền sở hữu. Giao dịch bị huỷ để bảo vệ Buyer.");
+            }
         }
 
         escrow.Status = EscrowStatus.Locked;
@@ -276,7 +285,7 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
 
             // Build a publicly-loadable QR image URL for the email.
             // Gmail blocks inline base64 images; qrserver.com returns a PNG via HTTPS that all clients can display.
-            var qrPayloadForEmail = escrow.NewTicketCode ?? escrow.Listing.OriginalTicketCode ?? string.Empty;
+            var qrPayloadForEmail = escrow.NewTicketCode ?? string.Empty;
             var qrImageUrlForEmail = string.IsNullOrWhiteSpace(qrPayloadForEmail)
                 ? string.Empty
                 : $"https://api.qrserver.com/v1/create-qr-code/?size=200x200&data={Uri.EscapeDataString(qrPayloadForEmail)}";
@@ -288,7 +297,7 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
                 ev.Venue,
                 escrow.Listing.Tier?.TierName ?? string.Empty,
                 string.Empty,
-                escrow.NewTicketCode ?? escrow.Listing.OriginalTicketCode,
+                escrow.NewTicketCode ?? string.Empty,
                 qrImageUrlForEmail,
                 escrow.PaymentReference ?? string.Empty,
                 escrow.TotalBuyerPaid);

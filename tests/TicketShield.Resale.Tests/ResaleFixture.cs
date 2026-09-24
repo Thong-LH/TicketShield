@@ -25,7 +25,7 @@ using TicketShield.API.Services;
 using TicketShield.Application;
 using TicketShield.Application.Common.Interfaces;
 using TicketShield.Infrastructure;
-using TicketShield.API.Resale;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using TicketShield.Contracts.Organizer.V1;
 using TicketShield.Infrastructure.Persistence;
 using TicketShield.Infrastructure.ExternalServices.Organizer;
@@ -113,7 +113,16 @@ public sealed class ResaleFixture : IAsyncLifetime
         coreBuilder.Services.AddSingleton<TimeProvider>(Clock);
         coreBuilder.Services.AddDbContext<TicketShieldDbContext>(o => o.UseNpgsql(Database.CoreConnection));
         coreBuilder.Services.AddCoreResale(coreBuilder.Configuration, coreBuilder.Environment);
-        coreBuilder.Services.AddResaleAuthentication(coreBuilder.Configuration);
+        coreBuilder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(o => {
+            o.MapInboundClaims = false;
+            o.TokenValidationParameters = new TokenValidationParameters {
+                ValidateIssuer = true, ValidIssuer = "test-issuer", ValidateAudience = true, ValidAudience = "test-core",
+                ValidateIssuerSigningKey = true, IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(signingKey)),
+                ValidateLifetime = true, RequireExpirationTime = true, RequireSignedTokens = true,
+                ValidAlgorithms = [SecurityAlgorithms.HmacSha256], ClockSkew = TimeSpan.FromSeconds(15)
+            };
+        });
+        coreBuilder.Services.AddAuthorization();
         coreBuilder.Services.AddControllers().AddApplicationPart(typeof(TicketVerificationsController).Assembly);
         // Listing REST endpoints (/api/v1/resale-listings/...) run through MediatR, read the caller from the JWT
         // and map domain exceptions to 403/404/422 — register the same layers Program.cs does (SCRUM-38 tests).

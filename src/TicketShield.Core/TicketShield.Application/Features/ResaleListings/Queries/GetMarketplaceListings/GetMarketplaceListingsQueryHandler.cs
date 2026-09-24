@@ -21,6 +21,7 @@ public class GetMarketplaceListingsQueryHandler : IRequestHandler<GetMarketplace
     {
         var page = request.Page > 0 ? request.Page : 1;
         var size = request.Size > 0 ? request.Size : 20;
+        var now = DateTimeOffset.UtcNow;
 
         var query = _dbContext.ResaleListings
             .AsNoTracking()
@@ -29,7 +30,8 @@ public class GetMarketplaceListingsQueryHandler : IRequestHandler<GetMarketplace
             .Include(l => l.Seller)
             .Where(l =>
                 !l.IsPrivate &&
-                (l.ListingStatus == ListingStatus.Verified || l.ListingStatus == ListingStatus.Transacting));
+                (l.ListingStatus == ListingStatus.Verified || l.ListingStatus == ListingStatus.Transacting) &&
+                l.Event != null && l.Event.EventStartAt > now);
 
         if (request.EventId.HasValue && request.EventId.Value != Guid.Empty)
         {
@@ -52,6 +54,9 @@ public class GetMarketplaceListingsQueryHandler : IRequestHandler<GetMarketplace
             .Take(size)
             .ToListAsync(cancellationToken);
 
+        // NOTE: Không áp dụng .Select() DTO projection ở SQL vì ResaleListing có computed properties
+        // (DiscountAmount, DiscountPercentage, MaskedTicketCode) không thể translate sang SQL.
+        // Entity được load đầy đủ, DTO mapping thực hiện in-memory qua ToDetailDto().
         var dtos = listings.Select(l => l.ToDetailDto()).ToList();
         var paginatedList = new PaginatedList<ResaleListingDetailDto>(dtos, totalCount, page, size);
 

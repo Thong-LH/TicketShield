@@ -300,6 +300,32 @@ public class ProcessSePayWebhookCommandHandlerTests
     }
 
     [Fact]
+    public async Task Handle_WhenBuyerCancelledHold_ShouldQueueRefundWithoutLocking()
+    {
+        var (context, listing, escrow) = CreateTestFixture();
+        listing.ListingStatus = ListingStatus.Verified;
+        escrow.Status = EscrowStatus.Cancelled;
+        escrow.UnlockAt = DateTimeOffset.UtcNow.AddMinutes(8);
+        await context.SaveChangesAsync();
+        var handler = new ProcessSePayWebhookCommandHandler(context);
+
+        var result = await handler.Handle(new ProcessSePayWebhookCommand(new SePayWebhookRequest
+        {
+            Id = 10018,
+            TransferType = "in",
+            TransferAmount = 550_000m,
+            Content = "TS1A2B3C4D thanh toan sau khi huy giu cho",
+            ReferenceCode = "FTCANCEL001"
+        }), CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.Equal("RefundQueued", result.Data.EscrowStatus);
+        Assert.Equal(EscrowStatus.RefundQueued, (await context.EscrowTransactions.FindAsync(escrow.Id))!.Status);
+        Assert.Equal(ListingStatus.Verified, (await context.ResaleListings.FindAsync(listing.Id))!.ListingStatus);
+        Assert.False((await context.EscrowTransactions.FindAsync(escrow.Id))!.InSettlementBuffer);
+    }
+
+    [Fact]
     public async Task Handle_WhenHoldExpiredButListingStillTransacting_ShouldReleaseListingToVerified()
     {
         var (context, listing, escrow) = CreateTestFixture();
@@ -566,7 +592,17 @@ public class ProcessSePayWebhookCommandHandlerTests
             It.IsAny<string>(),
             It.IsAny<string?>(),
             It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new TicketShield.Contracts.Organizer.V1.TransferOwnershipResponse());
+            .ReturnsAsync(new TicketShield.Contracts.Organizer.V1.TransferOwnershipResponse
+            {
+                Outcome = TicketShield.Contracts.Organizer.V1.TransferOutcome.Transferred,
+                NewTicket = new TicketShield.Contracts.Organizer.V1.TicketSnapshot
+                {
+                    Ticket = new TicketShield.Contracts.Organizer.V1.TicketReference
+                    {
+                        TicketCode = "BTC-NEW-PASS-TRACKER"
+                    }
+                }
+            });
 
         var handler = new ProcessSePayWebhookCommandHandler(context, null, null, null, verification.Object);
 

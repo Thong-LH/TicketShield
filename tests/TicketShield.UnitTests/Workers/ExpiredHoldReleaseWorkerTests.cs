@@ -261,4 +261,75 @@ public class ExpiredHoldReleaseWorkerTests
         var updatedListing = await dbContext.ResaleListings.FirstAsync(l => l.Id == listingSold.Id);
         Assert.Equal(ListingStatus.Sold, updatedListing.ListingStatus);
     }
+
+    [Fact]
+    public async Task ReleaseExpiredHolds_WhenHoldExpiresInsideTwoHourCutoff_ShouldExpireListingNotReviveVerified()
+    {
+        var (dbContext, serviceProvider) = CreateInMemoryDbContextWithServices();
+        var scopeFactory = serviceProvider.GetRequiredService<IServiceScopeFactory>();
+        var testEvent = await dbContext.Events.FirstAsync();
+        testEvent.EventStartAt = DateTimeOffset.UtcNow.AddHours(1);
+        testEvent.EventEndAt = testEvent.EventStartAt.AddHours(3);
+        await dbContext.SaveChangesAsync();
+
+        var listing = await SeedTransactingListingWithExpiredHoldAsync(dbContext, "TCK-CUTOFF-001");
+        var worker = new ExpiredHoldReleaseWorker(scopeFactory, NullLogger<ExpiredHoldReleaseWorker>.Instance);
+
+        var releasedCount = await worker.ReleaseExpiredHoldsAsync(CancellationToken.None);
+
+        Assert.Equal(1, releasedCount);
+        await dbContext.Entry(listing).ReloadAsync();
+        Assert.Equal(ListingStatus.Expired, listing.ListingStatus);
+    }
+
+    [Fact]
+    public async Task ReleaseExpiredHolds_WhenHoldExpiresAfterEventAlreadyStarted_ShouldExpireListing()
+    {
+        var (dbContext, serviceProvider) = CreateInMemoryDbContextWithServices();
+        var scopeFactory = serviceProvider.GetRequiredService<IServiceScopeFactory>();
+        var testEvent = await dbContext.Events.FirstAsync();
+        testEvent.EventStartAt = DateTimeOffset.UtcNow.AddHours(-3);
+        testEvent.EventEndAt = DateTimeOffset.UtcNow;
+        await dbContext.SaveChangesAsync();
+
+        var listing = await SeedTransactingListingWithExpiredHoldAsync(dbContext, "TCK-PAST-001");
+        var worker = new ExpiredHoldReleaseWorker(scopeFactory, NullLogger<ExpiredHoldReleaseWorker>.Instance);
+
+        await worker.ReleaseExpiredHoldsAsync(CancellationToken.None);
+
+        await dbContext.Entry(listing).ReloadAsync();
+        Assert.Equal(ListingStatus.Expired, listing.ListingStatus);
+    }
+
+    private static async Task<ResaleListing> SeedTransactingListingWithExpiredHoldAsync(
+        TicketShieldDbContext dbContext,
+        string ticketCode)
+    {
+        var listing = new ResaleListing
+        {
+            Id = Guid.NewGuid(),
+            EventId = (await dbContext.Events.FirstAsync()).Id,
+            TierId = (await dbContext.TicketTiers.FirstAsync()).Id,
+            SellerId = (await dbContext.ShadowUsers.FirstAsync()).Id,
+            OriginalTicketCode = ticketCode,
+            OriginalPrice = 1_000_000m,
+            ResalePrice = 1_000_000m,
+            ListingStatus = ListingStatus.Transacting
+        };
+        var expiredEscrow = new EscrowTransaction
+        {
+            Id = Guid.NewGuid(),
+            ListingId = listing.Id,
+            BuyerId = (await dbContext.ShadowUsers.Skip(1).FirstAsync()).Id,
+            SellerId = listing.SellerId,
+            PaymentReference = "TSCUTOFF01",
+            Status = EscrowStatus.Pending,
+            UnlockAt = DateTimeOffset.UtcNow.AddMinutes(-1)
+        };
+        listing.EscrowTransaction = expiredEscrow;
+        dbContext.ResaleListings.Add(listing);
+        dbContext.EscrowTransactions.Add(expiredEscrow);
+        await dbContext.SaveChangesAsync();
+        return listing;
+    }
 }

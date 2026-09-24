@@ -27,40 +27,46 @@ public sealed class GetPaymentStatusQueryHandler : IRequestHandler<GetPaymentSta
             throw new UnauthorizedException("Bạn phải đăng nhập để xem trạng thái thanh toán.");
         }
 
-        var listing = await _dbContext.ResaleListings
+        // SQL-level filter: chỉ lấy escrow của buyer này cho listing này, project thẳng ra DTO
+        var dto = await _dbContext.EscrowTransactions
             .AsNoTracking()
-            .Include(l => l.EscrowTransactions)
-            .FirstOrDefaultAsync(l => l.Id == request.ListingId, cancellationToken);
-
-        if (listing == null)
-        {
-            throw new NotFoundException("Tin đăng bán vé", request.ListingId);
-        }
-
-        var escrow = listing.EscrowTransactions
-            .Where(e => e.BuyerId == buyerId)
+            .Where(e => e.ListingId == request.ListingId && e.BuyerId == buyerId)
             .OrderByDescending(e => e.CreatedAt)
-            .FirstOrDefault();
+            .Select(e => new GetPaymentStatusDto
+            {
+                ListingId = e.ListingId,
+                EscrowId = e.Id,
+                ListingStatus = e.Listing.ListingStatus.ToString(),
+                EscrowStatus = e.Status.ToString(),
+                PaymentReference = e.PaymentReference,
+                UnlockAt = e.UnlockAt,
+                InSettlementBuffer = e.InSettlementBuffer
+            })
+            .FirstOrDefaultAsync(cancellationToken);
 
-        if (escrow == null)
+        if (dto == null)
         {
-            if (listing.EscrowTransactions.Any())
+            // Phân biệt 403 vs 404: kiểm tra listing có escrow của người khác không
+            var hasOtherEscrow = await _dbContext.EscrowTransactions
+                .AsNoTracking()
+                .AnyAsync(e => e.ListingId == request.ListingId, cancellationToken);
+
+            if (hasOtherEscrow)
             {
                 throw new ForbiddenAccessException("Bạn không có quyền xem trạng thái thanh toán của giao dịch này.");
             }
+
+            var listingExists = await _dbContext.ResaleListings
+                .AsNoTracking()
+                .AnyAsync(l => l.Id == request.ListingId, cancellationToken);
+
+            if (!listingExists)
+            {
+                throw new NotFoundException("Tin đăng bán vé", request.ListingId);
+            }
+
             throw new NotFoundException("Giao dịch ký quỹ", request.ListingId);
         }
-
-        var dto = new GetPaymentStatusDto
-        {
-            ListingId = listing.Id,
-            EscrowId = escrow.Id,
-            ListingStatus = listing.ListingStatus.ToString(),
-            EscrowStatus = escrow.Status.ToString(),
-            PaymentReference = escrow.PaymentReference,
-            UnlockAt = escrow.UnlockAt,
-            InSettlementBuffer = escrow.InSettlementBuffer
-        };
 
         return ApiResponse<GetPaymentStatusDto>.SuccessResponse(dto, "Lấy trạng thái thanh toán thành công.");
     }

@@ -4,6 +4,7 @@ using TicketShield.Application.Common.Interfaces;
 using TicketShield.Application.Features.Admin.FeeSettings.Models;
 using TicketShield.Domain.Entities;
 using TicketShield.Domain.Enums;
+using TicketShield.Domain.Exceptions;
 using TicketShield.Infrastructure.Services;
 using Xunit;
 
@@ -125,5 +126,47 @@ public class DynamicResaleFeeCalculatorTests
         // Assert — New transaction uses updated 10%/5% rates
         Assert.Equal(100000m, newCalc.BuyerFee);
         Assert.Equal(50000m, newCalc.SellerFee);
+    }
+
+    [Fact]
+    public async Task CalculateFee_WhenResalePriceBelowMinimumSellerFee_Throws()
+    {
+        var feeConfig = new ResaleFeeConfig
+        {
+            BuyerFeePercentage = 0.05m,
+            SellerFeePercentage = 0.03m,
+            MinimumBuyerFee = 10000m,
+            MinimumSellerFee = 5000m
+        };
+
+        _mockRepository.Setup(r => r.GetResaleFeeConfigAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(feeConfig);
+
+        var calculator = new DynamicResaleFeeCalculator(_mockRepository.Object, _memoryCache);
+
+        await Assert.ThrowsAsync<BusinessRuleViolationException>(() =>
+            calculator.CalculateFeeAsync(4000m, isPrivate: false));
+    }
+
+    [Fact]
+    public async Task CalculateFee_WhenResalePriceEqualsMinimumSellerFee_ReturnsZeroPayout()
+    {
+        var feeConfig = new ResaleFeeConfig
+        {
+            BuyerFeePercentage = 0.05m,
+            SellerFeePercentage = 0.03m,
+            MinimumBuyerFee = 10000m,
+            MinimumSellerFee = 5000m
+        };
+
+        _mockRepository.Setup(r => r.GetResaleFeeConfigAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(feeConfig);
+
+        var calculator = new DynamicResaleFeeCalculator(_mockRepository.Object, _memoryCache);
+
+        var result = await calculator.CalculateFeeAsync(5000m, isPrivate: false);
+
+        Assert.Equal(5000m, result.SellerFee);
+        Assert.Equal(0m, result.NetSellerPayout);
     }
 }
