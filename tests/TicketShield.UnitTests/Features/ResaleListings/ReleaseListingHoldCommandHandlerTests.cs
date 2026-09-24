@@ -228,4 +228,67 @@ public class ReleaseListingHoldCommandHandlerTests
         // Act & Assert
         await Assert.ThrowsAsync<NotFoundException>(() => handler.Handle(command, CancellationToken.None));
     }
+
+    [Fact]
+    public async Task Handle_WhenEventPastCutoff_ShouldSetListingExpired()
+    {
+        // Arrange
+        var (dbContext, seller, buyer1, _) = CreateInMemoryDbContext();
+        var currentUserService = new MockCurrentUserService(buyer1.Id);
+
+        var pastEvent = new Event
+        {
+            Id = Guid.NewGuid(),
+            OrganizerId = (await dbContext.Organizers.FirstAsync()).Id,
+            Name = "Past Event",
+            Venue = "Past Venue",
+            EventStartAt = DateTimeOffset.UtcNow.AddHours(1), // Cutoff < 2h!
+            EventEndAt = DateTimeOffset.UtcNow.AddHours(4),
+            ResaleDeadline = DateTimeOffset.UtcNow.AddMinutes(30)
+        };
+        dbContext.Events.Add(pastEvent);
+
+        var listing = new ResaleListing
+        {
+            Id = Guid.NewGuid(),
+            EventId = pastEvent.Id,
+            TierId = (await dbContext.TicketTiers.FirstAsync()).Id,
+            SellerId = seller.Id,
+            OriginalTicketCode = "TCK-PAST-001",
+            OriginalPrice = 1_000_000m,
+            ResalePrice = 1_000_000m,
+            ListingStatus = ListingStatus.Transacting,
+            Event = pastEvent
+        };
+        var escrow = new EscrowTransaction
+        {
+            Id = Guid.NewGuid(),
+            ListingId = listing.Id,
+            BuyerId = buyer1.Id,
+            SellerId = seller.Id,
+            PaymentReference = "TSPAST01",
+            Status = EscrowStatus.Pending,
+            UnlockAt = DateTimeOffset.UtcNow.AddMinutes(5)
+        };
+        dbContext.ResaleListings.Add(listing);
+        dbContext.EscrowTransactions.Add(escrow);
+        await dbContext.SaveChangesAsync();
+
+        var handler = new ReleaseListingHoldCommandHandler(dbContext, currentUserService);
+        var command = new ReleaseListingHoldCommand(listing.Id);
+
+        // Act
+        var result = await handler.Handle(command, CancellationToken.None);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.True(result.Success);
+        Assert.Equal("Expired", result.Data.ListingStatus);
+
+        var updatedListing = await dbContext.ResaleListings.FirstAsync(l => l.Id == listing.Id);
+        Assert.Equal(ListingStatus.Expired, updatedListing.ListingStatus);
+
+        var updatedEscrow = await dbContext.EscrowTransactions.FirstAsync(e => e.Id == escrow.Id);
+        Assert.Equal(EscrowStatus.Cancelled, updatedEscrow.Status);
+    }
 }

@@ -24,7 +24,7 @@ public class UserProfileUpdatedConsumer : IConsumer<IUserProfileUpdatedEvent>
         _logger.LogInformation("[EventBus] Nhận UserProfileUpdatedEvent cho UserId: {UserId}", msg.UserId);
 
         var existingShadowUser = await _context.ShadowUsers
-            .FirstOrDefaultAsync(u => u.Id == msg.UserId);
+            .FirstOrDefaultAsync(u => u.Id == msg.UserId, context.CancellationToken);
 
         var roleEnum = Enum.TryParse<UserRole>(msg.Role, true, out var r) ? r : UserRole.User;
 

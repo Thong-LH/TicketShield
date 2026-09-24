@@ -9,7 +9,7 @@ using TicketShield.Domain.Enums;
 namespace TicketShield.Infrastructure.Workers;
 
 /// <summary>
-/// Background worker to automatically disburse funds (Payout) to sellers once the 2-minute Escrow buffer expires.
+/// Background worker to automatically disburse funds (Payout) to sellers once the Escrow settlement buffer expires (UnlockAt reached).
 /// </summary>
 public class AutomaticSettlementWorker : BackgroundService
 {
@@ -40,7 +40,7 @@ public class AutomaticSettlementWorker : BackgroundService
             }
             catch (Exception ex) when (!stoppingToken.IsCancellationRequested)
             {
-                _logger.LogError(ex, "An error occurred while executing automatic 2-minute seller payout settlements.");
+                _logger.LogError(ex, "An error occurred while executing automatic seller payout settlements.");
             }
         }
     }
@@ -103,7 +103,7 @@ public class AutomaticSettlementWorker : BackgroundService
             }
 
             _logger.LogInformation(
-                "🚀 [2-Minute Auto-Settlement] Escrow {EscrowId} unlocked! NetSellerPayout {Amount:N0} VND successfully disbursed to seller {SellerEmail}.",
+                "🚀 [Auto-Settlement] Escrow {EscrowId} unlocked! NetSellerPayout {Amount:N0} VND successfully disbursed to seller {SellerEmail}.",
                 escrow.Id, escrow.NetSellerPayout, escrow.Seller?.Email);
         }
 

@@ -53,8 +53,8 @@ public class HoldExpiredConsumer : IConsumer<IHoldExpiredEvent>
                 // Enforce BR-L04 / Event deadline check
                 if (listing.Event != null && listing.Event.EventStartAt.AddHours(-2) <= now)
                 {
-                    listing.ListingStatus = ListingStatus.Cancelled;
-                    _logger.LogInformation("Listing {ListingId} marked CANCELLED due to event resale cutoff (EventStartAt - 2h).", listing.Id);
+                    listing.ListingStatus = ListingStatus.Expired;
+                    _logger.LogInformation("Listing {ListingId} marked EXPIRED due to event resale cutoff (EventStartAt - 2h).", listing.Id);
                 }
                 else
                 {

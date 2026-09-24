@@ -146,7 +146,8 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
         var now = DateTimeOffset.UtcNow;
         var listingUnavailable =
             escrow.Listing.ListingStatus == ListingStatus.Sold ||
-            escrow.Listing.ListingStatus == ListingStatus.Cancelled;
+            escrow.Listing.ListingStatus == ListingStatus.Cancelled ||
+            escrow.Listing.ListingStatus == ListingStatus.Expired;
         var holdStillValid =
             escrow.Status == EscrowStatus.Pending &&
             !listingUnavailable &&
@@ -160,7 +161,11 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
             escrow.InSettlementBuffer = false;
             if (escrow.Listing.ListingStatus == ListingStatus.Transacting)
             {
-                escrow.Listing.ListingStatus = ListingStatus.Verified;
+                var pastResaleCutoff = escrow.Listing.Event != null &&
+                    escrow.Listing.Event.EventStartAt.AddHours(-2) <= now;
+                escrow.Listing.ListingStatus = pastResaleCutoff
+                    ? ListingStatus.Expired
+                    : ListingStatus.Verified;
             }
 
             await _dbContext.SaveChangesAsync(cancellationToken);

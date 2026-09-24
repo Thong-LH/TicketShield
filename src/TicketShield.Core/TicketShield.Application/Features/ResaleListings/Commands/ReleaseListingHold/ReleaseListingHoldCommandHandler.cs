@@ -29,8 +29,9 @@ public class ReleaseListingHoldCommandHandler : IRequestHandler<ReleaseListingHo
             throw new UnauthorizedException("Bạn phải đăng nhập để hủy giữ chỗ vé.");
         }
 
-        // 2. Fetch Resale Listing (không load EscrowTransactions — sẽ query riêng với SQL filter)
+        // 2. Fetch Resale Listing with Event for cutoff verification
         var listing = await _dbContext.ResaleListings
+            .Include(l => l.Event)
             .FirstOrDefaultAsync(l => l.Id == request.ListingId, cancellationToken);
 
         if (listing == null)
@@ -57,11 +58,17 @@ public class ReleaseListingHoldCommandHandler : IRequestHandler<ReleaseListingHo
         }
 
         // 5. Update Status & Release Hold Immediately
-        listing.ListingStatus = ListingStatus.Verified;
+        var now = DateTimeOffset.UtcNow;
+        var pastResaleCutoff = listing.Event != null &&
+            listing.Event.EventStartAt.AddHours(-2) <= now;
+        listing.ListingStatus = pastResaleCutoff
+            ? ListingStatus.Expired
+            : ListingStatus.Verified;
+
         if (activeEscrow != null)
         {
             activeEscrow.Status = EscrowStatus.Cancelled;
-            activeEscrow.UnlockAt = DateTimeOffset.UtcNow;
+            activeEscrow.UnlockAt = now;
         }
 
         await _dbContext.SaveChangesAsync(cancellationToken);

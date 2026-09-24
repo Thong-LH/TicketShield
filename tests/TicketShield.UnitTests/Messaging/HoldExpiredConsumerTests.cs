@@ -149,6 +149,6 @@ public class HoldExpiredConsumerTests
         Assert.NotNull(updatedEscrow);
         Assert.Equal(EscrowStatus.Expired, updatedEscrow.Status);
         Assert.NotNull(updatedListing);
-        Assert.Equal(ListingStatus.Cancelled, updatedListing.ListingStatus);
+        Assert.Equal(ListingStatus.Expired, updatedListing.ListingStatus);
     }
 }
