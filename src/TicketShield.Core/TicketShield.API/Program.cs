@@ -3,15 +3,14 @@ using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using TicketShield.API.Hubs;
 using TicketShield.API.Middlewares;
 using TicketShield.API.Services;
 using TicketShield.Application;
 using TicketShield.Application.Common.Interfaces;
 using TicketShield.Infrastructure;
 using TicketShield.Infrastructure.Persistence;
-using TicketShield.Infrastructure.Persistence.Resale;
 using TicketShield.Infrastructure.Resale;
-using TicketShield.API.Resale;
 using Microsoft.EntityFrameworkCore;
 var builder = WebApplication.CreateBuilder(args);
 builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
@@ -87,49 +86,41 @@ builder.Services.Configure<TicketShield.Application.Common.Configurations.SmtpSe
     builder.Configuration.GetSection(TicketShield.Application.Common.Configurations.SmtpSettings.SectionName));
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
-var resaleEnabled = builder.Services.AddCoreResale(builder.Configuration, builder.Environment);
-if (resaleEnabled && !string.IsNullOrWhiteSpace(builder.Configuration["ResaleJwt:SigningKey"]))
-{
-    builder.Services.AddResaleAuthentication(builder.Configuration);
-}
+builder.Services.AddCoreResale(builder.Configuration, builder.Environment);
 
 // Current User & HttpContext
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
 
-// JWT Authentication Setup (Default Scheme for Core Platform)
-if (!resaleEnabled || string.IsNullOrWhiteSpace(builder.Configuration["ResaleJwt:SigningKey"]))
-{
-    var jwtSecret = builder.Configuration["JwtSettings:Secret"] ?? "TicketShieldSuperSecretSecurityKeyForCapstoneProject2026";
-    var jwtIssuer = builder.Configuration["JwtSettings:Issuer"] ?? "TicketShield";
-    var jwtAudience = builder.Configuration["JwtSettings:Audience"] ?? "TicketShieldApp";
+// Unified JWT Authentication Setup (Single Scheme shared with TicketShield.Identity)
+var jwtSecret = builder.Configuration["JwtSettings:Secret"] ?? "TicketShieldSuperSecretSecurityKeyForCapstoneProject2026";
+var jwtIssuer = builder.Configuration["JwtSettings:Issuer"] ?? "TicketShield";
+var jwtAudience = builder.Configuration["JwtSettings:Audience"] ?? "TicketShieldApp";
 
-    builder.Services.AddAuthentication(options =>
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+})
+.AddJwtBearer(options =>
+{
+    options.TokenValidationParameters = new TokenValidationParameters
     {
-        options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-        options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
-    })
-    .AddJwtBearer(options =>
-    {
-        options.TokenValidationParameters = new TokenValidationParameters
-        {
-            ValidateIssuer = true,
-            ValidateAudience = true,
-            ValidateLifetime = true,
-            ValidateIssuerSigningKey = true,
-            ValidIssuer = jwtIssuer,
-            ValidAudience = jwtAudience,
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret))
-        };
-    });
-}
+        ValidateIssuer = true,
+        ValidateAudience = true,
+        ValidateLifetime = true,
+        ValidateIssuerSigningKey = true,
+        ValidIssuer = jwtIssuer,
+        ValidAudience = jwtAudience,
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret)),
+        ClockSkew = TimeSpan.FromSeconds(15)
+    };
+});
+builder.Services.AddAuthorization();
+builder.Services.AddSignalR();
+builder.Services.AddScoped<IPaymentRealtimeNotifier, SignalRPaymentRealtimeNotifier>();
 
 var app = builder.Build();
-if (resaleEnabled)
-{
-    using var resaleScope = app.Services.CreateScope();
-    await resaleScope.ServiceProvider.GetRequiredService<CoreResaleStore>().Database.MigrateAsync();
-}
 
 // Auto-migrate and seed database on startup (Zero-CLI needed for teammates)
 using (var scope = app.Services.CreateScope())
@@ -163,5 +154,6 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+app.MapHub<PaymentHub>("/hubs/payment");
 
 app.Run();

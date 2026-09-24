@@ -20,9 +20,12 @@ public static class EventBusRegistration
         {
             x.SetKebabCaseEndpointNameFormatter();
 
-            // Đăng ký Consumers đồng bộ Shadow User
+            // Đăng ký Consumers đồng bộ Shadow User và Hold Expiry
             x.AddConsumer<UserCreatedConsumer>();
             x.AddConsumer<UserProfileUpdatedConsumer>();
+            x.AddConsumer<HoldExpiredConsumer>();
+
+            x.AddDelayedMessageScheduler();
 
             if (useInMemory)
             {
@@ -41,10 +44,13 @@ public static class EventBusRegistration
                         h.Password(password);
                     });
 
+                    cfg.UseDelayedMessageScheduler();
                     cfg.ConfigureEndpoints(context);
                 });
             }
         });
+
+        services.AddScoped<TicketShield.Application.Common.Interfaces.IMessageSchedulerService, Services.MassTransitMessageSchedulerService>();
 
         return services;
     }

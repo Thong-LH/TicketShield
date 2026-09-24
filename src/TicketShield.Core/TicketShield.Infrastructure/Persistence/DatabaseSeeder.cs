@@ -8,83 +8,8 @@ public static class DatabaseSeeder
 {
     public static async Task SeedTicketShieldAsync(TicketShieldDbContext context)
     {
-        // 1. Auto-apply any pending migrations and ensure auth columns exist
+        // 1. Auto-apply any pending migrations
         await context.Database.MigrateAsync();
-
-        await context.Database.ExecuteSqlRawAsync(@"
-            ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255);
-            ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS google_id VARCHAR(255);
-            ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS password_reset_otp VARCHAR(20);
-            ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS password_reset_otp_expires_at TIMESTAMPTZ;
-            ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
-            ALTER TABLE organizers ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
-            ALTER TABLE events ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
-            ALTER TABLE events ADD COLUMN IF NOT EXISTS artist VARCHAR(255);
-            ALTER TABLE events ADD COLUMN IF NOT EXISTS category VARCHAR(50) DEFAULT 'CONCERT';
-            ALTER TABLE events ADD COLUMN IF NOT EXISTS city VARCHAR(100) DEFAULT 'TP. Hồ Chí Minh';
-            ALTER TABLE events ADD COLUMN IF NOT EXISTS banner_url VARCHAR(500);
-            ALTER TABLE ticket_tiers ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
-            ALTER TABLE resale_listings ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
-            ALTER TABLE escrow_transactions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
-            ALTER TABLE payout_transactions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
-            ALTER TABLE disputes ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
-            CREATE TABLE IF NOT EXISTS system_settings (
-                id UUID PRIMARY KEY,
-                setting_key VARCHAR(100) NOT NULL UNIQUE,
-                setting_value VARCHAR(500) NOT NULL,
-                data_type VARCHAR(50) NOT NULL,
-                description VARCHAR(500) NULL,
-                updated_by UUID NULL,
-                created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-            );
-            CREATE TABLE IF NOT EXISTS shadow_users (
-                id UUID PRIMARY KEY,
-                email VARCHAR(255) NOT NULL,
-                full_name VARCHAR(255) NOT NULL,
-                phone_number VARCHAR(50) NULL,
-                role VARCHAR(50) NOT NULL DEFAULT 'User',
-                is_active BOOLEAN NOT NULL DEFAULT true,
-                created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-            );
-            CREATE INDEX IF NOT EXISTS ix_shadow_users_email ON shadow_users (email);
-
-            -- Drop hard foreign key constraints to users(id) to allow database-per-service isolation
-            ALTER TABLE resale_listings DROP CONSTRAINT IF EXISTS fk_resale_listings_users_seller_id;
-            ALTER TABLE resale_listings DROP CONSTRAINT IF EXISTS resale_listings_seller_id_fkey;
-            ALTER TABLE escrow_transactions DROP CONSTRAINT IF EXISTS fk_escrow_transactions_users_buyer_id;
-            ALTER TABLE escrow_transactions DROP CONSTRAINT IF EXISTS fk_escrow_transactions_users_seller_id;
-            ALTER TABLE escrow_transactions DROP CONSTRAINT IF EXISTS escrow_transactions_buyer_id_fkey;
-            ALTER TABLE escrow_transactions DROP CONSTRAINT IF EXISTS escrow_transactions_seller_id_fkey;
-            ALTER TABLE disputes DROP CONSTRAINT IF EXISTS fk_disputes_users_buyer_id;
-            ALTER TABLE disputes DROP CONSTRAINT IF EXISTS fk_disputes_users_resolved_by;
-            ALTER TABLE disputes DROP CONSTRAINT IF EXISTS disputes_buyer_id_fkey;
-            ALTER TABLE disputes DROP CONSTRAINT IF EXISTS disputes_resolved_by_fkey;
-            ALTER TABLE dispute_evidences DROP CONSTRAINT IF EXISTS fk_dispute_evidences_users_uploader_id;
-            ALTER TABLE dispute_evidences DROP CONSTRAINT IF EXISTS dispute_evidences_uploader_id_fkey;
-            ALTER TABLE dispute_messages DROP CONSTRAINT IF EXISTS fk_dispute_messages_users_sender_id;
-            ALTER TABLE dispute_messages DROP CONSTRAINT IF EXISTS dispute_messages_sender_id_fkey;
-
-            -- Backfill existing users into shadow_users if users table exists
-            DO $$ 
-            BEGIN 
-                IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'users') THEN
-                    INSERT INTO shadow_users (id, email, full_name, phone_number, role, is_active, created_at, updated_at)
-                    SELECT id, email, full_name, phone_number, role::text, is_active, created_at, updated_at
-                    FROM users
-                    ON CONFLICT (id) DO UPDATE SET
-                        email = EXCLUDED.email,
-                        full_name = EXCLUDED.full_name,
-                        phone_number = EXCLUDED.phone_number,
-                        role = EXCLUDED.role,
-                        is_active = EXCLUDED.is_active,
-                        updated_at = EXCLUDED.updated_at;
-                END IF;
-            END $$;
-        ");
-
-        var defaultPasswordHash = BCrypt.Net.BCrypt.HashPassword("123456");
 
         // 2. Seed / Sync ShadowUsers for Trading Core
         var sellerId = Guid.Parse("11111111-1111-1111-1111-111111111111");

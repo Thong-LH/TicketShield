@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using TicketShield.Application.Common.Interfaces;
@@ -98,6 +99,10 @@ public class TicketShieldDbContext : DbContext, ITicketShieldDbContext
             // Index for fast lookup by private access token
             entity.HasIndex(e => e.PrivateAccessToken);
 
+            // Index for marketplace listing query and sorting
+            entity.HasIndex(e => new { e.IsPrivate, e.ListingStatus, e.CreatedAt })
+                .IsDescending(false, false, true);
+
             entity.Ignore(l => l.EscrowTransaction);
         });
 
@@ -131,6 +136,9 @@ public class TicketShieldDbContext : DbContext, ITicketShieldDbContext
             entity.HasIndex(e => e.BankTransactionReference)
                 .IsUnique()
                 .HasFilter("bank_transaction_reference IS NOT NULL");
+
+            entity.HasIndex(e => e.PaymentReference);
+            entity.HasIndex(e => new { e.Status, e.UnlockAt });
         });
 
         // PayoutTransaction
@@ -272,6 +280,24 @@ public class TicketShieldDbContext : DbContext, ITicketShieldDbContext
             return new DbContextTransactionProxy(tx);
         }
         return null;
+    }
+
+    public async Task<T?> ReadCoreResaleRecordAsync<T>(string id, CancellationToken ct = default) where T : class
+    {
+        var row = await CoreResaleRecords.FindAsync([id], ct);
+        return row is null ? null : JsonSerializer.Deserialize<T>(row.Json);
+    }
+
+    public async Task PutCoreResaleRecordAsync<T>(string id, T value, CancellationToken ct = default)
+    {
+        var row = await CoreResaleRecords.FindAsync([id], ct);
+        if (row is null)
+        {
+            row = new CoreResaleRow { Id = id };
+            CoreResaleRecords.Add(row);
+        }
+        row.Json = JsonSerializer.Serialize(value);
+        await SaveChangesAsync(ct);
     }
 
     private sealed class DbContextTransactionProxy(Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction tx) : IDbContextTransactionProxy

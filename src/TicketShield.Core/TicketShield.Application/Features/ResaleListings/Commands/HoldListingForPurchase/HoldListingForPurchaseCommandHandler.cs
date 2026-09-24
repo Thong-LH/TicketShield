@@ -16,17 +16,20 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
     private readonly ICurrentUserService? _currentUserService;
     private readonly IResaleFeeCalculator _feeCalculator;
     private readonly IVietQrService? _vietQrService;
+    private readonly IMessageSchedulerService? _messageSchedulerService;
 
     public HoldListingForPurchaseCommandHandler(
         ITicketShieldDbContext dbContext,
         IResaleFeeCalculator feeCalculator,
         ICurrentUserService? currentUserService = null,
-        IVietQrService? vietQrService = null)
+        IVietQrService? vietQrService = null,
+        IMessageSchedulerService? messageSchedulerService = null)
     {
         _dbContext = dbContext;
         _feeCalculator = feeCalculator;
         _currentUserService = currentUserService;
         _vietQrService = vietQrService;
+        _messageSchedulerService = messageSchedulerService;
     }
 
     public async Task<ApiResponse<HoldListingForPurchaseResponse>> Handle(HoldListingForPurchaseCommand request, CancellationToken cancellationToken)
@@ -178,6 +181,11 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
         if (tx != null)
         {
             await tx.CommitAsync(cancellationToken);
+        }
+
+        if (_messageSchedulerService != null)
+        {
+            await _messageSchedulerService.ScheduleHoldExpiryAsync(escrow.Id, listing.Id, unlockAt, cancellationToken);
         }
 
         var response = new HoldListingForPurchaseResponse

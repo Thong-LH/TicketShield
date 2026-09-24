@@ -6,7 +6,6 @@ using Microsoft.Extensions.Hosting;
 using TicketShield.Application.Common.Interfaces;
 using TicketShield.Contracts.Organizer.V1;
 using TicketShield.Infrastructure.ExternalServices.Organizer;
-using TicketShield.Infrastructure.Persistence.Resale;
 using TicketShield.Infrastructure.Services;
 
 namespace TicketShield.Infrastructure.Resale;
@@ -41,11 +40,6 @@ public static class ResaleRegistration
         // Đăng ký Application Service
         services.AddScoped<ITicketVerificationService, TicketVerificationService>();
         services.AddScoped<TicketVerificationService>();
-
-        // Đăng ký Persistence Store
-        services.AddDbContext<CoreResaleStore>(b => b.UseNpgsql(
-            configuration.GetConnectionString("DefaultConnection"),
-            pg => pg.MigrationsHistoryTable("__CoreResaleMigrationsHistory")));
 
         // Đăng ký Background Reconciliation Worker
         services.AddHostedService<ResaleRecoveryWorker>();

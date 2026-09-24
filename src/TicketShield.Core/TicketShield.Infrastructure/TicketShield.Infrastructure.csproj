@@ -24,9 +24,11 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Update="Templates\**\*.html">
+    <EmbeddedResource Include="Templates\**\*.html" />
+    <Content Include="Templates\**\*.html">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
   </ItemGroup>
 
   <PropertyGroup>

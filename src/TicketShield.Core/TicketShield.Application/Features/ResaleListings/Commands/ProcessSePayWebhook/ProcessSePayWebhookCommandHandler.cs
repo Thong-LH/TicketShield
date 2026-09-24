@@ -18,19 +18,22 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
     private readonly IEmailTemplateService? _emailTemplates;
     private readonly IEmailService? _emailService;
     private readonly ILogger<ProcessSePayWebhookCommandHandler>? _logger;
+    private readonly IPaymentRealtimeNotifier? _paymentNotifier;
 
     public ProcessSePayWebhookCommandHandler(
         ITicketShieldDbContext dbContext,
         IEmailTemplateService? emailTemplates = null,
         IEmailService? emailService = null,
         ILogger<ProcessSePayWebhookCommandHandler>? logger = null,
-        ITicketVerificationService? ticketVerificationService = null)
+        ITicketVerificationService? ticketVerificationService = null,
+        IPaymentRealtimeNotifier? paymentNotifier = null)
     {
         _dbContext = dbContext;
         _emailTemplates = emailTemplates;
         _emailService = emailService;
         _logger = logger;
         _ticketVerificationService = ticketVerificationService;
+        _paymentNotifier = paymentNotifier;
     }
 
     public async Task<ApiResponse<ProcessSePayWebhookResponse>> Handle(ProcessSePayWebhookCommand request, CancellationToken cancellationToken)
@@ -163,6 +166,18 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
                 escrow.Id, bankTxRef, paymentReference);
             await TrySendLatePaymentEmailAsync(escrow, payload.TransferAmount, cancellationToken);
 
+            if (_paymentNotifier != null)
+            {
+                await _paymentNotifier.NotifyHoldExpiredAsync(escrow.ListingId, new
+                {
+                    listingId = escrow.ListingId,
+                    escrowId = escrow.Id,
+                    paymentReference = escrow.PaymentReference ?? paymentReference,
+                    escrowStatus = nameof(EscrowStatus.RefundQueued),
+                    listingStatus = escrow.Listing.ListingStatus.ToString()
+                }, cancellationToken);
+            }
+
             return ApiResponse<ProcessSePayWebhookResponse>.SuccessResponse(
                 new ProcessSePayWebhookResponse
                 {
@@ -183,7 +198,6 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
 
         string? newTicketCode = null;
         string? qrCodeData = null;
-        var escrowId = escrow.Id;
 
         // Call gRPC TransferOwnership to BTC Organizer (Issue 2)
         if (_ticketVerificationService != null)
@@ -202,15 +216,6 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
 
             newTicketCode = transferResponse.NewTicket?.Ticket?.TicketCode;
             qrCodeData = transferResponse.NewTicket?.Ticket?.TicketCode;
-
-            // TicketVerificationService.Transaction() calls ChangeTracker.Clear() on this same
-            // scoped DbContext. Mutations on the pre-transfer escrow instance would not persist.
-            escrow = await _dbContext.EscrowTransactions
-                .Include(e => e.Listing)
-                    .ThenInclude(l => l.Event)
-                .Include(e => e.Buyer)
-                .Include(e => e.Seller)
-                .FirstAsync(e => e.Id == escrowId, cancellationToken);
         }
 
         escrow.Status = EscrowStatus.Locked;
@@ -223,6 +228,23 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
 
         await _dbContext.SaveChangesAsync(cancellationToken);
         await TrySendLockEmailsAsync(escrow, cancellationToken);
+
+        if (_paymentNotifier != null)
+        {
+            var notificationPayload = new
+            {
+                listingId = escrow.ListingId,
+                escrowId = escrow.Id,
+                paymentReference = escrow.PaymentReference ?? paymentReference,
+                escrowStatus = escrow.Status.ToString(),
+                listingStatus = escrow.Listing?.ListingStatus.ToString() ?? ListingStatus.Sold.ToString(),
+                totalBuyerPaid = escrow.TotalBuyerPaid,
+                newTicketCode = escrow.NewTicketCode,
+                qrCodeData = escrow.QrCodeData
+            };
+            await _paymentNotifier.NotifyPaymentApprovedAsync(escrow.ListingId, notificationPayload, cancellationToken);
+            await _paymentNotifier.NotifyOrderSettledAsync(escrow.ListingId, notificationPayload, cancellationToken);
+        }
 
         var response = new ProcessSePayWebhookResponse
         {

@@ -28,7 +28,6 @@ using TicketShield.Infrastructure;
 using TicketShield.API.Resale;
 using TicketShield.Contracts.Organizer.V1;
 using TicketShield.Infrastructure.Persistence;
-using TicketShield.Infrastructure.Persistence.Resale;
 using TicketShield.Infrastructure.ExternalServices.Organizer;
 using TicketShield.Infrastructure.Resale;
 using Xunit;
@@ -125,7 +124,6 @@ public sealed class ResaleFixture : IAsyncLifetime
         coreBuilder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
         Core = coreBuilder.Build();
         using (var scope = Core.Services.CreateScope()) {
-            await scope.ServiceProvider.GetRequiredService<CoreResaleStore>().Database.MigrateAsync();
             await DatabaseSeeder.SeedTicketShieldAsync(scope.ServiceProvider.GetRequiredService<TicketShieldDbContext>());
         }
         Core.UseMiddleware<GlobalExceptionHandlingMiddleware>();

@@ -91,7 +91,6 @@ public class TicketVerificationService : ITicketVerificationService
 
     private async Task<T> Transaction<T>(Func<Task<T>> action, CancellationToken ct, string? lockTarget = null)
     {
-        _db.ChangeTracker.Clear();
         await using var tx = await _db.Database.BeginTransactionAsync(ct);
 
         long lockKey = ComputeLockKey(lockTarget);

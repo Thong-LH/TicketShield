@@ -33,8 +33,7 @@ public class EmailTemplateService : IEmailTemplateService
         string escrowCode,
         decimal amountPaid)
     {
-        var templatePath = Path.Combine(_templateBasePath, "buyer_ticket_issued.html");
-        var html = LoadTemplate(templatePath);
+        var html = LoadTemplate("buyer_ticket_issued.html");
 
         return html
             .Replace("{{BuyerName}}", buyerName)
@@ -57,8 +56,7 @@ public class EmailTemplateService : IEmailTemplateService
         decimal amountLocked,
         string escrowCode)
     {
-        var templatePath = Path.Combine(_templateBasePath, "seller_escrow_locked.html");
-        var html = LoadTemplate(templatePath);
+        var html = LoadTemplate("seller_escrow_locked.html");
 
         return html
             .Replace("{{SellerName}}", sellerName)
@@ -69,13 +67,37 @@ public class EmailTemplateService : IEmailTemplateService
             .Replace("{{EscrowCode}}", escrowCode);
     }
 
-    private static string LoadTemplate(string templatePath)
+    private string LoadTemplate(string templateFileName)
     {
-        if (File.Exists(templatePath))
+        // 1. Check template base path probed at startup
+        var pathOnDisk = Path.Combine(_templateBasePath, templateFileName);
+        if (File.Exists(pathOnDisk))
         {
-            return File.ReadAllText(templatePath);
+            return File.ReadAllText(pathOnDisk);
         }
 
-        throw new FileNotFoundException($"Email HTML template not found at path: {templatePath}");
+        // 2. Check AppContext.BaseDirectory/Templates direct path
+        var baseDirPath = Path.Combine(AppContext.BaseDirectory, "Templates", templateFileName);
+        if (File.Exists(baseDirPath))
+        {
+            return File.ReadAllText(baseDirPath);
+        }
+
+        // 3. Fallback to Embedded Resource for containerized environments
+        var assembly = typeof(EmailTemplateService).Assembly;
+        var resourceName = assembly.GetManifestResourceNames()
+            .FirstOrDefault(r => r.EndsWith(templateFileName, StringComparison.OrdinalIgnoreCase));
+
+        if (resourceName != null)
+        {
+            using var stream = assembly.GetManifestResourceStream(resourceName);
+            if (stream != null)
+            {
+                using var reader = new StreamReader(stream);
+                return reader.ReadToEnd();
+            }
+        }
+
+        throw new FileNotFoundException($"Email HTML template not found at disk path '{pathOnDisk}' or embedded resource '{templateFileName}'.");
     }
 }

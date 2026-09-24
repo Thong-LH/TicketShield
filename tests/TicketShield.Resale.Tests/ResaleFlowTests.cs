@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using MockOrganizer.API.Resale;
 using TicketShield.Application.Common.Models;
 using TicketShield.Contracts.Organizer.V1;
+using TicketShield.Infrastructure.Persistence;
 using TicketShield.Infrastructure.Persistence.Resale;
 using TicketShield.Infrastructure.Resale;
 using Xunit;
@@ -154,9 +155,9 @@ public sealed class ResaleFlowTests(ResaleFixture f) : IClassFixture<ResaleFixtu
         var operation = ResaleFixture.Id();
         using (var scope = f.Core.Services.CreateScope())
         {
-            var store = scope.ServiceProvider.GetRequiredService<CoreResaleStore>();
+            var db = scope.ServiceProvider.GetRequiredService<TicketShieldDbContext>();
             var operationKey = $"op:{ResaleFixture.Seller}:Request:{operation}";
-            await store.Put("session:" + verification, new CoreSession
+            await db.PutCoreResaleRecordAsync("session:" + verification, new CoreSession
             {
                 Id = verification,
                 Seller = ResaleFixture.Seller,
@@ -165,7 +166,7 @@ public sealed class ResaleFlowTests(ResaleFixture f) : IClassFixture<ResaleFixtu
                 PendingOperationId = operationKey,
                 UpdatedAt = f.Clock.GetUtcNow()
             }, default);
-            await store.Put(operationKey, new CoreOperation
+            await db.PutCoreResaleRecordAsync(operationKey, new CoreOperation
             {
                 Id = operation,
                 SessionId = verification,
@@ -174,7 +175,6 @@ public sealed class ResaleFlowTests(ResaleFixture f) : IClassFixture<ResaleFixtu
                 Fingerprint = "simulated-lost-response",
                 State = "Pending"
             }, default);
-            await store.SaveChangesAsync();
         }
         await f.Grpc.RequestTicketOtpAsync(new RequestTicketOtpRequest
         {

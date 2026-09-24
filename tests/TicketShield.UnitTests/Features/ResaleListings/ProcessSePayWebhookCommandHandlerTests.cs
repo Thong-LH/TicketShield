@@ -553,7 +553,7 @@ public class ProcessSePayWebhookCommandHandlerTests
     }
 
     [Fact]
-    public async Task Handle_ValidPayment_WhenTransferClearsChangeTracker_ShouldStillPersistLockedSold()
+    public async Task Handle_ValidPayment_ShouldPersistLockedSold()
     {
         var (context, listing, escrow) = CreateTestFixture();
         await context.SaveChangesAsync();
@@ -566,7 +566,6 @@ public class ProcessSePayWebhookCommandHandlerTests
             It.IsAny<string>(),
             It.IsAny<string?>(),
             It.IsAny<CancellationToken>()))
-            .Callback(() => context.ChangeTracker.Clear())
             .ReturnsAsync(new TicketShield.Contracts.Organizer.V1.TransferOwnershipResponse());
 
         var handler = new ProcessSePayWebhookCommandHandler(context, null, null, null, verification.Object);
