@@ -441,4 +441,42 @@ public class HoldListingForPurchaseCommandHandlerTests
         var ex = await Assert.ThrowsAsync<UnauthorizedException>(() => handler.Handle(command, CancellationToken.None));
         Assert.Equal("Tài khoản của bạn đã bị vô hiệu hóa.", ex.Message);
     }
+
+    [Fact]
+    public async Task Handle_WhenEventInsideTwoHourCutoff_ShouldRejectHoldAndLeaveListingVerified()
+    {
+        var (dbContext, seller, buyer) = CreateInMemoryDbContext();
+        var feeCalculator = new MockResaleFeeCalculator();
+        var currentUserService = new MockCurrentUserService(buyer.Id);
+
+        var ev = await dbContext.Events.FirstAsync();
+        ev.EventStartAt = DateTimeOffset.UtcNow.AddMinutes(90);
+        await dbContext.SaveChangesAsync();
+
+        var listing = new ResaleListing
+        {
+            Id = Guid.NewGuid(),
+            EventId = ev.Id,
+            TierId = (await dbContext.TicketTiers.FirstAsync()).Id,
+            SellerId = seller.Id,
+            OriginalTicketCode = "TCK-CUTOFF-001",
+            OriginalPrice = 1_000_000m,
+            ResalePrice = 1_000_000m,
+            ListingStatus = ListingStatus.Verified,
+            CreatedAt = DateTimeOffset.UtcNow
+        };
+        dbContext.ResaleListings.Add(listing);
+        await dbContext.SaveChangesAsync();
+
+        var handler = new HoldListingForPurchaseCommandHandler(dbContext, feeCalculator, currentUserService);
+        var command = new HoldListingForPurchaseCommand(listing.Id);
+
+        var ex = await Assert.ThrowsAsync<BusinessRuleViolationException>(
+            () => handler.Handle(command, CancellationToken.None));
+
+        Assert.Contains("2 giờ", ex.Message);
+        var saved = await dbContext.ResaleListings.Include(l => l.EscrowTransactions).FirstAsync(l => l.Id == listing.Id);
+        Assert.Equal(ListingStatus.Verified, saved.ListingStatus);
+        Assert.Empty(saved.EscrowTransactions);
+    }
 }
