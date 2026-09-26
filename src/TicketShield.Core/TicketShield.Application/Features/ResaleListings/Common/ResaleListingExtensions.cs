@@ -26,6 +26,7 @@ public static class ResaleListingExtensions
             ListingStatus = listing.ListingStatus.ToString(),
             SellerId = listing.SellerId,
             SellerFullName = listing.Seller?.FullName ?? string.Empty,
+            UnlockAt = listing.EscrowTransaction?.UnlockAt,
             CreatedAt = listing.CreatedAt
         };
     }

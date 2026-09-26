@@ -12,10 +12,14 @@ namespace TicketShield.API.Controllers;
 public class WebhooksController : ApiControllerBase
 {
     private readonly VietQrSettings _vietQrSettings;
+    private readonly ILogger<WebhooksController> _logger;
 
-    public WebhooksController(IOptions<VietQrSettings> vietQrOptions)
+    public WebhooksController(
+        IOptions<VietQrSettings> vietQrOptions,
+        ILogger<WebhooksController> logger)
     {
         _vietQrSettings = vietQrOptions.Value;
+        _logger = logger;
     }
 
     /// <summary>
@@ -31,6 +35,7 @@ public class WebhooksController : ApiControllerBase
         var authHeader = Request.Headers["Authorization"].FirstOrDefault();
         if (string.IsNullOrWhiteSpace(authHeader))
         {
+            _logger.LogWarning("SePay Webhook rejected: Missing Authorization header.");
             return Unauthorized(ApiResponse<object>.FailureResponse("Truy cập bị từ chối: Thiếu header Authorization."));
         }
 
@@ -44,13 +49,22 @@ public class WebhooksController : ApiControllerBase
             token = token["Bearer ".Length..].Trim();
         }
 
-        if (!string.Equals(token, _vietQrSettings.WebhookSecret, StringComparison.Ordinal))
+        if (!string.Equals(token, _vietQrSettings?.WebhookSecret, StringComparison.Ordinal))
         {
+            _logger.LogWarning("SePay Webhook rejected: Invalid Webhook Secret Token.");
             return Unauthorized(ApiResponse<object>.FailureResponse("Truy cập bị từ chối: Secret Webhook không hợp lệ."));
         }
 
         // 2. Process Webhook Command
-        var result = await Mediator.Send(new ProcessSePayWebhookCommand(payload));
-        return Ok(result);
+        try
+        {
+            var result = await Mediator.Send(new ProcessSePayWebhookCommand(payload));
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Lỗi xảy ra trong quá trình xử lý SePay Webhook.");
+            return Ok(ApiResponse<object>.FailureResponse($"Lỗi xử lý Webhook: {ex.Message}"));
+        }
     }
 }
