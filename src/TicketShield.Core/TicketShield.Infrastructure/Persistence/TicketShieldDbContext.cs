@@ -282,6 +282,33 @@ public class TicketShieldDbContext : DbContext, ITicketShieldDbContext
         return null;
     }
 
+    public async Task EnsureShadowUserExistsAsync(Guid id, string email, string fullName, CancellationToken cancellationToken = default)
+    {
+        if (Database.IsRelational())
+        {
+            await Database.ExecuteSqlRawAsync(
+                "INSERT INTO shadow_users (id, email, full_name, role, is_active, created_at, updated_at) VALUES ({0}, {1}, {2}, 'User', true, NOW(), NOW()) ON CONFLICT (id) DO NOTHING",
+                [id, email, fullName],
+                cancellationToken);
+        }
+        else
+        {
+            var user = await ShadowUsers.FindAsync([id], cancellationToken);
+            if (user == null)
+            {
+                ShadowUsers.Add(new ShadowUser
+                {
+                    Id = id,
+                    Email = email,
+                    FullName = fullName,
+                    Role = Domain.Enums.UserRole.User,
+                    IsActive = true
+                });
+                await SaveChangesAsync(cancellationToken);
+            }
+        }
+    }
+
     public async Task<T?> ReadCoreResaleRecordAsync<T>(string id, CancellationToken ct = default) where T : class
     {
         var row = await CoreResaleRecords.FindAsync([id], ct);

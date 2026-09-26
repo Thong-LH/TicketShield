@@ -15,7 +15,7 @@ public static class DependencyInjection
         // Database Connection (Database-per-service: identity_db)
         var connectionString = configuration.GetConnectionString("IdentityConnection")
             ?? configuration.GetConnectionString("DefaultConnection")
-            ?? "Host=localhost;Port=5432;Database=identity_db;Username=postgres;Password=postgres";
+            ?? "Host=localhost;Port=5432;Database=identity_db;Username=postgres;Password=12345";
 
         services.AddDbContext<IdentityDbContext>(options =>
             options.UseNpgsql(connectionString, npgsqlOptions =>

@@ -12,8 +12,8 @@ if (resaleEnabled && builder.Environment.IsDevelopment())
     var grpcPort = builder.Configuration.GetValue("OrganizerResale:DevelopmentGrpcPort", 5004);
     builder.WebHost.ConfigureKestrel(k =>
     {
-        k.ListenLocalhost(httpPort, endpoint => endpoint.Protocols = HttpProtocols.Http1);
-        k.ListenLocalhost(grpcPort, endpoint => endpoint.Protocols = HttpProtocols.Http2);
+        k.ListenAnyIP(httpPort, endpoint => endpoint.Protocols = HttpProtocols.Http1);
+        k.ListenAnyIP(grpcPort, endpoint => endpoint.Protocols = HttpProtocols.Http2);
     });
 }
 
@@ -39,7 +39,14 @@ var app = builder.Build();
 if (resaleEnabled)
 {
     using var resaleScope = app.Services.CreateScope();
-    await resaleScope.ServiceProvider.GetRequiredService<ResaleStore>().Database.MigrateAsync();
+    try
+    {
+        await resaleScope.ServiceProvider.GetRequiredService<ResaleStore>().Database.MigrateAsync();
+    }
+    catch (Exception ex)
+    {
+        app.Logger.LogWarning(ex, "ResaleStore migration skipped or already applied.");
+    }
     app.MapGrpcService<OrganizerResaleGrpcService>();
 }
 

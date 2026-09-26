@@ -7,7 +7,7 @@ services:
     restart: always
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_PASSWORD: 12345
       POSTGRES_DB: ticketshield_db
     ports:
       - "5432:5432"
@@ -50,7 +50,7 @@ services:
     restart: always
     environment:
       ASPNETCORE_ENVIRONMENT: Development
-      ConnectionStrings__DefaultConnection: "Host=postgres;Port=5432;Database=organizer_db;Username=postgres;Password=postgres"
+      ConnectionStrings__DefaultConnection: "Host=postgres;Port=5432;Database=organizer_db;Username=postgres;Password=12345"
     ports:
       - "5001:5001"
     depends_on:
@@ -69,13 +69,20 @@ services:
       - .env
     environment:
       ASPNETCORE_ENVIRONMENT: Development
-      ConnectionStrings__IdentityConnection: "Host=postgres;Port=5432;Database=identity_db;Username=postgres;Password=postgres"
-      ConnectionStrings__DefaultConnection: "Host=postgres;Port=5432;Database=identity_db;Username=postgres;Password=postgres"
+      ConnectionStrings__IdentityConnection: "Host=postgres;Port=5432;Database=identity_db;Username=postgres;Password=12345"
+      ConnectionStrings__DefaultConnection: "Host=postgres;Port=5432;Database=identity_db;Username=postgres;Password=12345"
+      CONNECTIONSTRINGS__IDENTITYCONNECTION: "Host=postgres;Port=5432;Database=identity_db;Username=postgres;Password=12345"
+      CONNECTIONSTRINGS__DEFAULTCONNECTION: "Host=postgres;Port=5432;Database=identity_db;Username=postgres;Password=12345"
       RabbitMQ__Host: "rabbitmq"
       RabbitMQ__Port: "5672"
       RabbitMQ__Username: "guest"
       RabbitMQ__Password: "guest"
       RabbitMQ__UseInMemory: "false"
+      RABBITMQ__HOST: "rabbitmq"
+      RABBITMQ__PORT: "5672"
+      RABBITMQ__USERNAME: "guest"
+      RABBITMQ__PASSWORD: "guest"
+      RABBITMQ__USEINMEMORY: "false"
     ports:
       - "5002:5002"
     depends_on:
@@ -96,13 +103,20 @@ services:
       - .env
     environment:
       ASPNETCORE_ENVIRONMENT: Development
-      ConnectionStrings__DefaultConnection: "Host=postgres;Port=5432;Database=ticketshield_db;Username=postgres;Password=postgres"
+      ConnectionStrings__DefaultConnection: "Host=postgres;Port=5432;Database=ticketshield_db;Username=postgres;Password=12345"
+      CONNECTIONSTRINGS__DEFAULTCONNECTION: "Host=postgres;Port=5432;Database=ticketshield_db;Username=postgres;Password=12345"
       RabbitMQ__Host: "rabbitmq"
       RabbitMQ__Port: "5672"
       RabbitMQ__Username: "guest"
       RabbitMQ__Password: "guest"
       RabbitMQ__UseInMemory: "false"
+      RABBITMQ__HOST: "rabbitmq"
+      RABBITMQ__PORT: "5672"
+      RABBITMQ__USERNAME: "guest"
+      RABBITMQ__PASSWORD: "guest"
+      RABBITMQ__USEINMEMORY: "false"
       OrganizerGrpc__Address: "http://mock-organizer-api:5001"
+      ORGANIZERGRPC__ADDRESS: "http://mock-organizer-api:5001"
     ports:
       - "5003:5003"
     depends_on:

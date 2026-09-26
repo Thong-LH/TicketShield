@@ -12,7 +12,7 @@ public static class DependencyInjection
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
         var connectionString = configuration.GetConnectionString("DefaultConnection") 
-            ?? "Host=localhost;Port=5432;Database=ticketshield_db;Username=postgres;Password=postgres";
+            ?? "Host=localhost;Port=5432;Database=ticketshield_db;Username=postgres;Password=12345";
 
         services.AddDbContext<TicketShieldDbContext>(options =>
             options.UseNpgsql(connectionString));
@@ -33,6 +33,7 @@ public static class DependencyInjection
 
         // Auto-Settlement Escrow Payout Worker (Disburses funds to seller once UnlockAt is reached)
         services.AddHostedService<Workers.AutomaticSettlementWorker>();
+        services.AddHostedService<Workers.ExpiredHoldReleaseWorker>();
 
         // Event Bus (RabbitMQ + MassTransit)
         services.AddEventBus(configuration);

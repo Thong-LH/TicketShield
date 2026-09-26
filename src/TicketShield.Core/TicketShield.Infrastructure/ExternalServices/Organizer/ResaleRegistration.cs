@@ -21,11 +21,11 @@ public static class ResaleRegistration
         }
 
         if (!Uri.TryCreate(options.Address, UriKind.Absolute, out var uri) ||
-            !(uri.Scheme == "https" || environment.IsDevelopment() && uri.Scheme == "http" && uri.IsLoopback) ||
+            !(uri.Scheme == "https" || (environment.IsDevelopment() && uri.Scheme == "http")) ||
             !string.IsNullOrEmpty(uri.UserInfo) || options.ApiKey.Length < 32 || options.HmacKey.Length < 32 ||
             !Guid.TryParseExact(options.OrganizerId, "D", out _) || options.DeadlineSeconds is < 1 or > 120)
         {
-            throw new InvalidOperationException("OrganizerGrpc requires TLS (or Development loopback), identity, keys (32+ characters) and a bounded deadline.");
+            throw new InvalidOperationException("OrganizerGrpc requires TLS (or Development environment), identity, keys (32+ characters) and a bounded deadline.");
         }
 
         AppContext.SetSwitch("System.Net.Http.SocketsHttpHandler.Http2UnencryptedSupport", true);

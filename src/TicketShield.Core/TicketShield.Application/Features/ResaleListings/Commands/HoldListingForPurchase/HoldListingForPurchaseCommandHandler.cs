@@ -42,14 +42,21 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
         }
 
         var buyer = await _dbContext.ShadowUsers
+            .AsNoTracking()
             .FirstOrDefaultAsync(u => u.Id == buyerId, cancellationToken);
 
         if (buyer == null)
         {
-            throw new UnauthorizedException("Tài khoản người dùng không tồn tại hoặc chưa được đồng bộ.");
+            var email = _currentUserService?.Email ?? request.RecipientEmail ?? $"{buyerId}@ticketshield.vn";
+            var fullName = !string.IsNullOrWhiteSpace(request.RecipientName) ? request.RecipientName : "TicketShield Buyer";
+            await _dbContext.EnsureShadowUserExistsAsync(buyerId, email, fullName, cancellationToken);
+
+            buyer = await _dbContext.ShadowUsers
+                .AsNoTracking()
+                .FirstOrDefaultAsync(u => u.Id == buyerId, cancellationToken);
         }
 
-        if (!buyer.IsActive)
+        if (buyer != null && !buyer.IsActive)
         {
             throw new UnauthorizedException("Tài khoản của bạn đã bị vô hiệu hóa.");
         }

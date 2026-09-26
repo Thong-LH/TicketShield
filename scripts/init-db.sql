@@ -167,7 +167,9 @@ CREATE TABLE IF NOT EXISTS escrow_transactions (
     total_buyer_paid NUMERIC(15, 2) NOT NULL,
     net_seller_payout NUMERIC(15, 2) NOT NULL,
     payment_reference VARCHAR(255) UNIQUE,
+    bank_transaction_reference VARCHAR(255) UNIQUE,
     status VARCHAR(50) NOT NULL DEFAULT 'PENDING', -- PENDING, LOCKED, RELEASED, REFUNDED, DISPUTED
+    in_settlement_buffer BOOLEAN NOT NULL DEFAULT FALSE,
     unlock_at TIMESTAMPTZ,
     dispute_deadline TIMESTAMPTZ,
     recipient_name VARCHAR(255),

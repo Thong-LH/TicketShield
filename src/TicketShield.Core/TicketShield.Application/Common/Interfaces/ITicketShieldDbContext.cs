@@ -23,6 +23,8 @@ public interface ITicketShieldDbContext
 
     Task<IDbContextTransactionProxy?> BeginAdvisoryLockTransactionAsync(long lockKey, CancellationToken cancellationToken = default);
 
+    Task EnsureShadowUserExistsAsync(Guid id, string email, string fullName, CancellationToken cancellationToken = default);
+
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }
 

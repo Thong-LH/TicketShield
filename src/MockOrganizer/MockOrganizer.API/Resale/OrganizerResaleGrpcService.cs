@@ -43,7 +43,7 @@ public sealed class OrganizerResaleGrpcService(
     private void Authenticate(ServerCallContext context)
     {
         var http = context.GetHttpContext();
-        if (!http.Request.IsHttps && !(environment.IsDevelopment() && http.Connection.RemoteIpAddress is { } ip && System.Net.IPAddress.IsLoopback(ip)))
+        if (!http.Request.IsHttps && !environment.IsDevelopment())
             throw Fail("TLS_REQUIRED", StatusCode.Unauthenticated);
         var supplied = context.RequestHeaders.Where(x => x.Key == "authorization").ToArray();
         if (supplied.Length != 1 || !CryptographicOperations.FixedTimeEquals(

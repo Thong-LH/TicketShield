@@ -25,8 +25,6 @@ public static class EventBusRegistration
             x.AddConsumer<UserProfileUpdatedConsumer>();
             x.AddConsumer<HoldExpiredConsumer>();
 
-            x.AddDelayedMessageScheduler();
-
             if (useInMemory)
             {
                 x.UsingInMemory((context, cfg) =>
@@ -44,7 +42,6 @@ public static class EventBusRegistration
                         h.Password(password);
                     });
 
-                    cfg.UseDelayedMessageScheduler();
                     cfg.ConfigureEndpoints(context);
                 });
             }
