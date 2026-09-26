@@ -4,18 +4,12 @@ using MockOrganizer.API.Resale;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 
 var builder = WebApplication.CreateBuilder(args);
-builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
 var resaleEnabled = builder.Services.AddOrganizerResale(builder.Configuration);
-if (resaleEnabled && builder.Environment.IsDevelopment())
+var httpPort = builder.Configuration.GetValue("HttpPort", 5001);
+builder.WebHost.ConfigureKestrel(k =>
 {
-    var httpPort = builder.Configuration.GetValue("HttpPort", 5001);
-    var grpcPort = builder.Configuration.GetValue("OrganizerResale:DevelopmentGrpcPort", 5004);
-    builder.WebHost.ConfigureKestrel(k =>
-    {
-        k.ListenAnyIP(httpPort, endpoint => endpoint.Protocols = HttpProtocols.Http1);
-        k.ListenAnyIP(grpcPort, endpoint => endpoint.Protocols = HttpProtocols.Http2);
-    });
-}
+    k.ListenAnyIP(httpPort, endpoint => endpoint.Protocols = HttpProtocols.Http1AndHttp2);
+});
 
 // Add services to the container.
 builder.Services.AddCors(options =>
