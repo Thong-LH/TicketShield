@@ -53,6 +53,7 @@ services:
       ConnectionStrings__DefaultConnection: "Host=postgres;Port=5432;Database=organizer_db;Username=postgres;Password=12345"
     ports:
       - "5001:5001"
+      - "5004:5004"
     depends_on:
       postgres:
         condition: service_healthy
@@ -115,8 +116,8 @@ services:
       RABBITMQ__USERNAME: "guest"
       RABBITMQ__PASSWORD: "guest"
       RABBITMQ__USEINMEMORY: "false"
-      OrganizerGrpc__Address: "http://mock-organizer-api:5001"
-      ORGANIZERGRPC__ADDRESS: "http://mock-organizer-api:5001"
+      OrganizerGrpc__Address: "http://mock-organizer-api:5004"
+      ORGANIZERGRPC__ADDRESS: "http://mock-organizer-api:5004"
     ports:
       - "5003:5003"
     depends_on:

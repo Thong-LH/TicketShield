@@ -5,11 +5,6 @@ using Microsoft.AspNetCore.Server.Kestrel.Core;
 
 var builder = WebApplication.CreateBuilder(args);
 var resaleEnabled = builder.Services.AddOrganizerResale(builder.Configuration);
-var httpPort = builder.Configuration.GetValue("HttpPort", 5001);
-builder.WebHost.ConfigureKestrel(k =>
-{
-    k.ListenAnyIP(httpPort, endpoint => endpoint.Protocols = HttpProtocols.Http1AndHttp2);
-});
 
 // Add services to the container.
 builder.Services.AddCors(options =>
