@@ -1,4 +1,6 @@
-# TicketShield Microservices Start Script
+param(
+    [string]$Mode = ""
+)
 $ProjectRoot = Resolve-Path "$PSScriptRoot\.."
 Set-Location $ProjectRoot
 
@@ -12,7 +14,7 @@ Write-Host "  [2] .NET CLI (Starts MockOrganizer, Identity, Core API & Gateway i
 Write-Host "  [3] Exit" -ForegroundColor Red
 Write-Host ""
 
-$choice = Read-Host "Enter choice [1-3] (Default: 1)"
+$choice = if (![string]::IsNullOrWhiteSpace($Mode)) { $Mode } else { Read-Host "Enter choice [1-3] (Default: 1)" }
 if ([string]::IsNullOrWhiteSpace($choice)) { $choice = "1" }
 
 function Start-NgrokTunnel {
@@ -27,9 +29,15 @@ function Start-NgrokTunnel {
 
 switch ($choice) {
     "1" {
+        $dopplerBin = if (Get-Command doppler -ErrorAction SilentlyContinue) { "doppler" }
+                      elseif (Test-Path "$env:APPDATA\Python\Python313\Scripts\doppler.exe") { "$env:APPDATA\Python\Python313\Scripts\doppler.exe" }
+                      else { "" }
+
         Write-Host "`nGenerating .env from Doppler secrets..." -ForegroundColor Cyan
-        doppler secrets download --no-file --format env | Out-File -FilePath ".env" -Encoding utf8
-        if ($LASTEXITCODE -eq 0) {
+        if ($dopplerBin) {
+            & $dopplerBin secrets download --no-file --format env | Out-File -FilePath ".env" -Encoding utf8
+        }
+        if ($LASTEXITCODE -eq 0 -and $dopplerBin) {
             Write-Host "[OK] .env generated from Doppler (file is gitignored)." -ForegroundColor Green
         } else {
             Write-Host "[Warning] Doppler unavailable, proceeding without .env. SMTP may not work." -ForegroundColor Yellow
@@ -63,6 +71,10 @@ switch ($choice) {
 
         Write-Host "`nLaunching .NET CLI microservices in separate windows..." -ForegroundColor Green
 
+        $dopplerBin = if (Get-Command doppler -ErrorAction SilentlyContinue) { "doppler" }
+                      elseif (Test-Path "$env:APPDATA\Python\Python313\Scripts\doppler.exe") { "$env:APPDATA\Python\Python313\Scripts\doppler.exe" }
+                      else { "" }
+
         $services = @(
             @{ Name = "MockOrganizer.API";         Path = "src/MockOrganizer/MockOrganizer.API";                 UseDoppler = $true },
             @{ Name = "TicketShield.Identity.API"; Path = "src/TicketShield.Identity/TicketShield.Identity.API"; UseDoppler = $true },
@@ -74,8 +86,8 @@ switch ($choice) {
             Write-Host "  -> Launching $($svc.Name)..." -ForegroundColor Cyan
             $svcName = $svc.Name
             $svcPath = $svc.Path
-            $runCmd = if ($svc.UseDoppler) {
-                "doppler run -- dotnet run --no-build --project `"$svcPath`""
+            $runCmd = if ($svc.UseDoppler -and $dopplerBin) {
+                "& `"$dopplerBin`" run -- dotnet run --no-build --project `"$svcPath`""
             } else {
                 "dotnet run --no-build --project `"$svcPath`""
             }

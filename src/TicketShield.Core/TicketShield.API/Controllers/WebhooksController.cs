@@ -12,16 +12,21 @@ namespace TicketShield.API.Controllers;
 public class WebhooksController : ApiControllerBase
 {
     private readonly VietQrSettings _vietQrSettings;
+    private readonly ILogger<WebhooksController> _logger;
 
-    public WebhooksController(IOptions<VietQrSettings> vietQrOptions)
+    public WebhooksController(
+        IOptions<VietQrSettings> vietQrOptions,
+        ILogger<WebhooksController> logger)
     {
         _vietQrSettings = vietQrOptions.Value;
+        _logger = logger;
     }
 
     /// <summary>
     /// SCRUM-80 / US-3.2: Receive SePay VietQR payment webhook and lock escrow transaction
     /// </summary>
     [HttpPost("sepay")]
+    [HttpPost("/api/v1/webhooks/sepay")]
     [HttpPost("/api/v1/payments/sepay-webhook")]
     [ProducesResponseType(typeof(ApiResponse<ProcessSePayWebhookResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]

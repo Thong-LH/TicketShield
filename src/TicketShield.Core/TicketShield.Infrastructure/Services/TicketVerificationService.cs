@@ -985,19 +985,26 @@ public class TicketVerificationService : ITicketVerificationService
             return new TransferOwnershipResponse();
         }
 
-        var session = await Owned(index.Seller, index.VerificationId, ct);
-        var receipt = Receipt(session);
+        try
+        {
+            var session = await Owned(index.Seller, index.VerificationId, ct);
+            var receipt = Receipt(session);
 
-        return await TransferOwnership(
-            index.Seller,
-            index.VerificationId,
-            receipt.ResaleLock.LockId,
-            receipt.ResaleLock.Generation,
-            buyerId.ToString("D"),
-            buyerEmail,
-            buyerName,
-            buyerPhone,
-            ct);
+            return await TransferOwnership(
+                index.Seller,
+                index.VerificationId,
+                receipt.ResaleLock.LockId,
+                receipt.ResaleLock.Generation,
+                buyerId.ToString("D"),
+                buyerEmail,
+                buyerName,
+                buyerPhone,
+                ct);
+        }
+        catch (RpcException ex) when (ex.StatusCode == StatusCode.NotFound)
+        {
+            return new TransferOwnershipResponse();
+        }
     }
 
     /// <summary>
@@ -1041,10 +1048,10 @@ public class TicketVerificationService : ITicketVerificationService
                 Operation = op,
                 LockId = lockId,
                 ExpectedLockGeneration = expectedLockGeneration,
-                NewOwnerRef = buyerRef,
-                NewOwnerEmail = buyerEmail,
-                NewOwnerName = buyerName,
-                NewOwnerPhone = buyerPhone
+                NewOwnerRef = buyerRef ?? string.Empty,
+                NewOwnerEmail = buyerEmail ?? string.Empty,
+                NewOwnerName = buyerName ?? string.Empty,
+                NewOwnerPhone = buyerPhone ?? string.Empty
             };
 
             // Call gRPC over network

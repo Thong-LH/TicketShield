@@ -5,7 +5,9 @@ using TicketShield.Application.Common.Interfaces;
 using TicketShield.Application.Common.Models;
 using TicketShield.Application.Features.ResaleListings.Commands.CancelResaleListing;
 using TicketShield.Application.Features.ResaleListings.Commands.HoldListingForPurchase;
+using TicketShield.Application.Features.ResaleListings.Commands.ProcessSePayWebhook;
 using TicketShield.Application.Features.ResaleListings.Commands.ReleaseListingHold;
+using TicketShield.Application.Features.ResaleListings.Commands.SimulatePaymentSuccess;
 using TicketShield.Application.Features.ResaleListings.Queries.GetMarketplaceListings;
 using TicketShield.Application.Features.ResaleListings.Queries.GetMyPurchasedTickets;
 using TicketShield.Application.Features.ResaleListings.Queries.GetPaymentStatus;
@@ -217,6 +219,21 @@ public class ResaleListingsController(
     {
         var command = new ReleaseListingHoldCommand(id);
         var result = await Mediator.Send(command, ct);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// DEV ONLY / TEST SIMULATOR: Giả lập thanh toán thành công cho phiên giữ vé đang chờ thanh toán.
+    /// Kích hoạt 100% quy trình SePay Webhook và ký quỹ Escrow thật.
+    /// </summary>
+    [Authorize]
+    [HttpPost("{id:guid}/simulate-payment")]
+    [ProducesResponseType(typeof(ApiResponse<ProcessSePayWebhookResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> SimulatePaymentSuccess([FromRoute] Guid id, CancellationToken ct)
+    {
+        var result = await Mediator.Send(new SimulatePaymentSuccessCommand(id), ct);
         return Ok(result);
     }
 }

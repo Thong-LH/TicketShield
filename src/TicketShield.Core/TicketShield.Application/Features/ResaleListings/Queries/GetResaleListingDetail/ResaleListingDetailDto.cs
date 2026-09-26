@@ -19,5 +19,6 @@ public class ResaleListingDetailDto
     public string ListingStatus { get; set; } = string.Empty;
     public Guid SellerId { get; set; }
     public string SellerFullName { get; set; } = string.Empty;
+    public DateTimeOffset? UnlockAt { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
 }

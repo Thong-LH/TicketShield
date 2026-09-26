@@ -50,11 +50,9 @@ public class MassTransitMessageSchedulerService : IMessageSchedulerService
             }
             else
             {
-                // Fallback: publish delayed or immediate depending on bus configuration
-                await _bus.Publish<IHoldExpiredEvent>(eventMessage, cancellationToken);
                 _logger.LogInformation(
-                    "Published IHoldExpiredEvent directly to bus for Escrow {EscrowId}",
-                    escrowId);
+                    "Registered hold expiry for Escrow {EscrowId} on Listing {ListingId} at {ExpireAt} (monitored by ExpiredHoldReleaseWorker)",
+                    escrowId, listingId, expireAt);
             }
         }
         catch (Exception ex)

@@ -28,6 +28,7 @@ public class GetMarketplaceListingsQueryHandler : IRequestHandler<GetMarketplace
             .Include(l => l.Event)
             .Include(l => l.Tier)
             .Include(l => l.Seller)
+            .Include(l => l.EscrowTransactions)
             .Where(l =>
                 !l.IsPrivate &&
                 (l.ListingStatus == ListingStatus.Verified || l.ListingStatus == ListingStatus.Transacting) &&

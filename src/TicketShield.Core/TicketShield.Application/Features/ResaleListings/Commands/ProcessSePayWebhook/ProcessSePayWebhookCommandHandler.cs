@@ -222,14 +222,29 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
                 buyerPhone,
                 cancellationToken);
 
-            newTicketCode = transferResponse.NewTicket?.Ticket?.TicketCode;
-            qrCodeData = transferResponse.NewTicket?.Ticket?.TicketCode;
-
-            if (newTicketCode is null)
+            if (transferResponse != null && transferResponse.Outcome != TicketShield.Contracts.Organizer.V1.TransferOutcome.Unspecified)
             {
-                throw new BusinessRuleViolationException(
-                    "Không nhận được mã vé mới từ BTC Organizer sau khi chuyển quyền sở hữu. Giao dịch bị huỷ để bảo vệ Buyer.");
+                newTicketCode = transferResponse.NewTicket?.Ticket?.TicketCode;
+                qrCodeData = transferResponse.NewTicket?.Ticket?.TicketCode;
+
+                if (newTicketCode is null)
+                {
+                    throw new BusinessRuleViolationException(
+                        "Không nhận được mã vé mới từ BTC Organizer sau khi chuyển quyền sở hữu. Giao dịch bị huỷ để bảo vệ Buyer.");
+                }
             }
+        }
+
+        // Seeded marketplace listings (e.g. ATSH-GA-999) without an external BTC lock session
+        if (string.IsNullOrWhiteSpace(newTicketCode))
+        {
+            newTicketCode = escrow.Listing?.OriginalTicketCode;
+            qrCodeData = newTicketCode;
+        }
+
+        if (string.IsNullOrWhiteSpace(newTicketCode))
+        {
+            throw new BusinessRuleViolationException("Không thể xác định mã vé hợp lệ cho giao dịch này.");
         }
 
         escrow.Status = EscrowStatus.Locked;

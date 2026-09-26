@@ -23,6 +23,7 @@ public class GetResaleListingDetailQueryHandler : IRequestHandler<GetResaleListi
             .Include(l => l.Event)
             .Include(l => l.Tier)
             .Include(l => l.Seller)
+            .Include(l => l.EscrowTransactions)
             .FirstOrDefaultAsync(l => l.Id == request.ListingId, cancellationToken);
 
         if (listing == null)

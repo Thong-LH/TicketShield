@@ -16,6 +16,8 @@ public static class EventBusRegistration
         var password = configuration["RabbitMQ:Password"] ?? "guest";
         var virtualHost = configuration["RabbitMQ:VirtualHost"] ?? "/";
 
+        var useDelayedScheduler = configuration.GetValue("RabbitMQ:UseDelayedScheduler", false);
+
         services.AddMassTransit(x =>
         {
             x.SetKebabCaseEndpointNameFormatter();
@@ -25,7 +27,10 @@ public static class EventBusRegistration
             x.AddConsumer<UserProfileUpdatedConsumer>();
             x.AddConsumer<HoldExpiredConsumer>();
 
-            x.AddDelayedMessageScheduler();
+            if (useDelayedScheduler)
+            {
+                x.AddDelayedMessageScheduler();
+            }
 
             if (useInMemory)
             {
@@ -44,7 +49,10 @@ public static class EventBusRegistration
                         h.Password(password);
                     });
 
-                    cfg.UseDelayedMessageScheduler();
+                    if (useDelayedScheduler)
+                    {
+                        cfg.UseDelayedMessageScheduler();
+                    }
                     cfg.ConfigureEndpoints(context);
                 });
             }

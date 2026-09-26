@@ -53,6 +53,7 @@ services:
       ConnectionStrings__DefaultConnection: "Host=postgres;Port=5432;Database=organizer_db;Username=postgres;Password=postgres"
     ports:
       - "5001:5001"
+      - "5004:5004"
     depends_on:
       postgres:
         condition: service_healthy
@@ -102,7 +103,7 @@ services:
       RabbitMQ__Username: "guest"
       RabbitMQ__Password: "guest"
       RabbitMQ__UseInMemory: "false"
-      OrganizerGrpc__Address: "http://mock-organizer-api:5001"
+      OrganizerGrpc__Address: "http://mock-organizer-api:5004"
     ports:
       - "5003:5003"
     depends_on:

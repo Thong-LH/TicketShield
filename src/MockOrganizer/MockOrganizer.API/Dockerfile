@@ -13,6 +13,6 @@ RUN dotnet publish "MockOrganizer.API.csproj" -c Release -o /app/publish /p:UseA
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS final
 WORKDIR /app
 COPY --from=build /app/publish .
-ENV ASPNETCORE_URLS=http://+:5001
 EXPOSE 5001
+EXPOSE 5004
 ENTRYPOINT ["dotnet", "MockOrganizer.API.dll"]

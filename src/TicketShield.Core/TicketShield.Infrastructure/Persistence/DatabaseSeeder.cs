@@ -236,17 +236,6 @@ public static class DatabaseSeeder
             context.ResaleListings.RemoveRange(staleListings);
         }
 
-        // Delete any non-seed shadow users if present
-        var nonSeedShadowUsers = await context.ShadowUsers
-            .Where(u => u.Id != sellerId && u.Id != buyerId && u.Id != adminId)
-            .ToListAsync();
-        if (nonSeedShadowUsers.Any())
-        {
-            context.ShadowUsers.RemoveRange(nonSeedShadowUsers);
-        }
-
-        await context.SaveChangesAsync();
-
         // 5. Seed / Reset Sample Resale Listing (ATSH-GA-999) for buyer marketplace page demo
         // ATSH-VIP-888 is intentionally unseeded so users can test the full OTP sell workflow from scratch.
         var sampleListing = await context.ResaleListings.FirstOrDefaultAsync(l => l.Id == sampleListingId);
