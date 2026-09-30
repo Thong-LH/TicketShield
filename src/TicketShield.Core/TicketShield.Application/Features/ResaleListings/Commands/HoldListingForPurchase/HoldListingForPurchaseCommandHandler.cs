@@ -46,7 +46,26 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
 
         if (buyer == null)
         {
-            throw new UnauthorizedException("Tài khoản người dùng không tồn tại hoặc chưa được đồng bộ.");
+            if (_currentUserService != null && !string.IsNullOrWhiteSpace(_currentUserService.Email))
+            {
+                var roleParsed = Enum.TryParse<UserRole>(_currentUserService.Role, out var r) ? r : UserRole.User;
+                buyer = new ShadowUser
+                {
+                    Id = buyerId,
+                    Email = _currentUserService.Email,
+                    FullName = string.IsNullOrWhiteSpace(_currentUserService.FullName) ? _currentUserService.Email : _currentUserService.FullName,
+                    Role = roleParsed,
+                    IsActive = true,
+                    CreatedAt = DateTimeOffset.UtcNow,
+                    UpdatedAt = DateTimeOffset.UtcNow
+                };
+                await _dbContext.ShadowUsers.AddAsync(buyer, cancellationToken);
+                await _dbContext.SaveChangesAsync(cancellationToken);
+            }
+            else
+            {
+                throw new UnauthorizedException("Tài khoản người dùng không tồn tại hoặc chưa được đồng bộ.");
+            }
         }
 
         if (!buyer.IsActive)
