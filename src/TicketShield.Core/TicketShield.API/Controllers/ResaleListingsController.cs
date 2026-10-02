@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using TicketShield.API.Filters;
 using TicketShield.Application.Common.Interfaces;
 using TicketShield.Application.Common.Models;
+using TicketShield.Application.Features.ResaleListings.Commands.BulkPublishListings;
 using TicketShield.Application.Features.ResaleListings.Commands.CancelResaleListing;
 using TicketShield.Application.Features.ResaleListings.Commands.HoldListingForPurchase;
 using TicketShield.Application.Features.ResaleListings.Commands.ProcessSePayWebhook;
@@ -52,6 +53,28 @@ public class ResaleListingsController(
         var result = await verificationService.Publish(Seller, key, body, ct);
         return StatusCode(result.Status.EndsWith("Pending", StringComparison.Ordinal) ? 202 : 200,
             ApiResponse<VerificationResult>.SuccessResponse(result, result.Status));
+    }
+
+    /// <summary>
+    /// BE-CORE-5.2.2: Đăng bán danh sách N vé thành 1 bundle (bán lẻ hoặc bán trọn bộ)
+    /// </summary>
+    [Authorize]
+    [HttpPost("bulk")]
+    [ProducesResponseType(typeof(ApiResponse<BulkPublishResult>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status422UnprocessableEntity)]
+    public async Task<IActionResult> BulkPublish(
+        [FromBody] BulkPublishBody body,
+        CancellationToken ct)
+    {
+        var command = new BulkPublishListingsCommand
+        {
+            Seller = Seller,
+            Body = body
+        };
+        var result = await Mediator.Send(command, ct);
+        return Ok(result);
     }
 
     /// <summary>
