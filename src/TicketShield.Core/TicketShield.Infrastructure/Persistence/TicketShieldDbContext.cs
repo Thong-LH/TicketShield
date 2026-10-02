@@ -105,6 +105,11 @@ public class TicketShieldDbContext : DbContext, ITicketShieldDbContext
                 .IsDescending(false, false, true);
 
             entity.Ignore(l => l.EscrowTransaction);
+
+            // Partial index for bundle listings (SCRUM-166 / DB-5.2.1)
+            entity.HasIndex(e => e.BundleId)
+                .HasDatabaseName("idx_resale_records_bundle_id")
+                .HasFilter("bundle_id IS NOT NULL");
         });
 
         // EscrowTransaction

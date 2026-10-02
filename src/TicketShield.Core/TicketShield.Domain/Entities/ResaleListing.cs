@@ -23,6 +23,11 @@ public class ResaleListing : BaseEntity
     public VerificationStatus VerificationStatus { get; set; } = VerificationStatus.Verified;
     public ListingStatus ListingStatus { get; set; } = ListingStatus.Verified;
 
+    // Bundle support (BE-CORE-5.2.2)
+    public Guid? BundleId { get; set; }
+    public bool IsBundleAllOrNothing { get; set; } = false;
+    public int BundleTotalTickets { get; set; } = 0;
+
     // Navigation
     public Event Event { get; set; } = null!;
     public TicketTier Tier { get; set; } = null!;
