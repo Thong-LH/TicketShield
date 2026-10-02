@@ -56,6 +56,7 @@ public class GetMyPurchasedTicketsQueryHandler : IRequestHandler<GetMyPurchasedT
 
         query = query.Where(e =>
             e.Status == EscrowStatus.Locked ||
+            e.Status == EscrowStatus.Releasing ||
             e.Status == EscrowStatus.Disputed ||
             (e.Status == EscrowStatus.Released &&
              (!string.IsNullOrEmpty(e.BankTransactionReference) ||
@@ -85,6 +86,7 @@ public class GetMyPurchasedTicketsQueryHandler : IRequestHandler<GetMyPurchasedT
             {
                 EscrowStatus.Pending => "PENDING_PAYMENT",
                 EscrowStatus.Locked => "IN_ESCROW",
+                EscrowStatus.Releasing => "IN_ESCROW",
                 EscrowStatus.Released => "VALID",
                 EscrowStatus.Disputed => "DISPUTED",
                 EscrowStatus.Refunded => "REFUNDED",

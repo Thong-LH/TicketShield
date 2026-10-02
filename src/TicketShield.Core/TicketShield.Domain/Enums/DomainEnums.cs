@@ -21,6 +21,7 @@ public enum EscrowStatus
 {
     Pending,
     Locked,
+    Releasing,
     Released,
     Refunded,
     Disputed,

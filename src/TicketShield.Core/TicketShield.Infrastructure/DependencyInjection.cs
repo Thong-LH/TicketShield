@@ -31,6 +31,9 @@ public static class DependencyInjection
         // VietQR Service (BE-CORE-3.1.2)
         services.AddSingleton<IVietQrService, Services.VietQrService>();
 
+        // Atomic escrow handoff between settlement and dispute (SCRUM-179)
+        services.AddScoped<IEscrowSettlementCas, Services.EscrowSettlementCas>();
+
         // Auto-Settlement Escrow Payout Worker (Disburses funds to seller once UnlockAt is reached)
         services.AddHostedService<Workers.AutomaticSettlementWorker>();
 
