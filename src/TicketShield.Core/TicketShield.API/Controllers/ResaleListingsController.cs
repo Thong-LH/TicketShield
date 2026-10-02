@@ -94,9 +94,10 @@ public class ResaleListingsController(
         [FromQuery] int size = 20,
         [FromQuery] string? keyword = null,
         [FromQuery] Guid? eventId = null,
+        [FromQuery] Guid? organizerId = null,
         CancellationToken ct = default)
     {
-        var query = new GetMarketplaceListingsQuery(page, size, keyword, eventId);
+        var query = new GetMarketplaceListingsQuery(page, size, keyword, eventId, organizerId);
         var result = await Mediator.Send(query, ct);
         return Ok(result);
     }

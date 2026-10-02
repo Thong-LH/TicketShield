@@ -8,6 +8,7 @@ public sealed class CoreSession
     public string Id { get; set; } = string.Empty;
     public string Seller { get; set; } = string.Empty;
     public string TicketCode { get; set; } = string.Empty;
+    public string? OrganizerId { get; set; }
     public string State { get; set; } = "RequestPending";
     public string? PendingOperationId { get; set; }
     public string? ChallengeJson { get; set; }

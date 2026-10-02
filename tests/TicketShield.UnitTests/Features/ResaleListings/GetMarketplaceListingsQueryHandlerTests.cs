@@ -217,4 +217,20 @@ public class GetMarketplaceListingsQueryHandlerTests
         Assert.Equal(1, result.Data.TotalCount);
         Assert.Equal("Anh Trai Say Hi Concert 2026", result.Data.Items[0].EventName);
     }
+
+    [Fact]
+    public async Task Handle_WithOrganizerIdFilter_ReturnsMatchingListingsAndOrganizerName()
+    {
+        var (context, testEvent, _) = CreateInMemoryDbContext();
+        var handler = new GetMarketplaceListingsQueryHandler(context);
+        var query = new GetMarketplaceListingsQuery(page: 1, size: 10, organizerId: testEvent.OrganizerId);
+
+        var result = await handler.Handle(query, CancellationToken.None);
+
+        Assert.NotNull(result?.Data);
+        Assert.True(result.Data.Items.Count > 0);
+        var firstItem = result.Data.Items[0];
+        Assert.Equal(testEvent.OrganizerId, firstItem.OrganizerId);
+        Assert.Equal("V-Concert Organizer", firstItem.OrganizerName);
+    }
 }

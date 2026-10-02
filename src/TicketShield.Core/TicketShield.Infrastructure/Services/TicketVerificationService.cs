@@ -234,7 +234,8 @@ public class TicketVerificationService : ITicketVerificationService
         string? sessionId,
         object payload,
         string? ticket,
-        CancellationToken ct)
+        CancellationToken ct,
+        string? organizerId = null)
     {
         ValidateUuid(seller);
         ValidateUuid(operationId);
@@ -283,7 +284,8 @@ public class TicketVerificationService : ITicketVerificationService
                 {
                     Id = Guid.NewGuid().ToString("D"),
                     Seller = seller,
-                    TicketCode = ticket
+                    TicketCode = ticket,
+                    OrganizerId = organizerId
                 };
             }
             else
@@ -334,9 +336,12 @@ public class TicketVerificationService : ITicketVerificationService
         }, ct, lockTarget);
     }
 
-    public async Task<VerificationResult> Request(string seller, string key, string ticket, CancellationToken ct)
+    public Task<VerificationResult> Request(string seller, string key, string ticket, CancellationToken ct)
+        => Request(seller, key, ticket, ct, null);
+
+    public async Task<VerificationResult> Request(string seller, string key, string ticket, CancellationToken ct, string? organizerId)
     {
-        var (s, op) = await Begin(seller, key, "Request", null, new { ticket }, ticket, ct);
+        var (s, op) = await Begin(seller, key, "Request", null, new { ticket, organizerId }, ticket, ct, organizerId);
         return op.State == "Succeeded" ? await ResultAsync(s, ct) : await Execute(s, op, null, ct);
     }
 
@@ -387,7 +392,7 @@ public class TicketVerificationService : ITicketVerificationService
                 "Request" => await _gateway.Request(new RequestTicketOtpRequest
                 {
                     Operation = Context(s, op),
-                    Ticket = new TicketReference { OrganizerId = _options.OrganizerId, TicketCode = s.TicketCode }
+                    Ticket = new TicketReference { OrganizerId = s.OrganizerId ?? _options.OrganizerId, TicketCode = s.TicketCode }
                 }, ct),
 
                 "Resend" => await _gateway.Resend(new ResendTicketOtpRequest
@@ -675,7 +680,10 @@ public class TicketVerificationService : ITicketVerificationService
                     return Result(fresh);
                 }
 
-                var organizer = Guid.Parse(_options.OrganizerId);
+                var organizerStr = receipt.Ticket?.Ticket?.OrganizerId;
+                if (string.IsNullOrWhiteSpace(organizerStr)) organizerStr = s.OrganizerId;
+                if (string.IsNullOrWhiteSpace(organizerStr)) organizerStr = _options.OrganizerId;
+                var organizer = Guid.TryParse(organizerStr, out var parsedOrg) ? parsedOrg : Guid.Parse(_options.OrganizerId);
                 var now = _clock.GetUtcNow();
 
                 var eventAvailable = await _db.TicketTiers

@@ -10,14 +10,16 @@ public class GetMarketplaceListingsQuery : IRequest<ApiResponse<PaginatedList<Re
     public int Size { get; set; } = 20;
     public string? Keyword { get; set; }
     public Guid? EventId { get; set; }
+    public Guid? OrganizerId { get; set; }
 
     public GetMarketplaceListingsQuery() { }
 
-    public GetMarketplaceListingsQuery(int page, int size, string? keyword = null, Guid? eventId = null)
+    public GetMarketplaceListingsQuery(int page, int size, string? keyword = null, Guid? eventId = null, Guid? organizerId = null)
     {
         Page = page > 0 ? page : 1;
         Size = size > 0 ? size : 20;
         Keyword = keyword;
         EventId = eventId;
+        OrganizerId = organizerId;
     }
 }

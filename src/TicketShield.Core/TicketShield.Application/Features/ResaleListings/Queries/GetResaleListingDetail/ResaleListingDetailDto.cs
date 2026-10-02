@@ -4,6 +4,8 @@ public class ResaleListingDetailDto
 {
     public Guid ListingId { get; set; }
     public Guid EventId { get; set; }
+    public Guid? OrganizerId { get; set; }
+    public string? OrganizerName { get; set; }
     public string EventName { get; set; } = string.Empty;
     public string EventVenue { get; set; } = string.Empty;
     public DateTimeOffset EventStartAt { get; set; }

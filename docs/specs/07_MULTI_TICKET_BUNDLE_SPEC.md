@@ -168,7 +168,27 @@ await tx.CommitAsync(ct);
 - **Sprint MF-03 & Sprint 2 Hardening (Hiện tại):**
   - Khóa chặt nền tảng Core: Gộp 2 DbContext, xử lý triệt để ChangeTracker leak, đánh index, vá 5 lỗi vòng đời vé và luật BR-L04.
   - Ghi nhận luật nghiệp vụ **BR-G06** vào tài liệu đặc tả hệ thống.
-- **Sprint 3 (Future Scope):**
-  - Mở rộng Database Migration: Thêm trường `bundle_id` và `is_bundle_all_or_nothing`.
-  - Nâng cấp API `POST /api/resale/listings/bundle` và luồng thanh toán Escrow Bundle.
-  - Cập nhật UI Marketplace: Hiển thị huy hiệu Combo và chi tiết vị trí ghế.
+- **Sprint 2 (Triển khai thực tế):**
+  - Mở rộng Database Migration: Thêm trường `bundle_id`, `is_bundle_all_or_nothing` và `bundle_total_tickets`.
+  - Triển khai API `CreateMultiResaleListingCommand` qua MediatR (US-5.2) và refactor `Publish` đơn lẻ sang MediatR.
+  - Cập nhật UI Marketplace: Hiển thị 1 thẻ đại diện cho cụm vé và Modal tick chọn vé con linh hoạt.
+
+---
+
+## 6. Tiêu Chuẩn Kiến Trúc Bắt Buộc & Các Anti-Patterns Bị Nghiêm Cấm (Architectural Mandates)
+
+Sau đợt rà soát kiến trúc ngày 02/10/2026, toàn bộ nhóm và AI Agent bắt buộc phải tuân thủ nghiêm ngặt các quy tắc sau khi thực thi Task 5.2.2:
+
+### 6.1. BÁC BỎ & NGHIÊM CẤM 3 Anti-Patterns (Zero-Tolerance Anti-Patterns):
+1. **Lệnh cấm 1 — CẤM gọi Service trực tiếp từ Controller để bypass MediatR (Banned Direct Service Call):**
+   - **Tư duy sai lầm bị bác bỏ:** *"Không dùng MediatR — nhất quán với Publish đơn lẻ hiện tại vốn cũng gọi verificationService trực tiếp từ controller."*
+   - **Quy chuẩn bắt buộc:** Việc gọi trực tiếp Service từ Controller trong code cũ là nợ kỹ thuật (technical debt), **tuyệt đối không được lấy cái sai cũ để bao biện cho code mới**. Task 5.2.2 bắt buộc phải tạo `CreateMultiResaleListingCommand` đi qua MediatR Handler. Đồng thời, endpoint `Publish` đơn lẻ cũ cũng phải được refactor triệt để sang MediatR Command.
+2. **Lệnh cấm 2 — CẤM chạy vòng lặp Commit rời rạc rồi UPDATE vá sau (Banned Loop-Commit & Late Patching):**
+   - **Tư duy sai lầm bị bác bỏ:** *"Không wrap N Publish() trong outer transaction — vì mỗi Publish() tự commit transaction riêng. Bundle patching được thực hiện trong 1 UPDATE riêng sau khi tất cả N item publish thành công."*
+   - **Quy chuẩn bắt buộc:** Nghiêm cấm hoàn toàn! Nếu vé thứ N bị timeout hoặc lỗi mạng thì các vé trước đã lỡ niêm yết lên sàn sẽ thành "vé mồ côi", phá vỡ tính nguyên tử của gói vé. Toàn bộ N vé trong gói bắt buộc phải được tạo trong **CÙNG 1 DATABASE TRANSACTION** (`using var tx = await _db.Database.BeginTransactionAsync(...)`). Nếu có bất kỳ vé con nào lỗi, toàn bộ transaction tự động Rollback 100%. Các bản ghi vé con phải được gán sẵn `bundle_id`, `is_bundle_all_or_nothing` ngay trong câu lệnh `INSERT` ban đầu, không được vá víu sau.
+3. **Lệnh cấm 3 — CẤM phân rã IdempotencyKey rời rạc thiếu kiểm soát:**
+   - **Quy chuẩn bắt buộc:** Đơn đăng bán nhiều vé mang **1 Root Idempotency-Key duy nhất** cho toàn bộ request. Handler chịu trách nhiệm kiểm soát tính bất biến của cả gói, ngăn chặn tuyệt đối tình trạng submit lại request bị nhân bản một phần vé.
+
+### 6.2. Chuẩn Hóa Hiển Thị Giao Diện Marketplace (Grouped Listing UX Mandate):
+- Dù Người bán chọn hình thức **Bán trọn bộ Combo (All-or-Nothing)** hay **Cho phép mua lẻ (Split-Sale)**, trên Marketplace **CHỈ HIỂN THỊ ĐÚNG 1 TIN ĐĂNG ĐẠI DIỆN** cho cả cụm vé, tránh làm rác sàn.
+- Với cụm vé Cho phép mua lẻ (`is_bundle_all_or_nothing = false`): Người mua mở chi tiết tin đăng sẽ thấy danh sách vé con kèm Checkbox để tick chọn 1 vé, 2 vé hoặc mua hết. Hệ thống chỉ khóa giữ chỗ và tính tiền VietQR cho các vé được tick chọn.
