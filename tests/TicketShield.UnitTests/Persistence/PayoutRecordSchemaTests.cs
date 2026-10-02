@@ -31,6 +31,38 @@ public class PayoutRecordSchemaTests
         Assert.Equal("status", ColumnName(payout, nameof(PayoutTransaction.Status)));
     }
 
+    [Fact]
+    public void Escrow_keeps_hold_index_and_adds_locked_settlement_sweep_index()
+    {
+        var options = new DbContextOptionsBuilder<TicketShieldDbContext>()
+            .UseNpgsql("Host=localhost;Database=ticketshield_schema_test")
+            .Options;
+
+        using var db = new TicketShieldDbContext(options);
+        var escrow = db.Model.FindEntityType(typeof(EscrowTransaction));
+        Assert.NotNull(escrow);
+
+        var holdIndex = escrow!.GetIndexes().Single(index =>
+            index.Properties.Select(property => property.Name).SequenceEqual([
+                nameof(EscrowTransaction.Status),
+                nameof(EscrowTransaction.UnlockAt)
+            ]));
+        Assert.Null(holdIndex.GetFilter());
+
+        var sweepIndex = escrow.GetIndexes().Single(index =>
+            index.GetDatabaseName() == "idx_escrows_settlement_sweep");
+        Assert.Equal(
+            [
+                nameof(EscrowTransaction.Status),
+                nameof(EscrowTransaction.InSettlementBuffer),
+                nameof(EscrowTransaction.UnlockAt)
+            ],
+            sweepIndex.Properties.Select(property => property.Name).ToArray());
+        Assert.Equal(
+            "status = 'Locked' AND in_settlement_buffer = true",
+            sweepIndex.GetFilter());
+    }
+
     private static string ColumnName(IEntityType entity, string propertyName)
     {
         var property = entity.FindProperty(propertyName);

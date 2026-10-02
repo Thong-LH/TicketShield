@@ -139,6 +139,9 @@ public class TicketShieldDbContext : DbContext, ITicketShieldDbContext
 
             entity.HasIndex(e => e.PaymentReference);
             entity.HasIndex(e => new { e.Status, e.UnlockAt });
+            entity.HasIndex(e => new { e.Status, e.InSettlementBuffer, e.UnlockAt })
+                .HasDatabaseName("idx_escrows_settlement_sweep")
+                .HasFilter("status = 'Locked' AND in_settlement_buffer = true");
         });
 
         // PayoutTransaction
