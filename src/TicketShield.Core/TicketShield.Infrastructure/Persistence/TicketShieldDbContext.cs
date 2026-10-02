@@ -153,6 +153,11 @@ public class TicketShieldDbContext : DbContext, ITicketShieldDbContext
                 .WithOne(es => es.PayoutTransaction)
                 .HasForeignKey<PayoutTransaction>(e => e.EscrowId)
                 .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(e => e.Seller)
+                .WithMany()
+                .HasForeignKey(e => e.SellerId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         // Dispute

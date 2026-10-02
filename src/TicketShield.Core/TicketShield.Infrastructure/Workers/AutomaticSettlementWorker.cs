@@ -78,6 +78,7 @@ public class AutomaticSettlementWorker : BackgroundService
                 {
                     Id = Guid.NewGuid(),
                     EscrowId = escrow.Id,
+                    SellerId = escrow.SellerId,
                     PayoutCode = $"PO-{escrow.Id.ToString("N")[..8].ToUpperInvariant()}",
                     RecipientBankCode = "MB",
                     RecipientAccountNumber = "0938434102",

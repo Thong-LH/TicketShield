@@ -22,6 +22,7 @@ public class EscrowTransaction : BaseEntity
     public string? RecipientEmail { get; set; }
     public string? RecipientIdCard { get; set; }
     public bool InSettlementBuffer { get; set; }
+    public int RetryCount { get; set; }
     public string? NewTicketCode { get; set; }
     public string? QrCodeData { get; set; }
 

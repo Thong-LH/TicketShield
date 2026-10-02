@@ -6,6 +6,7 @@ namespace TicketShield.Domain.Entities;
 public class PayoutTransaction : BaseEntity
 {
     public Guid EscrowId { get; set; }
+    public Guid SellerId { get; set; }
     public Guid? SellerBankAccountId { get; set; }
     public string PayoutCode { get; set; } = string.Empty;
     public string RecipientBankCode { get; set; } = string.Empty;
@@ -20,4 +21,5 @@ public class PayoutTransaction : BaseEntity
 
     // Navigation
     public EscrowTransaction Escrow { get; set; } = null!;
+    public ShadowUser Seller { get; set; } = null!;
 }
