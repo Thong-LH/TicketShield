@@ -2,6 +2,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using TicketShield.Application.Common.Interfaces;
 using TicketShield.Application.Common.Models;
+using TicketShield.Domain.Entities;
 using TicketShield.Domain.Enums;
 using TicketShield.Domain.Exceptions;
 
@@ -45,6 +46,12 @@ public class ReleaseListingHoldCommandHandler : IRequestHandler<ReleaseListingHo
             throw new BusinessRuleViolationException($"Bài đăng bán vé hiện không ở trạng thái giữ chỗ (TRANSACTING). Trạng thái hiện tại: '{listing.ListingStatus}'.");
         }
 
+        // BE-CORE-5.2.3: Bundle-aware release
+        if (listing.BundleId != null && listing.IsBundleAllOrNothing)
+        {
+            return await ReleaseBundleHoldAsync(listing, buyerId, cancellationToken);
+        }
+
         // SQL-level filter: chỉ lấy escrow Pending của listing này
         var activeEscrow = await _dbContext.EscrowTransactions
             .Where(e => e.ListingId == request.ListingId && e.Status == EscrowStatus.Pending)
@@ -83,5 +90,68 @@ public class ReleaseListingHoldCommandHandler : IRequestHandler<ReleaseListingHo
         return ApiResponse<ReleaseListingHoldResponse>.SuccessResponse(
             response,
             "Hủy giữ chỗ vé thành công, vé đã được trả về chợ bán.");
+    }
+
+    /// <summary>
+    /// BE-CORE-5.2.3: Release all listings in an AllOrNothing bundle atomically.
+    /// </summary>
+    private async Task<ApiResponse<ReleaseListingHoldResponse>> ReleaseBundleHoldAsync(
+        ResaleListing anchorListing,
+        Guid buyerId,
+        CancellationToken cancellationToken)
+    {
+        var bundleId = anchorListing.BundleId!.Value;
+
+        // Find the bundle escrow
+        var bundleEscrow = await _dbContext.EscrowTransactions
+            .Where(e => e.BundleId == bundleId && e.Status == EscrowStatus.Pending)
+            .OrderByDescending(e => e.CreatedAt)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        // Validate buyer ownership
+        if (bundleEscrow != null && bundleEscrow.BuyerId != buyerId)
+        {
+            throw new ForbiddenAccessException("Bạn không phải người đang giữ chỗ gói vé này.");
+        }
+
+        // Query all listings in the bundle
+        var bundleListings = await _dbContext.ResaleListings
+            .Include(l => l.Event)
+            .Where(l => l.BundleId == bundleId)
+            .ToListAsync(cancellationToken);
+
+        // Release all listings
+        var now = DateTimeOffset.UtcNow;
+        foreach (var listing in bundleListings)
+        {
+            if (listing.ListingStatus == ListingStatus.Transacting)
+            {
+                var pastResaleCutoff = listing.Event != null &&
+                    listing.Event.EventStartAt.AddHours(-2) <= now;
+                listing.ListingStatus = pastResaleCutoff
+                    ? ListingStatus.Expired
+                    : ListingStatus.Verified;
+            }
+        }
+
+        // Cancel the bundle escrow
+        if (bundleEscrow != null)
+        {
+            bundleEscrow.Status = EscrowStatus.Cancelled;
+            bundleEscrow.UnlockAt = now;
+        }
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        var response = new ReleaseListingHoldResponse
+        {
+            ListingId = anchorListing.Id,
+            ListingStatus = anchorListing.ListingStatus.ToString(),
+            ReleasedAt = now
+        };
+
+        return ApiResponse<ReleaseListingHoldResponse>.SuccessResponse(
+            response,
+            $"Hủy giữ chỗ gói {bundleListings.Count} vé thành công, vé đã được trả về chợ bán.");
     }
 }

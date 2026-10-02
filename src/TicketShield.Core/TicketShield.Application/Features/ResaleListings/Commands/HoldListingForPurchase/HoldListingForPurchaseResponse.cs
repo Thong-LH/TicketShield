@@ -18,4 +18,9 @@ public class HoldListingForPurchaseResponse
     public decimal NetSellerPayout { get; set; }
     public DateTimeOffset UnlockAt { get; set; }
     public int HoldDurationSeconds { get; set; }
+
+    // Bundle-specific fields (null when holding a single listing) — BE-CORE-5.2.3
+    public Guid? BundleId { get; set; }
+    public int? BundleTotalTickets { get; set; }
+    public List<BundleHeldItemDto>? BundleItems { get; set; }
 }

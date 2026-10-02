@@ -89,6 +89,17 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
                 throw new NotFoundException("Tin đăng bán vé", request.ListingId);
             }
 
+            // BE-CORE-5.2.3: Branch to bundle hold if listing is part of an AllOrNothing bundle
+            if (listing.BundleId != null && listing.IsBundleAllOrNothing)
+            {
+                // Release single-listing advisory lock (we'll acquire a bundle-level one instead)
+                if (tx != null)
+                {
+                    await tx.RollbackAsync(cancellationToken);
+                }
+                return await HandleBundleHoldAsync(listing, buyer, request, cancellationToken);
+            }
+
             // 3. Business Rule Validation: Buyer cannot be Seller (BE-CORE-3.1.6)
             if (listing.SellerId == buyerId)
             {
@@ -273,6 +284,220 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
         }
 
         return code;
+    }
+
+    /// <summary>
+    /// BE-CORE-5.2.3: Atomic hold for AllOrNothing bundle.
+    /// Locks all N listings in the bundle to TRANSACTING in 1 DB transaction,
+    /// creates 1 aggregated EscrowTransaction with summed fees.
+    /// </summary>
+    private async Task<ApiResponse<HoldListingForPurchaseResponse>> HandleBundleHoldAsync(
+        ResaleListing anchorListing,
+        ShadowUser buyer,
+        HoldListingForPurchaseCommand request,
+        CancellationToken cancellationToken)
+    {
+        var buyerId = buyer.Id;
+        var bundleId = anchorListing.BundleId!.Value;
+
+        // 1. Query all listings in the bundle
+        var bundleListings = await _dbContext.ResaleListings
+            .Include(l => l.EscrowTransactions)
+            .Include(l => l.Event)
+            .Where(l => l.BundleId == bundleId)
+            .ToListAsync(cancellationToken);
+
+        if (bundleListings.Count < 2)
+        {
+            throw new BusinessRuleViolationException("Gói vé này không hợp lệ (cần ít nhất 2 vé trong bundle).");
+        }
+
+        // 2. Per-listing validation
+        var now = DateTimeOffset.UtcNow;
+        foreach (var listing in bundleListings)
+        {
+            if (listing.SellerId == buyerId)
+            {
+                throw new BadRequestException("Bạn không thể tự mua vé của chính mình.");
+            }
+
+            if (listing.IsPrivate)
+            {
+                if (string.IsNullOrWhiteSpace(request.PrivateAccessToken) || listing.PrivateAccessToken != request.PrivateAccessToken)
+                {
+                    throw new ForbiddenAccessException("Mã truy cập vé riêng tư không hợp lệ hoặc bị thiếu.");
+                }
+            }
+
+            if (listing.ListingStatus == ListingStatus.Sold ||
+                listing.ListingStatus == ListingStatus.Cancelled ||
+                listing.ListingStatus == ListingStatus.Expired)
+            {
+                throw new BusinessRuleViolationException($"Vé '{listing.OriginalTicketCode}' trong gói đang ở trạng thái '{listing.ListingStatus}' và không thể đặt mua.");
+            }
+
+            var eventStartAt = listing.Event?.EventStartAt;
+            if (eventStartAt.HasValue && eventStartAt.Value.AddHours(-2) <= now)
+            {
+                throw new BusinessRuleViolationException(
+                    $"Không thể đặt mua gói vé. Sự kiện sẽ bắt đầu lúc {eventStartAt.Value:dd/MM/yyyy HH:mm} UTC và đã qua thời hạn mua vé.");
+            }
+
+            if (listing.ListingStatus == ListingStatus.Transacting)
+            {
+                var otherHold = listing.EscrowTransactions
+                    .Any(e => e.Status == EscrowStatus.Pending && e.UnlockAt.HasValue && e.UnlockAt.Value > now && e.BuyerId != buyerId);
+                if (otherHold)
+                {
+                    throw new BusinessRuleViolationException("Gói vé này đang được giữ chỗ bởi người mua khác. Vui lòng thử lại sau.");
+                }
+            }
+        }
+
+        // 3. Check for existing bundle escrow (renew scenario)
+        var existingBundleEscrow = await _dbContext.EscrowTransactions
+            .Where(e => e.BundleId == bundleId && e.BuyerId == buyerId && e.Status == EscrowStatus.Pending
+                        && e.UnlockAt.HasValue && e.UnlockAt.Value > now)
+            .OrderByDescending(e => e.CreatedAt)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        var isRenew = existingBundleEscrow != null;
+
+        // 4. Acquire advisory lock by BundleId
+        await using var bundleTx = await _dbContext.BeginAdvisoryLockTransactionAsync(ComputeBundleLockKey(bundleId), cancellationToken);
+
+        try
+        {
+            // 5. Calculate aggregated fees
+            var unlockAt = now.AddMinutes(10);
+            decimal totalOriginalPrice = 0m;
+            decimal totalBuyerFee = 0m;
+            decimal totalSellerFee = 0m;
+            decimal totalBuyerPaid = 0m;
+            decimal totalNetSellerPayout = 0m;
+            var bundleItems = new List<BundleHeldItemDto>();
+
+            foreach (var listing in bundleListings)
+            {
+                var feeResult = await _feeCalculator.CalculateFeeAsync(listing.ResalePrice, listing.IsPrivate, cancellationToken);
+                totalOriginalPrice += listing.ResalePrice;
+                totalBuyerFee += feeResult.BuyerFee;
+                totalSellerFee += feeResult.SellerFee;
+                totalBuyerPaid += feeResult.TotalBuyerPaid;
+                totalNetSellerPayout += feeResult.NetSellerPayout;
+
+                bundleItems.Add(new BundleHeldItemDto
+                {
+                    ListingId = listing.Id,
+                    ResalePrice = listing.ResalePrice,
+                    BuyerFee = feeResult.BuyerFee,
+                    SellerFee = feeResult.SellerFee
+                });
+
+                listing.ListingStatus = ListingStatus.Transacting;
+            }
+
+            // 6. Create or renew the single bundle escrow
+            string paymentReference;
+            EscrowTransaction escrow;
+
+            if (isRenew)
+            {
+                escrow = existingBundleEscrow!;
+                escrow.UnlockAt = unlockAt;
+                escrow.OriginalTicketPrice = totalOriginalPrice;
+                escrow.BuyerFee = totalBuyerFee;
+                escrow.SellerFee = totalSellerFee;
+                escrow.TotalBuyerPaid = totalBuyerPaid;
+                escrow.NetSellerPayout = totalNetSellerPayout;
+                if (!string.IsNullOrWhiteSpace(request.RecipientName)) escrow.RecipientName = request.RecipientName;
+                if (!string.IsNullOrWhiteSpace(request.RecipientEmail)) escrow.RecipientEmail = request.RecipientEmail;
+                if (!string.IsNullOrWhiteSpace(request.RecipientIdCard)) escrow.RecipientIdCard = request.RecipientIdCard;
+                paymentReference = escrow.PaymentReference!;
+            }
+            else
+            {
+                paymentReference = await GenerateUniquePaymentReferenceAsync(cancellationToken);
+                escrow = new EscrowTransaction
+                {
+                    Id = Guid.NewGuid(),
+                    ListingId = anchorListing.Id,
+                    BundleId = bundleId,
+                    BuyerId = buyerId,
+                    SellerId = anchorListing.SellerId,
+                    OriginalTicketPrice = totalOriginalPrice,
+                    BuyerFee = totalBuyerFee,
+                    SellerFee = totalSellerFee,
+                    TotalBuyerPaid = totalBuyerPaid,
+                    NetSellerPayout = totalNetSellerPayout,
+                    PaymentReference = paymentReference,
+                    Status = EscrowStatus.Pending,
+                    UnlockAt = unlockAt,
+                    RecipientName = !string.IsNullOrWhiteSpace(request.RecipientName) ? request.RecipientName : buyer.FullName,
+                    RecipientEmail = !string.IsNullOrWhiteSpace(request.RecipientEmail) ? request.RecipientEmail : buyer.Email,
+                    RecipientIdCard = request.RecipientIdCard
+                };
+                _dbContext.EscrowTransactions.Add(escrow);
+            }
+
+            // 7. Generate VietQR for the aggregated total
+            var vietQrResult = _vietQrService?.GenerateSystemQuickLink(totalBuyerPaid, paymentReference);
+
+            await _dbContext.SaveChangesAsync(cancellationToken);
+
+            if (bundleTx != null)
+            {
+                await bundleTx.CommitAsync(cancellationToken);
+            }
+
+            // 8. Schedule hold expiry
+            if (_messageSchedulerService != null)
+            {
+                await _messageSchedulerService.ScheduleHoldExpiryAsync(escrow.Id, anchorListing.Id, unlockAt, cancellationToken);
+            }
+
+            // 9. Build response
+            var response = new HoldListingForPurchaseResponse
+            {
+                EscrowId = escrow.Id,
+                ListingId = anchorListing.Id,
+                ListingStatus = ListingStatus.Transacting.ToString(),
+                PaymentReference = paymentReference,
+                QrImageUrl = vietQrResult?.QrImageUrl ?? string.Empty,
+                QuickLinkUrl = vietQrResult?.QuickLinkUrl ?? string.Empty,
+                BankBin = vietQrResult?.BankBin ?? string.Empty,
+                AccountNumber = vietQrResult?.AccountNumber ?? string.Empty,
+                AccountName = vietQrResult?.AccountName ?? string.Empty,
+                ResalePrice = totalOriginalPrice,
+                BuyerFee = totalBuyerFee,
+                SellerFee = totalSellerFee,
+                TotalBuyerPaid = totalBuyerPaid,
+                NetSellerPayout = totalNetSellerPayout,
+                UnlockAt = unlockAt,
+                HoldDurationSeconds = (int)Math.Max(0, (unlockAt - DateTimeOffset.UtcNow).TotalSeconds),
+                BundleId = bundleId,
+                BundleTotalTickets = bundleListings.Count,
+                BundleItems = bundleItems
+            };
+
+            return ApiResponse<HoldListingForPurchaseResponse>.SuccessResponse(
+                response,
+                $"Giữ chỗ gói {bundleListings.Count} vé thành công! Vui lòng thanh toán trong vòng 10 phút.");
+        }
+        catch
+        {
+            if (bundleTx != null)
+            {
+                await bundleTx.RollbackAsync(cancellationToken);
+            }
+            throw;
+        }
+    }
+
+    private static long ComputeBundleLockKey(Guid bundleId)
+    {
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes("ts:hold:bundle:" + bundleId));
+        return BitConverter.ToInt64(hash, 0);
     }
 }
 

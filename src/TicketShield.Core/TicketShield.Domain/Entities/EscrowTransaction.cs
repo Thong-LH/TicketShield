@@ -26,6 +26,9 @@ public class EscrowTransaction : BaseEntity
     public string? NewTicketCode { get; set; }
     public string? QrCodeData { get; set; }
 
+    // Bundle support (BE-CORE-5.2.3): links this escrow to a bundle of listings
+    public Guid? BundleId { get; set; }
+
     // Navigation
     public ResaleListing Listing { get; set; } = null!;
     public ShadowUser Buyer { get; set; } = null!;

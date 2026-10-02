@@ -47,44 +47,79 @@ public class ExpiredHoldReleaseWorker : BackgroundService
         var dbContext = scope.ServiceProvider.GetRequiredService<ITicketShieldDbContext>();
 
         var now = DateTimeOffset.UtcNow;
-        var listings = await dbContext.ResaleListings
-            .Include(l => l.EscrowTransactions)
-            .Include(l => l.Event)
-            .Where(l => l.EscrowTransactions.Any(e => e.Status == EscrowStatus.Pending &&
-                                                     e.UnlockAt.HasValue &&
-                                                     e.UnlockAt.Value <= now))
+
+        // Find all expired pending escrows (both single-listing and bundle)
+        var expiredEscrows = await dbContext.EscrowTransactions
+            .Include(e => e.Listing)
+                .ThenInclude(l => l.Event)
+            .Where(e => e.Status == EscrowStatus.Pending && e.UnlockAt.HasValue && e.UnlockAt.Value <= now)
             .ToListAsync(ct);
 
-        if (!listings.Any())
+        if (!expiredEscrows.Any())
         {
             return 0;
         }
 
         var revertedCount = 0;
-        foreach (var listing in listings)
+        var processedBundleIds = new HashSet<Guid>();
+
+        foreach (var expired in expiredEscrows)
         {
-            var expiredEscrows = listing.EscrowTransactions
-                .Where(e => e.Status == EscrowStatus.Pending && e.UnlockAt.HasValue && e.UnlockAt.Value <= now)
-                .ToList();
-            foreach (var expired in expiredEscrows)
+            expired.Status = EscrowStatus.Expired;
+
+            // BE-CORE-5.2.3: Bundle-aware expiry
+            if (expired.BundleId.HasValue)
             {
-                expired.Status = EscrowStatus.Expired;
+                if (processedBundleIds.Contains(expired.BundleId.Value))
+                {
+                    continue; // Already processed this bundle
+                }
+                processedBundleIds.Add(expired.BundleId.Value);
+
+                // Release all listings in the bundle
+                var bundleListings = await dbContext.ResaleListings
+                    .Include(l => l.Event)
+                    .Where(l => l.BundleId == expired.BundleId.Value)
+                    .ToListAsync(ct);
+
+                foreach (var listing in bundleListings)
+                {
+                    if (listing.ListingStatus == ListingStatus.Transacting)
+                    {
+                        var pastResaleCutoff = listing.Event != null &&
+                            listing.Event.EventStartAt.AddHours(-2) <= now;
+                        listing.ListingStatus = pastResaleCutoff
+                            ? ListingStatus.Expired
+                            : ListingStatus.Verified;
+                        revertedCount++;
+                        _logger.LogInformation(
+                            "Released expired bundle hold for ListingId: {ListingId} (BundleId: {BundleId}). Status set to {ListingStatus}.",
+                            listing.Id, expired.BundleId.Value, listing.ListingStatus);
+                    }
+                }
             }
-
-            var hasActiveHold = listing.EscrowTransactions.Any(e =>
-                e.Status == EscrowStatus.Pending && e.UnlockAt.HasValue && e.UnlockAt.Value > now);
-
-            if (listing.ListingStatus == ListingStatus.Transacting && !hasActiveHold)
+            else
             {
-                var pastResaleCutoff = listing.Event != null &&
-                    listing.Event.EventStartAt.AddHours(-2) <= now;
-                listing.ListingStatus = pastResaleCutoff
-                    ? ListingStatus.Expired
-                    : ListingStatus.Verified;
-                revertedCount++;
-                _logger.LogInformation(
-                    "Released expired hold for ListingId: {ListingId} (Hold expired at {UnlockAt}). Status set to {ListingStatus}.",
-                    listing.Id, expiredEscrows.Max(e => e.UnlockAt), listing.ListingStatus);
+                // Original single-listing logic
+                var listing = expired.Listing;
+                if (listing == null) continue;
+
+                var hasActiveHold = await dbContext.EscrowTransactions
+                    .AnyAsync(e => e.ListingId == listing.Id && e.Status == EscrowStatus.Pending
+                                   && e.UnlockAt.HasValue && e.UnlockAt.Value > now && e.Id != expired.Id, ct);
+
+                if (listing.ListingStatus == ListingStatus.Transacting && !hasActiveHold)
+                {
+                    var pastResaleCutoff = listing.Event != null &&
+                        listing.Event.EventStartAt.AddHours(-2) <= now;
+                    listing.ListingStatus = pastResaleCutoff
+                        ? ListingStatus.Expired
+                        : ListingStatus.Verified;
+                    revertedCount++;
+                    _logger.LogInformation(
+                        "Released expired hold for ListingId: {ListingId} (Hold expired at {UnlockAt}). Status set to {ListingStatus}.",
+                        listing.Id, expired.UnlockAt, listing.ListingStatus);
+                }
             }
         }
 
