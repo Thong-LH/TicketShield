@@ -18,6 +18,9 @@ public static class OrganizerDatabaseSeeder
         var ticket5Id = Guid.Parse("a0000000-0000-0000-0000-000000000005");
         var seedIds = new HashSet<Guid> { ticket1Id, ticket2Id, ticket3Id, ticket4Id, ticket5Id };
 
+        // Deterministic mock organizer ID (US-5.1 Multi-Tenant scaffold)
+        var mockOrganizerId = Guid.Parse("b0000000-0000-0000-0000-000000000001");
+
         // Clean operational logs, OTPs, and leftover resale locks so cancelled tickets can request OTP again
         context.MockOtps.RemoveRange(await context.MockOtps.ToListAsync());
         context.GateAccessLogs.RemoveRange(await context.GateAccessLogs.ToListAsync());
@@ -39,6 +42,7 @@ public static class OrganizerDatabaseSeeder
             ticket1 = new MockTicket { Id = ticket1Id };
             await context.MockTickets.AddAsync(ticket1);
         }
+        ticket1.OrganizerId = mockOrganizerId;
         ticket1.TicketCode = "ATSH-VIP-888";
         ticket1.EventName = "Anh Trai Say Hi Concert 2026";
         ticket1.SeatZone = "VIP Zone A - Row 1 Seat 12";
@@ -54,6 +58,7 @@ public static class OrganizerDatabaseSeeder
             ticket2 = new MockTicket { Id = ticket2Id };
             await context.MockTickets.AddAsync(ticket2);
         }
+        ticket2.OrganizerId = mockOrganizerId;
         ticket2.TicketCode = "ATSH-GA-999";
         ticket2.EventName = "Anh Trai Say Hi Concert 2026";
         ticket2.SeatZone = "GA Standing Zone 2";
@@ -69,6 +74,7 @@ public static class OrganizerDatabaseSeeder
             ticket3 = new MockTicket { Id = ticket3Id };
             await context.MockTickets.AddAsync(ticket3);
         }
+        ticket3.OrganizerId = mockOrganizerId;
         ticket3.TicketCode = "ATSH-USED-001";
         ticket3.EventName = "Anh Trai Say Hi Concert 2026";
         ticket3.SeatZone = "Standard Zone C";
@@ -84,6 +90,7 @@ public static class OrganizerDatabaseSeeder
             ticket4 = new MockTicket { Id = ticket4Id };
             await context.MockTickets.AddAsync(ticket4);
         }
+        ticket4.OrganizerId = mockOrganizerId;
         ticket4.TicketCode = "ATSH-VIP-887";
         ticket4.EventName = "Anh Trai Say Hi Concert 2026";
         ticket4.SeatZone = "VIP Zone A - Row 2 Seat 08";
@@ -99,6 +106,7 @@ public static class OrganizerDatabaseSeeder
             ticket5 = new MockTicket { Id = ticket5Id };
             await context.MockTickets.AddAsync(ticket5);
         }
+        ticket5.OrganizerId = mockOrganizerId;
         ticket5.TicketCode = "ATSH-VIP-886";
         ticket5.EventName = "Anh Trai Say Hi Concert 2026";
         ticket5.SeatZone = "VIP Zone A - Row 3 Seat 04";

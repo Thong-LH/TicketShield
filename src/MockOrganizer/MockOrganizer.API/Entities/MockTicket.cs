@@ -3,6 +3,7 @@ namespace MockOrganizer.API.Entities;
 public class MockTicket
 {
     public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid OrganizerId { get; set; }
     public string TicketCode { get; set; } = string.Empty;
     public string EventName { get; set; } = string.Empty;
     public string SeatZone { get; set; } = string.Empty;
