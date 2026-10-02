@@ -13,6 +13,9 @@ public interface ITicketVerificationService
     /// </summary>
     Task<VerificationResult> Request(string seller, string key, string ticket, CancellationToken ct);
 
+    Task<VerificationResult> Request(string seller, string key, string ticket, CancellationToken ct, string? organizerId)
+        => Request(seller, key, ticket, ct);
+
     /// <summary>
     /// Gửi lại mã OTP xác thực qua email nếu chưa nhận được.
     /// </summary>

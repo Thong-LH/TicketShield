@@ -94,7 +94,7 @@ sequenceDiagram
     participant CoreCQRS as Core Application (CQRS / Domain)
     participant MockOrg as MockOrganizer.API (:5001 gRPC)
     participant Escrow as Quỹ ký quỹ (Escrow DB)
-    participant Worker as Background Settlement Worker
+    participant STM as Settlement Service (STM)
 
     Note over Seller,MockOrg: BƯỚC 1: XÁC THỰC gRPC & KHÓA VÉ BAN TỔ CHỨC (MF-02)
     Seller->>CoreAPI: POST /api/v1/ticket-verifications (Mã vé gốc)
@@ -120,22 +120,25 @@ sequenceDiagram
     CoreAPI->>MockOrg: gRPC TransferOwnership(Hủy vé cũ, cấp mã vé mới cho Buyer)
     MockOrg-->>CoreAPI: Cấp vé mới chính chủ thành công
     CoreAPI->>CoreAPI: Listing -> SOLD. Khóa tạm giữ vé Buyer: in_settlement_buffer = true
-    CoreAPI->>Escrow: Tạo Escrow (Status: LOCKED). Xác định kịch bản: T+24h nếu sự kiện còn xa, hoặc Ký quỹ chờ quét cổng nếu cận giờ G
-    CoreAPI->>Worker: Bắn RabbitMQ Event: IOwnershipTransferredEvent(EscrowId, UnlockAt)
+    CoreAPI->>Escrow: Tạo Escrow (Status: LOCKED, release_at = now + 24h, Index: status, release_at)
 
-    Note over Worker,Seller: BƯỚC 4: GIẢI NGÂN ĐIỀU KIỆN KÉP (DUAL-TRIGGER PAYOUT)
+    Note over CoreAPI,Seller: BƯỚC 4: GIẢI NGÂN ĐIỀU KIỆN KÉP & CHỐT CAS NGUYÊN TỬ (MF-04)
     alt Kịch bản A: Sự kiện còn xa (> 24h) -> Hết 24h không khiếu nại
-        Worker->>CoreAPI: Đến hạn T+24h: GỌI PRE-FLIGHT CHECK (POST /api/v1/internal/escrows/{id}/claim-payout)
+        CoreAPI->>CoreAPI: Core Sweeper quét định kỳ release_at <= now() (Index Scan)
     else Kịch bản B: Cận giờ G (<= 24h) -> Quét cổng vào sự kiện thành công (USED)
         MockOrg->>CoreAPI: Webhook/Event quét cổng thành công (ticket_status = USED)
-        CoreAPI->>Worker: Kích hoạt Payout tức thì
     end
-    CoreAPI->>Escrow: Atomic Update (WHERE status = 'LOCKED' AND has_dispute = false) -> status = PAYING_OUT
-    CoreAPI-->>Worker: HTTP 200 OK (Đã khóa thành công, không có Dispute)
-    Worker->>Seller: Lệnh Payout chuyển khoản NAPAS 247 về UserBankAccount của Seller
-    Worker->>CoreAPI: PUT /api/v1/internal/escrows/{id}/release (Báo hoàn tất)
-    CoreAPI->>Escrow: Cập nhật Escrow -> RELEASED
-    CoreAPI->>CoreAPI: Gỡ cờ tạm giữ vé Buyer (in_settlement_buffer = false) -> Mở quyền bán lại nếu bận đột xuất
+    CoreAPI->>Escrow: Atomic CAS: UPDATE escrow_transactions SET status = 'Releasing' WHERE status = 'Locked' AND release_at <= now()
+    alt CAS thành công (1 row) - Không có tranh chấp
+        CoreAPI->>Escrow: Ghi Outbox Message PayoutRequestedCommand trong cùng Transaction
+        CoreAPI->>STM: Dispatch Payout Command (payout_id, amount, seller_bank_snapshot)
+        STM->>Seller: Thực thi chuyển khoản NAPAS 247 về UserBankAccount của Seller
+        STM-->>CoreAPI: Event PayoutCompleted(payout_id, bank_ref)
+        CoreAPI->>Escrow: Cập nhật Escrow -> RELEASED
+        CoreAPI->>CoreAPI: Gỡ cờ tạm giữ vé Buyer (in_settlement_buffer = false) -> Mở quyền bán lại nếu bận đột xuất
+    else CAS thất bại (0 row) - Buyer đã khiếu nại trước đó
+        CoreAPI->>CoreAPI: Giữ nguyên Escrow ở trạng thái DISPUTED, đóng băng tiền chuyển sang MF-05
+    end
 ```
 
 
@@ -156,16 +159,21 @@ sequenceDiagram
     participant MockOrg as MockOrganizer.API (:5001 - Read Only)
 
     Note over Buyer,Core: BƯỚC 1: BUYER GẶP LỖI TẠI CỔNG & TẠO REPORT THỦ CÔNG
-    Buyer->>Core: Tạo Dispute thủ công trên App:<br/>- Nhập lý do (bị từ chối tại cổng)<br/>- Đính kèm bằng chứng (ảnh máy quét báo lỗi / biên bản viết tay của nhân viên soát vé)
-    Core->>Escrow: TỰ ĐỘNG ĐÓNG BĂNG KÝ QUỸ (Status: DISPUTED, has_dispute = true)
-    Core-->>Buyer: Thông báo: Lệnh giải ngân T+24h đã tạm dừng, Admin đang tiếp nhận hồ sơ
+    Buyer->>Core: Tạo Dispute thủ công trên App (Lý do + Bằng chứng)
+    Core->>Escrow: Atomic CAS: UPDATE escrow_transactions SET status = 'Disputed' WHERE id = @id AND status = 'Locked'
+    alt CAS thành công (1 row) - Két chưa giải ngân
+        Core->>Escrow: Tạo bản ghi Dispute (Status: Open, SLA: 72h)
+        Core-->>Buyer: Thông báo: Ký quỹ đã đóng băng tức thì, Admin xử lý trong SLA 72h
+    else CAS thất bại (0 row) - Tiền đã Releasing/Released
+        Core-->>Buyer: Từ chối khiếu nại: Thời hạn khiếu nại đã kết thúc, tiền đang được giải ngân
+    end
 
     Note over Admin,MockOrg: BƯỚC 2: ADMIN ĐIỀU TRA & ĐỐI SOÁT THỦ CÔNG (MANUAL INVESTIGATION)
     Admin->>Core: Mở giao diện Admin xem báo cáo và ảnh bằng chứng viết tay của Buyer
     Admin->>MockOrg: Tra cứu mã vé trên API đối soát Read-Only của BTC (GET /api/v1/gate/access-logs)
     MockOrg-->>Admin: Trả về lịch sử quét vé của BTC (thời gian quét thực tế tại cổng)
 
-    Note over Admin,Core: BƯỚC 3: ADMIN RA QUYẾT ĐỊNH THỦ CÔNG (MANUAL RESOLUTION)
+    Note over Admin,Core: BƯỚC 3: ADMIN RA QUYẾT ĐỊNH THỦ CÔNG TRONG SLA 72H
     alt Bằng chứng hợp lệ (Vé bị lỗi hệ thống hoặc bị quét trước khi Buyer nhận vé)
         Admin->>Core: Bấm thủ công: [CHẤP THUẬN HOÀN TIỀN] + Nhập ghi chú AdminNote
         Core->>Escrow: Cập nhật Escrow -> REFUNDED
@@ -173,9 +181,10 @@ sequenceDiagram
         Core->>Core: Đánh dấu vi phạm cảnh cáo / khóa quyền bán của Seller
     else Bằng chứng gian lận (BTC xác nhận Buyer đã quét vé vào xem sự kiện bình thường)
         Admin->>Core: Bấm thủ công: [BÁC BỎ TRANH CHẤP] + Nhập lý do từ chối
-        Core->>Escrow: Cập nhật Escrow -> RELEASED
-        Core-->>Escrow: Giải ngân tiền khả dụng cho Seller
-        Core-->>Buyer: Gửi thông báo từ chối hoàn tiền & ghi nhận lịch sử gian lận
+        Core->>Escrow: Cập nhật Escrow -> Releasing
+        Core->>Escrow: Ghi Outbox Message PayoutRequestedCommand
+        Core->>STM: Dispatch Payout Command chuyển tiền ngay lập tức cho Seller
+        Core-->>Buyer: Gửi thông báo từ chối hoàn tiền & phạt khóa tài khoản theo BR-D07
     end
 ```
 
@@ -281,17 +290,16 @@ flowchart TB
     subgraph LaneCore ["3. TicketShield Core & Quỹ Ký Quỹ (Escrow DB)"]
         C_Lock["Tạo Escrow: LOCKED, Vé Buyer: IN_SETTLEMENT_BUFFER"]
         C_Freeze["Đóng băng Ký quỹ tức thì: Escrow -> DISPUTED"]
-        C_Preflight["Pre-flight Claim: Đổi trạng thái -> PAYING_OUT"]
+        C_WorkerScan["Worker nội bộ quét release_at <= now()"]
+        C_CAS{"Thực thi Atomic CAS: Locked -> RELEASING"}
         C_Release["Đổi Escrow -> RELEASED, Gỡ IN_SETTLEMENT_BUFFER"]
         C_Refund["Trích két Escrow: Đổi -> REFUNDED, Hủy vé"]
     end
 
-    subgraph LaneWorker ["4. Background Settlement Worker"]
-        W_Poll{"Quét điều kiện kích hoạt giải ngân"}
-        W_TriggerA["Trigger A: Hết hạn 24h đệm không có khiếu nại"]
-        W_TriggerB["Trigger B: Nhận sự kiện vé đổi trạng thái USED"]
-        W_InitPayout["Tạo PayoutTransaction kèm IdempotencyKey"]
-        W_CallBank["Gửi lệnh chuyển tiền sang cổng ngân hàng"]
+    subgraph LaneSTM ["4. Settlement Service (STM) & Banking"]
+        STM_Receive["Nhận Payout Command (payout_id, amount, bank_info)"]
+        STM_Transfer["Chuyển khoản NAPAS 247 (Idempotency Key)"]
+        STM_Ack["Bắn Event: PayoutCompleted về Core"]
     end
 
     subgraph LaneAdmin ["5. Quản trị viên đối soát (Admin Review)"]
@@ -301,8 +309,7 @@ flowchart TB
         A_Reject["Bác bỏ khiếu nại (Buyer gian dối đã vào cổng)"]
     end
 
-    subgraph LaneBank ["6. Cổng thanh toán & NAPAS 247"]
-        P_Transfer["Chuyển khoản NAPAS 247 tiền Payout"]
+    subgraph LaneBank ["6. Cổng thanh toán & Hoàn tiền"]
         P_Refund["Chuyển khoản hoàn tiền 100% cho Buyer"]
     end
 
@@ -320,7 +327,7 @@ flowchart TB
     B_CheckType -->|"Sự kiện còn xa (> 24h)"| B_Verify
     B_Verify --> B_VerifyResult
     B_VerifyResult -->|"Hợp lệ / Không khiếu nại"| B_HoldDone
-    B_HoldDone --> W_TriggerA
+    B_HoldDone --> C_WorkerScan
     B_VerifyResult -->|"Phát hiện sai lệch"| B_FileDisputeA
 
     %% Nhánh Kịch bản B: Cận giờ G (<= 24h)
@@ -333,7 +340,7 @@ flowchart TB
     G_Fail --> B_GateResult
 
     B_GateResult -->|"Thành công (VALID_ENTRY)"| B_Enjoy
-    B_Enjoy --> W_TriggerB
+    B_Enjoy --> C_CAS
 
     B_GateResult -->|"Bị từ chối tại cổng"| B_FileDisputeB
 
@@ -352,16 +359,15 @@ flowchart TB
     P_Refund --> B_ReceiveRefund
     C_Refund --> S_Penalty
 
-    A_Reject --> C_Preflight
+    A_Reject --> C_CAS
 
-    %% Luồng giải ngân của Worker
-    W_TriggerA --> W_Poll
-    W_TriggerB --> W_Poll
-    W_Poll --> C_Preflight
-    C_Preflight --> W_InitPayout
-    W_InitPayout --> W_CallBank
-    W_CallBank --> P_Transfer
-    P_Transfer --> S_Receive
-    P_Transfer --> C_Release
+    %% Luồng giải ngân CAS và STM
+    C_WorkerScan --> C_CAS
+    C_CAS -->|"CAS thành công (1 row)"| STM_Receive
+    C_CAS -->|"CAS thất bại (0 row - Có dispute)"| C_Freeze
+    STM_Receive --> STM_Transfer
+    STM_Transfer --> S_Receive
+    STM_Transfer --> STM_Ack
+    STM_Ack --> C_Release
 ```
 

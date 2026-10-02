@@ -26,6 +26,7 @@ public class GetMarketplaceListingsQueryHandler : IRequestHandler<GetMarketplace
         var query = _dbContext.ResaleListings
             .AsNoTracking()
             .Include(l => l.Event)
+                .ThenInclude(e => e.Organizer)
             .Include(l => l.Tier)
             .Include(l => l.Seller)
             .Include(l => l.EscrowTransactions)
@@ -37,6 +38,11 @@ public class GetMarketplaceListingsQueryHandler : IRequestHandler<GetMarketplace
         if (request.EventId.HasValue && request.EventId.Value != Guid.Empty)
         {
             query = query.Where(l => l.EventId == request.EventId.Value);
+        }
+
+        if (request.OrganizerId.HasValue && request.OrganizerId.Value != Guid.Empty)
+        {
+            query = query.Where(l => l.Event != null && l.Event.OrganizerId == request.OrganizerId.Value);
         }
 
         if (!string.IsNullOrWhiteSpace(request.Keyword))

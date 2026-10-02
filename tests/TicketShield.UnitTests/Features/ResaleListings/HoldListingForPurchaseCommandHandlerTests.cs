@@ -70,11 +70,15 @@ public class HoldListingForPurchaseCommandHandlerTests
     private class MockCurrentUserService : ICurrentUserService
     {
         public Guid? UserId { get; }
-        public string? Email => "buyer@ticketshield.vn";
+        public string? Email { get; }
         public string? Role => "User";
         public bool IsAuthenticated => UserId.HasValue;
 
-        public MockCurrentUserService(Guid? userId) => UserId = userId;
+        public MockCurrentUserService(Guid? userId, string? email = "buyer@ticketshield.vn")
+        {
+            UserId = userId;
+            Email = email;
+        }
     }
 
     private class MockResaleFeeCalculator : IResaleFeeCalculator
@@ -413,7 +417,7 @@ public class HoldListingForPurchaseCommandHandlerTests
         var (dbContext, _, _) = CreateInMemoryDbContext();
         var feeCalculator = new MockResaleFeeCalculator();
         var unsyncedBuyerId = Guid.NewGuid();
-        var currentUserService = new MockCurrentUserService(unsyncedBuyerId);
+        var currentUserService = new MockCurrentUserService(unsyncedBuyerId, email: null);
 
         var handler = new HoldListingForPurchaseCommandHandler(dbContext, feeCalculator, currentUserService);
         var command = new HoldListingForPurchaseCommand(Guid.NewGuid());

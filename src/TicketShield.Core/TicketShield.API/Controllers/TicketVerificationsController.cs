@@ -36,7 +36,7 @@ public class TicketVerificationsController(
         [FromBody] RequestOtpBody body,
         [FromHeader(Name = "Idempotency-Key")] string key,
         CancellationToken ct) =>
-        WorkflowResponse(await verificationService.Request(Seller, key, body.TicketCode, ct));
+        WorkflowResponse(await verificationService.Request(Seller, key, body.TicketCode, ct, body.OrganizerId));
 
     /// <summary>
     /// Gửi lại mã OTP xác thực

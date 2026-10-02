@@ -11,6 +11,8 @@ public static class ResaleListingExtensions
         {
             ListingId = listing.Id,
             EventId = listing.EventId,
+            OrganizerId = listing.Event?.OrganizerId,
+            OrganizerName = listing.Event?.Organizer?.Name,
             EventName = listing.Event?.Name ?? string.Empty,
             EventVenue = listing.Event?.Venue ?? string.Empty,
             EventStartAt = listing.Event?.EventStartAt ?? default,
