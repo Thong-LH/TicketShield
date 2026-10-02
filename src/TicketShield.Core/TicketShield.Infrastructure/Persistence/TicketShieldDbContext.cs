@@ -18,6 +18,7 @@ public class TicketShieldDbContext : DbContext, ITicketShieldDbContext
     public DbSet<ResaleListing> ResaleListings => Set<ResaleListing>();
     public DbSet<EscrowTransaction> EscrowTransactions => Set<EscrowTransaction>();
     public DbSet<PayoutTransaction> PayoutTransactions => Set<PayoutTransaction>();
+    public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
     public DbSet<Dispute> Disputes => Set<Dispute>();
     public DbSet<DisputeEvidence> DisputeEvidences => Set<DisputeEvidence>();
     public DbSet<DisputeMessage> DisputeMessages => Set<DisputeMessage>();
@@ -161,6 +162,14 @@ public class TicketShieldDbContext : DbContext, ITicketShieldDbContext
                 .WithMany()
                 .HasForeignKey(e => e.SellerId)
                 .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<OutboxMessage>(entity =>
+        {
+            entity.ToTable("outbox_messages");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.EventType).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.Payload).IsRequired();
         });
 
         // Dispute

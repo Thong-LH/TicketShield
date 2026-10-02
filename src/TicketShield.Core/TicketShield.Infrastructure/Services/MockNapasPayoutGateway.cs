@@ -11,7 +11,7 @@ public class MockNapasPayoutGateway : IPayoutGateway
     public Task<PayoutGatewayResult> TransferAsync(PayoutTransferRequest request, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var key = $"IDEMP-{request.EscrowId}-{request.RetryCount}";
+        var key = PayoutIdempotency.Key(request.EscrowId, request.RetryCount);
 
         if (_transfers.TryGetValue(key, out var existing))
         {

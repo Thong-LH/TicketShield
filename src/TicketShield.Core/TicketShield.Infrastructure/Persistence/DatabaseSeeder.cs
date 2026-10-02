@@ -225,6 +225,7 @@ public static class DatabaseSeeder
         context.DisputeEvidences.RemoveRange(await context.DisputeEvidences.ToListAsync());
         context.Disputes.RemoveRange(await context.Disputes.ToListAsync());
         context.PayoutTransactions.RemoveRange(await context.PayoutTransactions.ToListAsync());
+        context.OutboxMessages.RemoveRange(await context.OutboxMessages.ToListAsync());
         context.EscrowTransactions.RemoveRange(await context.EscrowTransactions.ToListAsync());
 
         // Delete all listings except sample listing (ATSH-GA-999)

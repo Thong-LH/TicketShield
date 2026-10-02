@@ -20,6 +20,11 @@ public class EscrowSettlementCasTests
 
         Assert.True(won);
         Assert.Equal(EscrowStatus.Releasing, await CurrentStatusAsync(db, escrowId));
+
+        var message = await db.OutboxMessages.AsNoTracking().SingleAsync();
+        Assert.Equal("PayoutRequestedEvent", message.EventType);
+        Assert.Contains(escrowId.ToString(), message.Payload);
+        Assert.Contains($"IDEMP-{escrowId}-0", message.Payload);
     }
 
     [Fact]
@@ -35,6 +40,7 @@ public class EscrowSettlementCasTests
         Assert.True(disputeWon);
         Assert.False(releaseWon);
         Assert.Equal(EscrowStatus.Disputed, await CurrentStatusAsync(db, escrowId));
+        Assert.Empty(await db.OutboxMessages.AsNoTracking().ToListAsync());
     }
 
     [Fact]
