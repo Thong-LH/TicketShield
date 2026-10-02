@@ -119,7 +119,7 @@ public sealed class OrganizerResaleGrpcService(
     private ResaleLockView View(LockRecord l) => new() {
         ResaleLock = new LockReference { LockId = l.Id, Generation = l.Generation },
         Verification = new VerificationReference { VerificationId = l.SessionId, RequesterRef = l.Requester },
-        Ticket = new TicketReference { OrganizerId = options.OrganizerId, TicketCode = l.TicketCode },
+        Ticket = new TicketReference { OrganizerId = l.OrganizerId, TicketCode = l.TicketCode },
         State = l.ReleasedAt.HasValue ? LockState.Released : LockState.Held,
         AcquiredAt = Timestamp.FromDateTimeOffset(l.AcquiredAt),
         ReleasedAt = l.ReleasedAt.HasValue ? Timestamp.FromDateTimeOffset(l.ReleasedAt.Value) : null
@@ -181,11 +181,15 @@ public sealed class OrganizerResaleGrpcService(
         string? otp = null, recipient = null;
         var result = await Mutate(request, request.Operation, OperationKind.RequestOtp, context, async () => {
             var ct = context.CancellationToken;
-            if (request.Ticket is null || request.Ticket.OrganizerId != options.OrganizerId || string.IsNullOrWhiteSpace(request.Ticket.TicketCode) || request.Ticket.TicketCode.Length > 256)
+            if (request.Ticket is null || string.IsNullOrWhiteSpace(request.Ticket.OrganizerId)
+                || string.IsNullOrWhiteSpace(request.Ticket.TicketCode) || request.Ticket.TicketCode.Length > 256)
                 throw Fail("INVALID_TICKET_REFERENCE", StatusCode.InvalidArgument);
             var op = request.Operation;
             if (await db.Read<SessionState>(SessionKey(op.VerificationId), ct) is not null) throw Fail("VERIFICATION_ALREADY_EXISTS");
             var ticket = await Ticket(request.Ticket.TicketCode, ct);
+            // Enforce organizer scoping: chặn vé chéo BTC
+            if (!Guid.TryParse(request.Ticket.OrganizerId, out var requestedOrgId) || ticket.OrganizerId != requestedOrgId)
+                throw Fail("TICKET_NOT_FOUND", StatusCode.NotFound);
             if (ticket.Status != "VALID") throw Fail("TICKET_NOT_AVAILABLE");
             if (!options.TicketMappings.TryGetValue(ticket.TicketCode, out var mapping) || string.IsNullOrEmpty(mapping.EventId) || string.IsNullOrEmpty(mapping.TierId))
                 mapping = new TicketMapping { EventId = "concert-2026", TierId = "vip-zone-a" };
@@ -280,11 +284,11 @@ public sealed class OrganizerResaleGrpcService(
             var current = await db.Read<LockRecord>("current:" + Hash(s.TicketCode), ct);
             if (current is not null && current.ReleasedAt is null) throw Fail("TICKET_LOCKED");
             var l = new LockRecord { Id = Guid.NewGuid().ToString("D"), SessionId = s.Id, Caller = Caller, Requester = s.Requester,
-                TicketCode = s.TicketCode, OwnerRevision = s.OwnerRevision, Generation = checked((current?.Generation ?? 0) + 1), AcquiredAt = Now };
+                TicketCode = s.TicketCode, OrganizerId = t.OrganizerId.ToString("D"), OwnerRevision = s.OwnerRevision, Generation = checked((current?.Generation ?? 0) + 1), AcquiredAt = Now };
             t.Status = "LOCKED_FOR_RESALE"; t.UpdatedAt = Now;
             var receipt = new VerificationReceipt {
                 ReceiptId = Guid.NewGuid().ToString("D"), Operation = request.Operation.Clone(), ChallengeId = s.ChallengeId, ChallengeGeneration = s.Generation,
-                Ticket = new TicketSnapshot { Ticket = new TicketReference { OrganizerId = options.OrganizerId, TicketCode = t.TicketCode }, TicketId = t.Id.ToString("D"),
+                Ticket = new TicketSnapshot { Ticket = new TicketReference { OrganizerId = t.OrganizerId.ToString("D"), TicketCode = t.TicketCode }, TicketId = t.Id.ToString("D"),
                     OwnerRevision = s.OwnerRevision, TicketRevision = Hash($"{t.Id}|{t.UpdatedAt:O}|{t.Status}"), OriginalPrice = decimal.ToInt64(t.OriginalPrice),
                     ExternalEventId = mapping.EventId, ExternalTierId = mapping.TierId, EventName = t.EventName, SeatZone = t.SeatZone },
                 ResaleLock = new LockReference { LockId = l.Id, Generation = l.Generation }, VerifiedAt = Timestamp.FromDateTimeOffset(Now)
@@ -356,7 +360,7 @@ public sealed class OrganizerResaleGrpcService(
 
                         existingSnapshot = new TicketSnapshot
                         {
-                            Ticket = new TicketReference { OrganizerId = options.OrganizerId, TicketCode = existingNewTicket.TicketCode },
+                            Ticket = new TicketReference { OrganizerId = oldT.OrganizerId.ToString("D"), TicketCode = existingNewTicket.TicketCode },
                             TicketId = existingNewTicket.Id.ToString("D"),
                             OwnerRevision = Owner(existingNewTicket),
                             TicketRevision = Hash($"{existingNewTicket.Id}|{existingNewTicket.UpdatedAt:O}|{existingNewTicket.Status}"),
@@ -372,7 +376,7 @@ public sealed class OrganizerResaleGrpcService(
                     {
                         Outcome = TransferOutcome.AlreadyTransferred,
                         NewTicket = existingSnapshot,
-                        OldTicket = new TicketReference { OrganizerId = options.OrganizerId, TicketCode = l.TicketCode },
+                        OldTicket = new TicketReference { OrganizerId = l.OrganizerId, TicketCode = l.TicketCode },
                         TransferredAt = Timestamp.FromDateTimeOffset(l.ReleasedAt.Value)
                     };
                 }
@@ -394,6 +398,7 @@ public sealed class OrganizerResaleGrpcService(
             var newTicket = new MockTicket
             {
                 Id = Guid.NewGuid(),
+                OrganizerId = oldTicket.OrganizerId,
                 TicketCode = newTicketCode,
                 EventName = oldTicket.EventName,
                 SeatZone = oldTicket.SeatZone,
@@ -427,7 +432,7 @@ public sealed class OrganizerResaleGrpcService(
 
             var newSnapshot = new TicketSnapshot
             {
-                Ticket = new TicketReference { OrganizerId = options.OrganizerId, TicketCode = newTicket.TicketCode },
+                Ticket = new TicketReference { OrganizerId = oldTicket.OrganizerId.ToString("D"), TicketCode = newTicket.TicketCode },
                 TicketId = newTicket.Id.ToString("D"),
                 OwnerRevision = Owner(newTicket),
                 TicketRevision = Hash($"{newTicket.Id}|{newTicket.UpdatedAt:O}|{newTicket.Status}"),
@@ -442,7 +447,7 @@ public sealed class OrganizerResaleGrpcService(
             {
                 Outcome = TransferOutcome.Transferred,
                 NewTicket = newSnapshot,
-                OldTicket = new TicketReference { OrganizerId = options.OrganizerId, TicketCode = oldTicket.TicketCode },
+                OldTicket = new TicketReference { OrganizerId = oldTicket.OrganizerId.ToString("D"), TicketCode = oldTicket.TicketCode },
                 TransferredAt = Timestamp.FromDateTimeOffset(Now)
             };
         });

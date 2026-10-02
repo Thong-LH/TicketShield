@@ -71,6 +71,7 @@ public sealed class LockRecord
     public string Caller { get; set; } = "";
     public string Requester { get; set; } = "";
     public string TicketCode { get; set; } = "";
+    public string OrganizerId { get; set; } = "";
     public string OwnerRevision { get; set; } = "";
     public ulong Generation { get; set; }
     public DateTimeOffset AcquiredAt { get; set; }
