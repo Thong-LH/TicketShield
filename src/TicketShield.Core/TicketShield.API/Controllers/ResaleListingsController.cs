@@ -3,10 +3,11 @@ using Microsoft.AspNetCore.Mvc;
 using TicketShield.API.Filters;
 using TicketShield.Application.Common.Interfaces;
 using TicketShield.Application.Common.Models;
-using TicketShield.Application.Features.ResaleListings.Commands.BulkPublishListings;
 using TicketShield.Application.Features.ResaleListings.Commands.CancelResaleListing;
+using TicketShield.Application.Features.ResaleListings.Commands.CreateMultiResaleListing;
 using TicketShield.Application.Features.ResaleListings.Commands.HoldListingForPurchase;
 using TicketShield.Application.Features.ResaleListings.Commands.ProcessSePayWebhook;
+using TicketShield.Application.Features.ResaleListings.Commands.PublishResaleListing;
 using TicketShield.Application.Features.ResaleListings.Commands.ReleaseListingHold;
 using TicketShield.Application.Features.ResaleListings.Commands.SimulatePaymentSuccess;
 using TicketShield.Application.Features.ResaleListings.Queries.GetMarketplaceListings;
@@ -23,7 +24,6 @@ namespace TicketShield.API.Controllers;
 [Route("api/v1/resale-listings")]
 [ResaleErrors]
 public class ResaleListingsController(
-    ITicketVerificationService? verificationService = null,
     ICurrentUserService? currentUserService = null) : ApiControllerBase
 {
     private string Seller => currentUserService?.UserId?.ToString("D")
@@ -32,7 +32,7 @@ public class ResaleListingsController(
                           ?? throw new ResaleWorkflowException("MISSING_SUBJECT", 401);
 
     /// <summary>
-    /// Niêm yết vé lên thị trường sau khi đã xác thực và khóa vé thành công (US-2.3)
+    /// Niêm yết vé lên thị trường sau khi đã xác thực và khóa vé thành công qua MediatR (US-2.3)
     /// </summary>
     [Authorize]
     [HttpPost]
@@ -47,30 +47,35 @@ public class ResaleListingsController(
         [FromHeader(Name = "Idempotency-Key")] string key,
         CancellationToken ct)
     {
-        if (verificationService == null)
-            return StatusCode(StatusCodes.Status503ServiceUnavailable, ApiResponse<object>.FailureResponse("SERVICE_UNAVAILABLE", ["Verification service is not available."]));
-
-        var result = await verificationService.Publish(Seller, key, body, ct);
-        return StatusCode(result.Status.EndsWith("Pending", StringComparison.Ordinal) ? 202 : 200,
-            ApiResponse<VerificationResult>.SuccessResponse(result, result.Status));
+        var command = new PublishResaleListingCommand(Seller, key, body);
+        var result = await Mediator.Send(command, ct);
+        return StatusCode(result.Data?.Status?.EndsWith("Pending", StringComparison.Ordinal) == true ? 202 : 200, result);
     }
 
     /// <summary>
     /// BE-CORE-5.2.2: Đăng bán danh sách N vé thành 1 bundle (bán lẻ hoặc bán trọn bộ)
+    /// Hỗ trợ 1 Root Idempotency-Key duy nhất cho toàn bộ request.
     /// </summary>
     [Authorize]
     [HttpPost("bulk")]
+    [HttpPost("multi")]
     [ProducesResponseType(typeof(ApiResponse<BulkPublishResult>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status422UnprocessableEntity)]
     public async Task<IActionResult> BulkPublish(
         [FromBody] BulkPublishBody body,
+        [FromHeader(Name = "Idempotency-Key")] string? idempotencyKey,
         CancellationToken ct)
     {
-        var command = new BulkPublishListingsCommand
+        var rootKey = !string.IsNullOrWhiteSpace(idempotencyKey)
+            ? idempotencyKey
+            : Guid.NewGuid().ToString("D");
+
+        var command = new CreateMultiResaleListingCommand
         {
             Seller = Seller,
+            RootIdempotencyKey = rootKey,
             Body = body
         };
         var result = await Mediator.Send(command, ct);

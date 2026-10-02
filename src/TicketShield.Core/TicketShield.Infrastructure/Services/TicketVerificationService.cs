@@ -94,22 +94,39 @@ public class TicketVerificationService : ITicketVerificationService
 
     private async Task<T> Transaction<T>(Func<Task<T>> action, CancellationToken ct, string lockTarget)
     {
-        await using var tx = await _db.Database.BeginTransactionAsync(ct);
+        var ownsTx = _db.Database.CurrentTransaction == null;
+        var tx = ownsTx ? await _db.Database.BeginTransactionAsync(ct) : null;
 
         long lockKey = ComputeLockKey(lockTarget);
-        await _db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock({lockKey})", ct);
+        if (_db.Database.IsRelational())
+        {
+            await _db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock({lockKey})", ct);
+        }
 
         try
         {
             var result = await action();
             await _db.SaveChangesAsync(ct);
-            await tx.CommitAsync(ct);
+            if (tx != null)
+            {
+                await tx.CommitAsync(ct);
+            }
             return result;
         }
         catch (Exception)
         {
-            await tx.RollbackAsync(ct);
+            if (tx != null)
+            {
+                await tx.RollbackAsync(ct);
+            }
             throw;
+        }
+        finally
+        {
+            if (tx != null)
+            {
+                await tx.DisposeAsync();
+            }
         }
     }
 
@@ -604,10 +621,18 @@ public class TicketVerificationService : ITicketVerificationService
             return fresh;
         }, ct, s.Id);
 
-        return await PublishClaimed(s, op, body.ResalePrice, body.IsPrivate, ct);
+        return await PublishClaimed(s, op, body.ResalePrice, body.IsPrivate, ct, body.BundleId, body.IsBundleAllOrNothing, body.BundleTotalTickets);
     }
 
-    private async Task<VerificationResult> PublishClaimed(CoreSession s, CoreOperation op, long price, bool isPrivate, CancellationToken ct)
+    private async Task<VerificationResult> PublishClaimed(
+        CoreSession s,
+        CoreOperation op,
+        long price,
+        bool isPrivate,
+        CancellationToken ct,
+        Guid? bundleId = null,
+        bool isBundleAllOrNothing = false,
+        int bundleTotalTickets = 1)
     {
         try
         {
@@ -688,6 +713,9 @@ public class TicketVerificationService : ITicketVerificationService
                     PrivateAccessToken = privateToken,
                     VerificationStatus = VerificationStatus.Verified,
                     ListingStatus = ListingStatus.Verified,
+                    BundleId = bundleId,
+                    IsBundleAllOrNothing = isBundleAllOrNothing,
+                    BundleTotalTickets = bundleTotalTickets > 0 ? bundleTotalTickets : 1,
                     CreatedAt = now,
                     UpdatedAt = now
                 };

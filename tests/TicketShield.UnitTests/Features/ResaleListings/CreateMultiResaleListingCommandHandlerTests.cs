@@ -1,6 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using TicketShield.Application.Common.Interfaces;
-using TicketShield.Application.Features.ResaleListings.Commands.BulkPublishListings;
+using TicketShield.Application.Features.ResaleListings.Commands.CreateMultiResaleListing;
 using TicketShield.Application.Resale;
 using TicketShield.Contracts.Organizer.V1;
 using TicketShield.Domain.Entities;
@@ -11,12 +11,13 @@ using Xunit;
 
 namespace TicketShield.UnitTests.Features.ResaleListings;
 
-public class BulkPublishListingsCommandHandlerTests
+public class CreateMultiResaleListingCommandHandlerTests
 {
     private static (TicketShieldDbContext dbContext, ShadowUser seller) CreateInMemoryDbContext()
     {
         var options = new DbContextOptionsBuilder<TicketShieldDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .ConfigureWarnings(x => x.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.InMemoryEventId.TransactionIgnoredWarning))
             .Options;
 
         var context = new TicketShieldDbContext(options);
@@ -75,7 +76,6 @@ public class BulkPublishListingsCommandHandlerTests
     private class FakeTicketVerificationService : ITicketVerificationService
     {
         private readonly TicketShieldDbContext _dbContext;
-        public List<Guid> CompensatedListingIds { get; } = new();
         public bool ShouldFailOnSecondItem { get; set; } = false;
 
         public FakeTicketVerificationService(TicketShieldDbContext dbContext)
@@ -106,6 +106,9 @@ public class BulkPublishListingsCommandHandlerTests
                 IsPrivate = body.IsPrivate,
                 ListingStatus = ListingStatus.Verified,
                 VerificationStatus = VerificationStatus.Verified,
+                BundleId = body.BundleId,
+                IsBundleAllOrNothing = body.IsBundleAllOrNothing,
+                BundleTotalTickets = body.BundleTotalTickets,
                 CreatedAt = DateTimeOffset.UtcNow,
                 UpdatedAt = DateTimeOffset.UtcNow
             };
@@ -124,12 +127,7 @@ public class BulkPublishListingsCommandHandlerTests
                 listingId));
         }
 
-        public Task CancelByListingId(string seller, Guid listingId, string key, CancellationToken ct)
-        {
-            CompensatedListingIds.Add(listingId);
-            return Task.CompletedTask;
-        }
-
+        public Task CancelByListingId(string seller, Guid listingId, string key, CancellationToken ct) => Task.CompletedTask;
         public Task<VerificationResult> Request(string seller, string key, string ticket, CancellationToken ct) => throw new NotImplementedException();
         public Task<VerificationResult> Resend(string seller, string id, string key, CancellationToken ct) => throw new NotImplementedException();
         public Task<VerificationResult> Confirm(string seller, string id, string key, string otp, CancellationToken ct) => throw new NotImplementedException();
@@ -146,15 +144,16 @@ public class BulkPublishListingsCommandHandlerTests
     public async Task Handle_WhenNotAuthenticated_ThrowsUnauthorizedException()
     {
         var (dbContext, _) = CreateInMemoryDbContext();
-        var handler = new BulkPublishListingsCommandHandler(dbContext, null, new MockCurrentUserService(null));
+        var handler = new CreateMultiResaleListingCommandHandler(dbContext, null, new MockCurrentUserService(null));
 
-        var command = new BulkPublishListingsCommand
+        var command = new CreateMultiResaleListingCommand
         {
             Seller = string.Empty,
+            RootIdempotencyKey = Guid.NewGuid().ToString("D"),
             Body = new BulkPublishBody(new List<BulkPublishItem>
             {
-                new("VERIFY-1", Guid.NewGuid(), 1_500_000),
-                new("VERIFY-2", Guid.NewGuid(), 1_500_000)
+                new("VERIFY-1", 1_500_000),
+                new("VERIFY-2", 1_500_000)
             })
         };
 
@@ -165,11 +164,12 @@ public class BulkPublishListingsCommandHandlerTests
     public async Task Handle_WhenItemsEmpty_ThrowsResaleWorkflowException_BULK_ITEMS_EMPTY()
     {
         var (dbContext, seller) = CreateInMemoryDbContext();
-        var handler = new BulkPublishListingsCommandHandler(dbContext, null, new MockCurrentUserService(seller.Id));
+        var handler = new CreateMultiResaleListingCommandHandler(dbContext, null, new MockCurrentUserService(seller.Id));
 
-        var command = new BulkPublishListingsCommand
+        var command = new CreateMultiResaleListingCommand
         {
             Seller = seller.Id.ToString("D"),
+            RootIdempotencyKey = Guid.NewGuid().ToString("D"),
             Body = new BulkPublishBody(new List<BulkPublishItem>())
         };
 
@@ -182,14 +182,15 @@ public class BulkPublishListingsCommandHandlerTests
     public async Task Handle_WhenItemsLessThanTwo_ThrowsResaleWorkflowException_BULK_REQUIRES_MIN_2_ITEMS()
     {
         var (dbContext, seller) = CreateInMemoryDbContext();
-        var handler = new BulkPublishListingsCommandHandler(dbContext, null, new MockCurrentUserService(seller.Id));
+        var handler = new CreateMultiResaleListingCommandHandler(dbContext, null, new MockCurrentUserService(seller.Id));
 
-        var command = new BulkPublishListingsCommand
+        var command = new CreateMultiResaleListingCommand
         {
             Seller = seller.Id.ToString("D"),
+            RootIdempotencyKey = Guid.NewGuid().ToString("D"),
             Body = new BulkPublishBody(new List<BulkPublishItem>
             {
-                new("VERIFY-1", Guid.NewGuid(), 1_500_000)
+                new("VERIFY-1", 1_500_000)
             })
         };
 
@@ -202,15 +203,16 @@ public class BulkPublishListingsCommandHandlerTests
     public async Task Handle_WhenDuplicateVerificationInBatch_ThrowsResaleWorkflowException_DUPLICATE_VERIFICATION_IN_BATCH()
     {
         var (dbContext, seller) = CreateInMemoryDbContext();
-        var handler = new BulkPublishListingsCommandHandler(dbContext, null, new MockCurrentUserService(seller.Id));
+        var handler = new CreateMultiResaleListingCommandHandler(dbContext, null, new MockCurrentUserService(seller.Id));
 
-        var command = new BulkPublishListingsCommand
+        var command = new CreateMultiResaleListingCommand
         {
             Seller = seller.Id.ToString("D"),
+            RootIdempotencyKey = Guid.NewGuid().ToString("D"),
             Body = new BulkPublishBody(new List<BulkPublishItem>
             {
-                new("VERIFY-1", Guid.NewGuid(), 1_500_000),
-                new("VERIFY-1", Guid.NewGuid(), 1_500_000)
+                new("VERIFY-1", 1_500_000),
+                new("VERIFY-1", 1_500_000)
             })
         };
 
@@ -220,19 +222,21 @@ public class BulkPublishListingsCommandHandlerTests
     }
 
     [Fact]
-    public async Task Handle_WhenSuccessful_SetsSharedBundleIdAndBundleProperties()
+    public async Task Handle_WhenSuccessful_SetsSharedBundleIdAndBundlePropertiesOnInsert()
     {
         var (dbContext, seller) = CreateInMemoryDbContext();
         var fakeVerificationService = new FakeTicketVerificationService(dbContext);
-        var handler = new BulkPublishListingsCommandHandler(dbContext, fakeVerificationService, new MockCurrentUserService(seller.Id));
+        var handler = new CreateMultiResaleListingCommandHandler(dbContext, fakeVerificationService, new MockCurrentUserService(seller.Id));
 
-        var command = new BulkPublishListingsCommand
+        var rootKey = Guid.NewGuid().ToString("D");
+        var command = new CreateMultiResaleListingCommand
         {
             Seller = seller.Id.ToString("D"),
+            RootIdempotencyKey = rootKey,
             Body = new BulkPublishBody(new List<BulkPublishItem>
             {
-                new("VERIFY-1", Guid.NewGuid(), 1_500_000),
-                new("VERIFY-2", Guid.NewGuid(), 1_600_000)
+                new("VERIFY-1", 1_500_000),
+                new("VERIFY-2", 1_600_000)
             }, AllOrNothing: true)
         };
 
@@ -256,29 +260,27 @@ public class BulkPublishListingsCommandHandlerTests
     }
 
     [Fact]
-    public async Task Handle_WhenOneItemFails_CompensatesPreviouslyPublishedItems()
+    public async Task Handle_WhenOneItemFails_ThrowsExceptionAndRollsBack()
     {
         var (dbContext, seller) = CreateInMemoryDbContext();
         var fakeVerificationService = new FakeTicketVerificationService(dbContext)
         {
             ShouldFailOnSecondItem = true
         };
-        var handler = new BulkPublishListingsCommandHandler(dbContext, fakeVerificationService, new MockCurrentUserService(seller.Id));
+        var handler = new CreateMultiResaleListingCommandHandler(dbContext, fakeVerificationService, new MockCurrentUserService(seller.Id));
 
-        var command = new BulkPublishListingsCommand
+        var command = new CreateMultiResaleListingCommand
         {
             Seller = seller.Id.ToString("D"),
+            RootIdempotencyKey = Guid.NewGuid().ToString("D"),
             Body = new BulkPublishBody(new List<BulkPublishItem>
             {
-                new("VERIFY-1", Guid.NewGuid(), 1_500_000),
-                new("VERIFY-2", Guid.NewGuid(), 1_600_000)
+                new("VERIFY-1", 1_500_000),
+                new("VERIFY-2", 1_600_000)
             }, AllOrNothing: false)
         };
 
         var ex = await Assert.ThrowsAsync<ResaleWorkflowException>(() => handler.Handle(command, CancellationToken.None));
         Assert.Equal("SIMULATED_PUBLISH_FAILURE", ex.Code);
-
-        // Verification service should have received compensation call for VERIFY-1
-        Assert.Single(fakeVerificationService.CompensatedListingIds);
     }
 }

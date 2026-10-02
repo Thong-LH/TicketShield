@@ -1,10 +1,10 @@
 namespace TicketShield.Application.Resale;
 
 /// <summary>
-/// Thông tin từng vé trong batch đăng bán (SCRUM-167)
+/// Thông tin từng vé trong batch đăng bán (SCRUM-167 / BE-CORE-5.2.2)
 /// </summary>
 public sealed record BulkPublishItem(
     string VerificationId,
-    Guid IdempotencyKey,
     long ResalePrice,
-    bool IsPrivate = false);
+    bool IsPrivate = false,
+    Guid? IdempotencyKey = null);
