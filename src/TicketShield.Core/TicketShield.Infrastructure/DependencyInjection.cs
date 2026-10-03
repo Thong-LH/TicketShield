@@ -36,6 +36,7 @@ public static class DependencyInjection
 
         // Mock NAPAS payout. One instance keeps idempotency keys for the process lifetime (SCRUM-184).
         services.AddSingleton<IPayoutGateway, Services.MockNapasPayoutGateway>();
+        services.AddScoped<IEscrowPayoutSettler, Services.EscrowPayoutSettler>();
 
         // Auto-Settlement Escrow Payout Worker (Disburses funds to seller once UnlockAt is reached)
         services.AddHostedService<Workers.AutomaticSettlementWorker>();
