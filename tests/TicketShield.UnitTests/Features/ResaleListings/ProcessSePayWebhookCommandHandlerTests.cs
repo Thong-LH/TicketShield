@@ -733,3 +733,67 @@ public class ProcessSePayWebhookCommandHandlerTests
         Assert.Equal(ListingStatus.Verified, dbChild!.ListingStatus);
     }
 }
+
+    [Fact]
+    public async Task Handle_BundleTransferPartialFailure_ShouldCompensateAndQueueRefund()
+    {
+        // Arrange
+        var (context, anchorListing, escrow) = CreateTestFixture(TSBUNDLE03, 1100_000m);
+        var bundleId = Guid.NewGuid();
+        anchorListing.BundleId = bundleId;
+        escrow.BundleId = bundleId;
+
+        var childListing = new ResaleListing
+        {
+            Id = Guid.NewGuid(),
+            EventId = anchorListing.EventId,
+            TierId = anchorListing.TierId,
+            SellerId = anchorListing.SellerId,
+            OriginalTicketCode = TCKCHILD3,
+            OriginalPrice = 500_000m,
+            ResalePrice = 500_000m,
+            ListingStatus = ListingStatus.Transacting,
+            BundleId = bundleId,
+            IsBundleAllOrNothing = true
+        };
+        context.ResaleListings.Add(childListing);
+        await context.SaveChangesAsync();
+
+        var verification = new Mock<ITicketVerificationService>();
+        // Fail on the child ticket transfer
+        verification.Setup(v => v.TransferOwnershipByListingId(anchorListing.Id, It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new TicketShield.Contracts.Organizer.V1.TransferOwnershipResponse
+            {
+                Outcome = TicketShield.Contracts.Organizer.V1.TransferOutcome.Transferred,
+                NewTicket = new TicketShield.Contracts.Organizer.V1.TicketSnapshot { Ticket = new TicketShield.Contracts.Organizer.V1.TicketReference { TicketCode = NEW1 } }
+            });
+        verification.Setup(v => v.TransferOwnershipByListingId(childListing.Id, It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new Grpc.Core.RpcException(new Grpc.Core.Status(Grpc.Core.StatusCode.Internal, Mock Organizer Error)));
+
+        var handler = new ProcessSePayWebhookCommandHandler(context, null, null, null, verification.Object, null);
+
+        var request = new SePayWebhookRequest
+        {
+            Id = 10023,
+            TransferType = in,
+            TransferAmount = 1100_000m,
+            Content = TSBUNDLE03 thanh toan combo,
+            ReferenceCode = FTBUNDLE03
+        };
+
+        // Act
+        var result = await handler.Handle(new ProcessSePayWebhookCommand(request), CancellationToken.None);
+
+        // Assert
+        Assert.True(result.Success);
+        Assert.Equal(RefundQueued, result.Data!.EscrowStatus);
+
+        var dbEscrow = await context.EscrowTransactions.FindAsync(escrow.Id);
+        Assert.Equal(EscrowStatus.RefundQueued, dbEscrow!.Status);
+
+        var dbAnchor = await context.ResaleListings.FindAsync(anchorListing.Id);
+        var dbChild = await context.ResaleListings.FindAsync(childListing.Id);
+        Assert.Equal(ListingStatus.Verified, dbAnchor!.ListingStatus);
+        Assert.Equal(ListingStatus.Verified, dbChild!.ListingStatus);
+    }
+}
