@@ -627,4 +627,109 @@ public class ProcessSePayWebhookCommandHandlerTests
         Assert.Equal(ListingStatus.Sold, persisted.Listing.ListingStatus);
         Assert.Equal("FTCLEAR001", persisted.BankTransactionReference);
     }
+    [Fact]
+    public async Task Handle_ValidPaymentWebhook_WithBundle_ShouldLockEscrowAndMarkAllListingsSold()
+    {
+        // Arrange
+        var (context, anchorListing, escrow) = CreateTestFixture("TSBUNDLE01", 1100_000m);
+        var bundleId = Guid.NewGuid();
+        anchorListing.BundleId = bundleId;
+        escrow.BundleId = bundleId;
+        
+        var childListing = new ResaleListing
+        {
+            Id = Guid.NewGuid(),
+            EventId = anchorListing.EventId,
+            TierId = anchorListing.TierId,
+            SellerId = anchorListing.SellerId,
+            OriginalTicketCode = "TCKCHILD",
+            OriginalPrice = 500_000m,
+            ResalePrice = 500_000m,
+            ListingStatus = ListingStatus.Transacting,
+            BundleId = bundleId,
+            IsBundleAllOrNothing = true
+        };
+        context.ResaleListings.Add(childListing);
+        await context.SaveChangesAsync();
+
+        var handler = new ProcessSePayWebhookCommandHandler(context);
+
+        var request = new SePayWebhookRequest
+        {
+            Id = 10021,
+            TransferType = "in",
+            TransferAmount = 1100_000m,
+            Content = "TSBUNDLE01 thanh toan mua combo",
+            ReferenceCode = "FTBUNDLE01"
+        };
+
+        // Act
+        var result = await handler.Handle(new ProcessSePayWebhookCommand(request), CancellationToken.None);
+
+        // Assert
+        Assert.True(result.Success);
+        
+        var dbEscrow = await context.EscrowTransactions.FindAsync(escrow.Id);
+        Assert.Equal(EscrowStatus.Locked, dbEscrow!.Status);
+        Assert.Contains("TCK12345", dbEscrow.NewTicketCode);
+        Assert.Contains("TCKCHILD", dbEscrow.NewTicketCode);
+        
+        var dbAnchor = await context.ResaleListings.FindAsync(anchorListing.Id);
+        var dbChild = await context.ResaleListings.FindAsync(childListing.Id);
+        Assert.Equal(ListingStatus.Sold, dbAnchor!.ListingStatus);
+        Assert.Equal(ListingStatus.Sold, dbChild!.ListingStatus);
+    }
+
+    [Fact]
+    public async Task Handle_LatePaymentWebhook_WithBundle_ShouldQueueRefundAndMarkAllListingsVerified()
+    {
+        // Arrange
+        var (context, anchorListing, escrow) = CreateTestFixture("TSBUNDLE02", 1100_000m);
+        var bundleId = Guid.NewGuid();
+        anchorListing.BundleId = bundleId;
+        escrow.BundleId = bundleId;
+        escrow.UnlockAt = DateTimeOffset.UtcNow.AddMinutes(-5); // Expired
+
+        var childListing = new ResaleListing
+        {
+            Id = Guid.NewGuid(),
+            EventId = anchorListing.EventId,
+            TierId = anchorListing.TierId,
+            SellerId = anchorListing.SellerId,
+            OriginalTicketCode = "TCKCHILD2",
+            OriginalPrice = 500_000m,
+            ResalePrice = 500_000m,
+            ListingStatus = ListingStatus.Transacting,
+            BundleId = bundleId,
+            IsBundleAllOrNothing = true
+        };
+        context.ResaleListings.Add(childListing);
+        await context.SaveChangesAsync();
+
+        var handler = new ProcessSePayWebhookCommandHandler(context);
+
+        var request = new SePayWebhookRequest
+        {
+            Id = 10022,
+            TransferType = "in",
+            TransferAmount = 1100_000m,
+            Content = "TSBUNDLE02 thanh toan tre",
+            ReferenceCode = "FTBUNDLE02"
+        };
+
+        // Act
+        var result = await handler.Handle(new ProcessSePayWebhookCommand(request), CancellationToken.None);
+
+        // Assert
+        Assert.True(result.Success);
+        Assert.Equal("RefundQueued", result.Data!.EscrowStatus);
+        
+        var dbEscrow = await context.EscrowTransactions.FindAsync(escrow.Id);
+        Assert.Equal(EscrowStatus.RefundQueued, dbEscrow!.Status);
+        
+        var dbAnchor = await context.ResaleListings.FindAsync(anchorListing.Id);
+        var dbChild = await context.ResaleListings.FindAsync(childListing.Id);
+        Assert.Equal(ListingStatus.Verified, dbAnchor!.ListingStatus);
+        Assert.Equal(ListingStatus.Verified, dbChild!.ListingStatus);
+    }
 }

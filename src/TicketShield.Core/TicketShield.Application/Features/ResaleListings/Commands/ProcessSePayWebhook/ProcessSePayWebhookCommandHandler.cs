@@ -159,13 +159,26 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
             escrow.Status = EscrowStatus.RefundQueued;
             escrow.BankTransactionReference = bankTxRef;
             escrow.InSettlementBuffer = false;
-            if (escrow.Listing.ListingStatus == ListingStatus.Transacting)
+            var pastResaleCutoff = escrow.Listing.Event != null &&
+                escrow.Listing.Event.EventStartAt.AddHours(-2) <= now;
+            var newStatus = pastResaleCutoff ? ListingStatus.Expired : ListingStatus.Verified;
+
+            var affectedListingIds = new List<Guid> { escrow.ListingId };
+
+            if (escrow.BundleId.HasValue)
             {
-                var pastResaleCutoff = escrow.Listing.Event != null &&
-                    escrow.Listing.Event.EventStartAt.AddHours(-2) <= now;
-                escrow.Listing.ListingStatus = pastResaleCutoff
-                    ? ListingStatus.Expired
-                    : ListingStatus.Verified;
+                var bundleListings = await _dbContext.ResaleListings
+                    .Where(l => l.BundleId == escrow.BundleId && l.ListingStatus == ListingStatus.Transacting)
+                    .ToListAsync(cancellationToken);
+                foreach (var l in bundleListings)
+                {
+                    l.ListingStatus = newStatus;
+                    if (!affectedListingIds.Contains(l.Id)) affectedListingIds.Add(l.Id);
+                }
+            }
+            else if (escrow.Listing.ListingStatus == ListingStatus.Transacting)
+            {
+                escrow.Listing.ListingStatus = newStatus;
             }
 
             await _dbContext.SaveChangesAsync(cancellationToken);
@@ -176,14 +189,17 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
 
             if (_paymentNotifier != null)
             {
-                await _paymentNotifier.NotifyHoldExpiredAsync(escrow.ListingId, new
+                foreach (var lId in affectedListingIds)
                 {
-                    listingId = escrow.ListingId,
-                    escrowId = escrow.Id,
-                    paymentReference = escrow.PaymentReference ?? paymentReference,
-                    escrowStatus = nameof(EscrowStatus.RefundQueued),
-                    listingStatus = escrow.Listing.ListingStatus.ToString()
-                }, cancellationToken);
+                    await _paymentNotifier.NotifyHoldExpiredAsync(lId, new
+                    {
+                        listingId = lId,
+                        escrowId = escrow.Id,
+                        paymentReference = escrow.PaymentReference ?? paymentReference,
+                        escrowStatus = nameof(EscrowStatus.RefundQueued),
+                        listingStatus = newStatus.ToString()
+                    }, cancellationToken);
+                }
             }
 
             return ApiResponse<ProcessSePayWebhookResponse>.SuccessResponse(
@@ -204,75 +220,97 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
         var eventStartAt = escrow.Listing.Event?.EventStartAt
             ?? throw new BusinessRuleViolationException("Thiếu EventStartAt để tính UnlockAt giải ngân.");
 
-        string? newTicketCode = null;
-        string? qrCodeData = null;
+        var newTicketCodes = new List<string>();
+        var qrCodeDatas = new List<string>();
 
-        // Call gRPC TransferOwnership to BTC Organizer (Issue 2)
-        if (_ticketVerificationService != null)
+        var listingsToTransfer = new List<ResaleListing> { escrow.Listing };
+        if (escrow.BundleId.HasValue)
         {
-            var buyerName = escrow.RecipientName ?? escrow.Buyer?.FullName ?? "Buyer";
-            var buyerEmail = escrow.RecipientEmail ?? escrow.Buyer?.Email ?? "buyer@ticketshield.vn";
-            var buyerPhone = escrow.Buyer?.PhoneNumber;
+            var bundleListings = await _dbContext.ResaleListings
+                .Where(l => l.BundleId == escrow.BundleId)
+                .ToListAsync(cancellationToken);
+                
+            listingsToTransfer = bundleListings;
+        }
 
-            var transferResponse = await _ticketVerificationService.TransferOwnershipByListingId(
-                escrow.ListingId,
-                escrow.BuyerId,
-                buyerEmail,
-                buyerName,
-                buyerPhone,
-                cancellationToken);
+        foreach (var listing in listingsToTransfer)
+        {
+            string? currentNewCode = null;
+            string? currentQrCode = null;
 
-            if (transferResponse != null && transferResponse.Outcome != TicketShield.Contracts.Organizer.V1.TransferOutcome.Unspecified)
+            // Call gRPC TransferOwnership to BTC Organizer (Issue 2)
+            if (_ticketVerificationService != null)
             {
-                newTicketCode = transferResponse.NewTicket?.Ticket?.TicketCode;
-                qrCodeData = transferResponse.NewTicket?.Ticket?.TicketCode;
+                var buyerName = escrow.RecipientName ?? escrow.Buyer?.FullName ?? "Buyer";
+                var buyerEmail = escrow.RecipientEmail ?? escrow.Buyer?.Email ?? "buyer@ticketshield.vn";
+                var buyerPhone = escrow.Buyer?.PhoneNumber;
 
-                if (newTicketCode is null)
+                var transferResponse = await _ticketVerificationService.TransferOwnershipByListingId(
+                    listing.Id,
+                    escrow.BuyerId,
+                    buyerEmail,
+                    buyerName,
+                    buyerPhone,
+                    cancellationToken);
+
+                if (transferResponse != null && transferResponse.Outcome != TicketShield.Contracts.Organizer.V1.TransferOutcome.Unspecified)
                 {
-                    throw new BusinessRuleViolationException(
-                        "Không nhận được mã vé mới từ BTC Organizer sau khi chuyển quyền sở hữu. Giao dịch bị huỷ để bảo vệ Buyer.");
+                    currentNewCode = transferResponse.NewTicket?.Ticket?.TicketCode;
+                    currentQrCode = transferResponse.NewTicket?.Ticket?.TicketCode;
+
+                    if (currentNewCode is null)
+                    {
+                        throw new BusinessRuleViolationException(
+                            $"Không nhận được mã vé mới từ BTC Organizer cho vé {listing.OriginalTicketCode}. Giao dịch bị huỷ để bảo vệ Buyer.");
+                    }
                 }
             }
-        }
 
-        // Seeded marketplace listings (e.g. ATSH-GA-999) without an external BTC lock session
-        if (string.IsNullOrWhiteSpace(newTicketCode))
-        {
-            newTicketCode = escrow.Listing?.OriginalTicketCode;
-            qrCodeData = newTicketCode;
-        }
+            // Seeded marketplace listings (e.g. ATSH-GA-999) without an external BTC lock session
+            if (string.IsNullOrWhiteSpace(currentNewCode))
+            {
+                currentNewCode = listing.OriginalTicketCode;
+                currentQrCode = currentNewCode;
+            }
 
-        if (string.IsNullOrWhiteSpace(newTicketCode))
-        {
-            throw new BusinessRuleViolationException("Không thể xác định mã vé hợp lệ cho giao dịch này.");
+            if (string.IsNullOrWhiteSpace(currentNewCode))
+            {
+                throw new BusinessRuleViolationException($"Không thể xác định mã vé hợp lệ cho vé {listing.OriginalTicketCode}.");
+            }
+
+            newTicketCodes.Add(currentNewCode);
+            qrCodeDatas.Add(currentQrCode);
+            listing.ListingStatus = ListingStatus.Sold;
         }
 
         escrow.Status = EscrowStatus.Locked;
         escrow.BankTransactionReference = bankTxRef;
         escrow.InSettlementBuffer = true;
         escrow.UnlockAt = EscrowTransaction.ComputeSettlementUnlockAt(now, eventStartAt);
-        escrow.NewTicketCode = newTicketCode;
-        escrow.QrCodeData = qrCodeData;
-        escrow.Listing.ListingStatus = ListingStatus.Sold;
+        escrow.NewTicketCode = string.Join(",", newTicketCodes);
+        escrow.QrCodeData = string.Join(",", qrCodeDatas);
 
         await _dbContext.SaveChangesAsync(cancellationToken);
         await TrySendLockEmailsAsync(escrow, cancellationToken);
 
         if (_paymentNotifier != null)
         {
-            var notificationPayload = new
+            foreach (var listing in listingsToTransfer)
             {
-                listingId = escrow.ListingId,
-                escrowId = escrow.Id,
-                paymentReference = escrow.PaymentReference ?? paymentReference,
-                escrowStatus = escrow.Status.ToString(),
-                listingStatus = escrow.Listing?.ListingStatus.ToString() ?? ListingStatus.Sold.ToString(),
-                totalBuyerPaid = escrow.TotalBuyerPaid,
-                newTicketCode = escrow.NewTicketCode,
-                qrCodeData = escrow.QrCodeData
-            };
-            await _paymentNotifier.NotifyPaymentApprovedAsync(escrow.ListingId, notificationPayload, cancellationToken);
-            await _paymentNotifier.NotifyOrderSettledAsync(escrow.ListingId, notificationPayload, cancellationToken);
+                var notificationPayload = new
+                {
+                    listingId = listing.Id,
+                    escrowId = escrow.Id,
+                    paymentReference = escrow.PaymentReference ?? paymentReference,
+                    escrowStatus = escrow.Status.ToString(),
+                    listingStatus = listing.ListingStatus.ToString(),
+                    totalBuyerPaid = escrow.TotalBuyerPaid,
+                    newTicketCode = escrow.NewTicketCode,
+                    qrCodeData = escrow.QrCodeData
+                };
+                await _paymentNotifier.NotifyPaymentApprovedAsync(listing.Id, notificationPayload, cancellationToken);
+                await _paymentNotifier.NotifyOrderSettledAsync(listing.Id, notificationPayload, cancellationToken);
+            }
         }
 
         var response = new ProcessSePayWebhookResponse
@@ -330,10 +368,12 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
                 buyerHtml,
                 cancellationToken);
 
+            var originalTicketCodes = escrow.BundleId.HasValue ? "Gói vé (Combo)" : escrow.Listing.OriginalTicketCode;
+
             var sellerHtml = _emailTemplates.GetSellerEscrowLockedEmailHtml(
                 escrow.Seller.FullName,
                 escrow.Buyer.FullName,
-                escrow.Listing.OriginalTicketCode,
+                originalTicketCodes,
                 ev.Name,
                 escrow.NetSellerPayout,
                 escrow.PaymentReference ?? string.Empty);
