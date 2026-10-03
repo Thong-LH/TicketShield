@@ -233,54 +233,89 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
             listingsToTransfer = bundleListings;
         }
 
-        foreach (var listing in listingsToTransfer)
+        try
         {
-            string? currentNewCode = null;
-            string? currentQrCode = null;
-
-            // Call gRPC TransferOwnership to BTC Organizer (Issue 2)
-            if (_ticketVerificationService != null)
+            foreach (var listing in listingsToTransfer)
             {
-                var buyerName = escrow.RecipientName ?? escrow.Buyer?.FullName ?? "Buyer";
-                var buyerEmail = escrow.RecipientEmail ?? escrow.Buyer?.Email ?? "buyer@ticketshield.vn";
-                var buyerPhone = escrow.Buyer?.PhoneNumber;
+                string? currentNewCode = null;
+                string? currentQrCode = null;
 
-                var transferResponse = await _ticketVerificationService.TransferOwnershipByListingId(
-                    listing.Id,
-                    escrow.BuyerId,
-                    buyerEmail,
-                    buyerName,
-                    buyerPhone,
-                    cancellationToken);
-
-                if (transferResponse != null && transferResponse.Outcome != TicketShield.Contracts.Organizer.V1.TransferOutcome.Unspecified)
+                // Call gRPC TransferOwnership to BTC Organizer (Issue 2)
+                if (_ticketVerificationService != null)
                 {
-                    currentNewCode = transferResponse.NewTicket?.Ticket?.TicketCode;
-                    currentQrCode = transferResponse.NewTicket?.Ticket?.TicketCode;
+                    var buyerName = escrow.RecipientName ?? escrow.Buyer?.FullName ?? "Buyer";
+                    var buyerEmail = escrow.RecipientEmail ?? escrow.Buyer?.Email ?? "buyer@ticketshield.vn";
+                    var buyerPhone = escrow.Buyer?.PhoneNumber;
 
-                    if (currentNewCode is null)
+                    var transferResponse = await _ticketVerificationService.TransferOwnershipByListingId(
+                        listing.Id,
+                        escrow.BuyerId,
+                        buyerEmail,
+                        buyerName,
+                        buyerPhone,
+                        cancellationToken);
+
+                    if (transferResponse != null && transferResponse.Outcome != TicketShield.Contracts.Organizer.V1.TransferOutcome.Unspecified)
                     {
-                        throw new BusinessRuleViolationException(
-                            $"Không nhận được mã vé mới từ BTC Organizer cho vé {listing.OriginalTicketCode}. Giao dịch bị huỷ để bảo vệ Buyer.");
+                        currentNewCode = transferResponse.NewTicket?.Ticket?.TicketCode;
+                        currentQrCode = transferResponse.NewTicket?.Ticket?.TicketCode;
+
+                        if (currentNewCode is null)
+                        {
+                            throw new BusinessRuleViolationException(
+                                $"Không nhận được mã vé mới từ BTC Organizer cho vé {listing.OriginalTicketCode}. Giao dịch bị huỷ để bảo vệ Buyer.");
+                        }
                     }
                 }
-            }
 
-            // Seeded marketplace listings (e.g. ATSH-GA-999) without an external BTC lock session
-            if (string.IsNullOrWhiteSpace(currentNewCode))
+                // Seeded marketplace listings (e.g. ATSH-GA-999) without an external BTC lock session
+                if (string.IsNullOrWhiteSpace(currentNewCode))
+                {
+                    currentNewCode = listing.OriginalTicketCode;
+                    currentQrCode = currentNewCode;
+                }
+
+                if (string.IsNullOrWhiteSpace(currentNewCode))
+                {
+                    throw new BusinessRuleViolationException($"Không thể xác định mã vé hợp lệ cho vé {listing.OriginalTicketCode}.");
+                }
+
+                newTicketCodes.Add(currentNewCode);
+                qrCodeDatas.Add(currentQrCode);
+                listing.ListingStatus = ListingStatus.Sold;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex, "Saga Compensation Triggered: Transfer ownership failed for EscrowId {EscrowId}. Rolling back listings to safe state and queueing full refund.", escrow.Id);
+            
+            // Saga Compensation:
+            // 1. Rollback all listings to safe state (Verified)
+            foreach (var listing in listingsToTransfer)
             {
-                currentNewCode = listing.OriginalTicketCode;
-                currentQrCode = currentNewCode;
+                listing.ListingStatus = ListingStatus.Verified;
             }
-
-            if (string.IsNullOrWhiteSpace(currentNewCode))
-            {
-                throw new BusinessRuleViolationException($"Không thể xác định mã vé hợp lệ cho vé {listing.OriginalTicketCode}.");
-            }
-
-            newTicketCodes.Add(currentNewCode);
-            qrCodeDatas.Add(currentQrCode);
-            listing.ListingStatus = ListingStatus.Sold;
+            
+            // 2. Queue Full Refund for the buyer
+            escrow.Status = EscrowStatus.RefundQueued;
+            escrow.BankTransactionReference = bankTxRef;
+            escrow.InSettlementBuffer = false;
+            
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            
+            return ApiResponse<ProcessSePayWebhookResponse>.SuccessResponse(
+                new ProcessSePayWebhookResponse
+                {
+                    EscrowId = escrow.Id,
+                    ListingId = escrow.ListingId,
+                    PaymentReference = escrow.PaymentReference ?? paymentReference,
+                    EscrowStatus = nameof(EscrowStatus.RefundQueued),
+                    ListingStatus = ListingStatus.Verified.ToString(),
+                    TransferAmount = payload.TransferAmount,
+                    BankTransactionReference = bankTxRef,
+                    IsIdempotentDuplicate = false
+                },
+                "Xử lý bù trừ (Saga Compensation) thành công: Chuyển tên vé thất bại, đã rollback vé và đưa giao dịch vào luồng hoàn tiền 100%.");
         }
 
         escrow.Status = EscrowStatus.Locked;
