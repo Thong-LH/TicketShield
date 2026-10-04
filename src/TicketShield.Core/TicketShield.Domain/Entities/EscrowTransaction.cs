@@ -36,10 +36,12 @@ public class EscrowTransaction : BaseEntity
     public PayoutTransaction? PayoutTransaction { get; set; }
     public Dispute? Dispute { get; set; }
 
+    public static TimeSpan SettlementBufferDuration { get; set; } = TimeSpan.FromSeconds(30);
+
     public static DateTimeOffset ComputeSettlementUnlockAt(DateTimeOffset utcNow, DateTimeOffset eventStartAt)
     {
-        var plus24h = utcNow.AddHours(24);
+        var unlockTime = utcNow.Add(SettlementBufferDuration);
         var cutoff = eventStartAt.AddHours(-2);
-        return plus24h <= cutoff ? plus24h : cutoff;
+        return unlockTime <= cutoff ? unlockTime : cutoff;
     }
 }

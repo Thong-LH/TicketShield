@@ -20,7 +20,7 @@ public class AutomaticSettlementWorker : BackgroundService
     {
         _scopeFactory = scopeFactory;
         _logger = logger;
-        _checkInterval = checkInterval ?? TimeSpan.FromSeconds(60);
+        _checkInterval = checkInterval ?? TimeSpan.FromSeconds(3);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
