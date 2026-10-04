@@ -40,6 +40,9 @@ public static class DependencyInjection
         // Auto-Settlement Escrow Payout Worker (Disburses funds to seller once UnlockAt is reached)
         services.AddHostedService<Workers.AutomaticSettlementWorker>();
 
+        // Auto-Release Expired 10-Minute Listing Holds (BE-CORE-3.1.5 / BE-CORE-5.2.3)
+        services.AddHostedService<Workers.ExpiredHoldReleaseWorker>();
+
         // Event Bus (RabbitMQ + MassTransit)
         services.AddEventBus(configuration);
 

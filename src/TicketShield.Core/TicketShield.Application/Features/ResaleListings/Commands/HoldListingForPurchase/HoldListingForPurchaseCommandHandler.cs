@@ -73,32 +73,28 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
             throw new UnauthorizedException("Tài khoản của bạn đã bị vô hiệu hóa.");
         }
 
-        // Concurrency Control: Acquire PostgreSQL transaction advisory lock hashed by ListingId
+        // 2. Fetch Resale Listing
+        var listing = await _dbContext.ResaleListings
+            .Include(l => l.EscrowTransactions)
+            .Include(l => l.Event)
+            .FirstOrDefaultAsync(l => l.Id == request.ListingId, cancellationToken);
+
+        if (listing == null)
+        {
+            throw new NotFoundException("Tin đăng bán vé", request.ListingId);
+        }
+
+        // BE-CORE-5.2.3: Branch to bundle hold if listing is part of an AllOrNothing bundle
+        if (listing.BundleId != null && listing.IsBundleAllOrNothing)
+        {
+            return await HandleBundleHoldAsync(listing, buyer, request, cancellationToken);
+        }
+
+        // Concurrency Control: Acquire PostgreSQL transaction advisory lock hashed by ListingId for single listing
         await using var tx = await _dbContext.BeginAdvisoryLockTransactionAsync(ComputeLockKey(request.ListingId), cancellationToken);
 
         try
         {
-            // 2. Fetch Resale Listing
-            var listing = await _dbContext.ResaleListings
-                .Include(l => l.EscrowTransactions)
-                .Include(l => l.Event)
-                .FirstOrDefaultAsync(l => l.Id == request.ListingId, cancellationToken);
-
-            if (listing == null)
-            {
-                throw new NotFoundException("Tin đăng bán vé", request.ListingId);
-            }
-
-            // BE-CORE-5.2.3: Branch to bundle hold if listing is part of an AllOrNothing bundle
-            if (listing.BundleId != null && listing.IsBundleAllOrNothing)
-            {
-                // Release single-listing advisory lock (we'll acquire a bundle-level one instead)
-                if (tx != null)
-                {
-                    await tx.RollbackAsync(cancellationToken);
-                }
-                return await HandleBundleHoldAsync(listing, buyer, request, cancellationToken);
-            }
 
             // 3. Business Rule Validation: Buyer cannot be Seller (BE-CORE-3.1.6)
             if (listing.SellerId == buyerId)

@@ -7,6 +7,26 @@ public static class ResaleListingExtensions
 {
     public static ResaleListingDetailDto ToDetailDto(this ResaleListing listing)
     {
+        var now = DateTimeOffset.UtcNow;
+        var unlockAt = listing.EscrowTransaction?.UnlockAt;
+        var listingStatus = listing.ListingStatus.ToString();
+
+        // If marked Transacting, check if hold expired in realtime
+        if (listing.ListingStatus == TicketShield.Domain.Enums.ListingStatus.Transacting)
+        {
+            var hasActiveHold = listing.EscrowTransactions
+                .Any(e => e.Status == TicketShield.Domain.Enums.EscrowStatus.Pending && e.UnlockAt.HasValue && e.UnlockAt.Value > now);
+
+            if (!hasActiveHold && unlockAt.HasValue && unlockAt.Value <= now)
+            {
+                var pastCutoff = listing.Event != null && listing.Event.EventStartAt.AddHours(-2) <= now;
+                listingStatus = pastCutoff
+                    ? TicketShield.Domain.Enums.ListingStatus.Expired.ToString()
+                    : TicketShield.Domain.Enums.ListingStatus.Verified.ToString();
+                unlockAt = null;
+            }
+        }
+
         return new ResaleListingDetailDto
         {
             ListingId = listing.Id,
@@ -26,10 +46,10 @@ public static class ResaleListingExtensions
             IsPrivate = listing.IsPrivate,
             MaskedTicketCode = listing.MaskedTicketCode,
             VerificationStatus = listing.VerificationStatus.ToString(),
-            ListingStatus = listing.ListingStatus.ToString(),
+            ListingStatus = listingStatus,
             SellerId = listing.SellerId,
             SellerFullName = listing.Seller?.FullName ?? string.Empty,
-            UnlockAt = listing.EscrowTransaction?.UnlockAt,
+            UnlockAt = unlockAt,
             CreatedAt = listing.CreatedAt,
             BundleId = listing.BundleId,
             IsBundleAllOrNothing = listing.IsBundleAllOrNothing,
