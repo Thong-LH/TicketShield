@@ -5,15 +5,18 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using TicketShield.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
 namespace TicketShield.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(TicketShieldDbContext))]
-    partial class TicketShieldDbContextModelSnapshot : ModelSnapshot
+    [Migration("20261004094700_AddSeatZoneToResaleListing")]
+    partial class AddSeatZoneToResaleListing
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1093,3 +1096,4 @@ namespace TicketShield.Infrastructure.Persistence.Migrations
         }
     }
 }
+

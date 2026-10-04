@@ -22,6 +22,7 @@ public class ResaleListing : BaseEntity
     public string? PrivateAccessToken { get; set; }
     public VerificationStatus VerificationStatus { get; set; } = VerificationStatus.Verified;
     public ListingStatus ListingStatus { get; set; } = ListingStatus.Verified;
+    public string? SeatZone { get; set; }
 
     // Bundle support (BE-CORE-5.2.2)
     public Guid? BundleId { get; set; }

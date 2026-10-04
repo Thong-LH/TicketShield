@@ -60,6 +60,7 @@ public class GetSellerListingsQueryHandler : IRequestHandler<GetSellerListingsQu
                 EventStartAt = l.Event?.EventStartAt ?? default,
                 TierId = l.TierId,
                 TierName = l.Tier?.TierName ?? string.Empty,
+                SeatZone = l.SeatZone,
                 OriginalTicketCode = l.OriginalTicketCode,
                 OriginalPrice = l.OriginalPrice,
                 ResalePrice = l.ResalePrice,

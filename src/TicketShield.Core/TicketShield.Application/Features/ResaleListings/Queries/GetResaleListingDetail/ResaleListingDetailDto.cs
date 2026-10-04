@@ -11,6 +11,7 @@ public class ResaleListingDetailDto
     public DateTimeOffset EventStartAt { get; set; }
     public Guid TierId { get; set; }
     public string TierName { get; set; } = string.Empty;
+    public string? SeatZone { get; set; }
     public decimal OriginalPrice { get; set; }
     public decimal ResalePrice { get; set; }
     public decimal DiscountAmount { get; set; }

@@ -256,6 +256,7 @@ public static class DatabaseSeeder
         sampleListing.PrivateAccessToken = null;
         sampleListing.VerificationStatus = VerificationStatus.Verified;
         sampleListing.ListingStatus = ListingStatus.Verified;
+        sampleListing.SeatZone = "GA Standing Zone 2";
 
         await context.SaveChangesAsync();
 

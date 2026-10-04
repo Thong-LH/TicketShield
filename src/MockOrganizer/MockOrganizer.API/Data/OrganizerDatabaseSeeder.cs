@@ -34,7 +34,7 @@ public static class OrganizerDatabaseSeeder
         };
 
         // US-5.1 Multi-Tenant: 3 independent organizer IDs
-        var vieOnId         = Guid.Parse("b0000000-0000-0000-0000-000000000001"); // VieON
+        var vieOnId         = Guid.Parse("e0000000-0000-0000-0000-000000000001"); // VieON (matches Core API)
         var spaceSpeakersId = Guid.Parse("b0000000-0000-0000-0000-000000000002"); // SpaceSpeakers
         var liveNationVnId  = Guid.Parse("b0000000-0000-0000-0000-000000000003"); // Live Nation VN
 

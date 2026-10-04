@@ -12,6 +12,7 @@ public class SellerListingDto
 
     public Guid TierId { get; set; }
     public string TierName { get; set; } = string.Empty;
+    public string? SeatZone { get; set; }
 
     public string OriginalTicketCode { get; set; } = string.Empty;
     public decimal OriginalPrice { get; set; }

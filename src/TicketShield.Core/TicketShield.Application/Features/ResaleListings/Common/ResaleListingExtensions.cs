@@ -18,6 +18,7 @@ public static class ResaleListingExtensions
             EventStartAt = listing.Event?.EventStartAt ?? default,
             TierId = listing.TierId,
             TierName = listing.Tier?.TierName ?? string.Empty,
+            SeatZone = listing.SeatZone,
             OriginalPrice = listing.OriginalPrice,
             ResalePrice = listing.ResalePrice,
             DiscountAmount = listing.DiscountAmount,

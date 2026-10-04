@@ -724,6 +724,7 @@ public class TicketVerificationService : ITicketVerificationService
                     BundleId = bundleId,
                     IsBundleAllOrNothing = isBundleAllOrNothing,
                     BundleTotalTickets = bundleTotalTickets > 0 ? bundleTotalTickets : 1,
+                    SeatZone = receipt.Ticket?.SeatZone,
                     CreatedAt = now,
                     UpdatedAt = now
                 };
