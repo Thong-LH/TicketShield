@@ -225,12 +225,17 @@ public static class DatabaseSeeder
         context.OutboxMessages.RemoveRange(await context.OutboxMessages.ToListAsync());
         context.EscrowTransactions.RemoveRange(await context.EscrowTransactions.ToListAsync());
 
-        var combo1Id = Guid.Parse("55555555-5555-5555-5555-555555555551");
-        var combo2Id = Guid.Parse("55555555-5555-5555-5555-555555555552");
-        var sampleBundleId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+        var sampleListingId = Guid.Parse("44444444-4444-4444-4444-444444444444");
+        var sellerPlaceholderListing1Id = Guid.Parse("cc111111-1111-1111-1111-111111111111");
+        var sellerPlaceholderListing2Id = Guid.Parse("cc222222-2222-2222-2222-222222222222");
 
         // Delete all listings except sample listings
-        var preservedIds = new[] { combo1Id, combo2Id };
+        var preservedIds = new[]
+        {
+            sampleListingId,
+            sellerPlaceholderListing1Id, // seller placeholder 888
+            sellerPlaceholderListing2Id, // seller placeholder 887
+        };
         var staleListings = await context.ResaleListings
             .Where(l => !preservedIds.Contains(l.Id))
             .ToListAsync();
@@ -239,50 +244,113 @@ public static class DatabaseSeeder
             context.ResaleListings.RemoveRange(staleListings);
         }
 
-        // 5.1 Seed Sample Bundle Combo (2 Adjacent VIP Tickets: ATSH-VIP-887 & ATSH-VIP-886)
-        var combo1 = await context.ResaleListings.FirstOrDefaultAsync(l => l.Id == combo1Id);
-        if (combo1 == null)
+        // 5.1 Seed Sample Single Resale Listing (ATSH-GA-999) for marketplace demo
+        var sampleListing = await context.ResaleListings.FirstOrDefaultAsync(l => l.Id == sampleListingId);
+        if (sampleListing == null)
         {
-            combo1 = new ResaleListing { Id = combo1Id };
-            await context.ResaleListings.AddAsync(combo1);
+            sampleListing = new ResaleListing { Id = sampleListingId };
+            await context.ResaleListings.AddAsync(sampleListing);
         }
-        combo1.EventId = eventId;
-        combo1.TierId = tierVipId;
-        combo1.SellerId = sellerId;
-        combo1.OriginalTicketCode = "ATSH-VIP-887";
-        combo1.OriginalPrice = 50000m; // TEST PRICE (prod: 2500000m)
-        combo1.ResalePrice = 50000m;
-        combo1.AppliedMarkupPercentage = 0m;
-        combo1.IsPrivate = false;
-        combo1.PrivateAccessToken = null;
-        combo1.VerificationStatus = VerificationStatus.Verified;
-        combo1.ListingStatus = ListingStatus.Verified;
-        combo1.SeatZone = "VIP Zone A - Row 2 Seat 08";
-        combo1.BundleId = sampleBundleId;
-        combo1.IsBundleAllOrNothing = true;
-        combo1.BundleTotalTickets = 2;
+        sampleListing.EventId = eventId;
+        sampleListing.TierId = tierGaId;
+        sampleListing.SellerId = sellerId;
+        sampleListing.OriginalTicketCode = "ATSH-GA-999";
+        sampleListing.OriginalPrice = 50000m;
+        sampleListing.ResalePrice = 50000m;
+        sampleListing.AppliedMarkupPercentage = 0m;
+        sampleListing.IsPrivate = false;
+        sampleListing.PrivateAccessToken = null;
+        sampleListing.VerificationStatus = VerificationStatus.Verified;
+        sampleListing.ListingStatus = ListingStatus.Verified;
+        sampleListing.SeatZone = "GA Standing Zone 2";
 
-        var combo2 = await context.ResaleListings.FirstOrDefaultAsync(l => l.Id == combo2Id);
-        if (combo2 == null)
+        await context.SaveChangesAsync();
+
+        // 5.2 Seed Mock Purchased EscrowTransactions for Seller account
+        // Purpose: Allow `linhtranlatao2004@gmail.com` (Seller) to see their tickets
+        //          in the "My Tickets" wallet on the Sell Ticket page.
+        // These simulate tickets the seller previously purchased from a resale market.
+        var seedEscrow1Id = Guid.Parse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeee01");
+        var seedEscrow2Id = Guid.Parse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeee02");
+
+        // Placeholder listings for seller's escrow records (Cancelled = won't block eligibility filter)
+        var spl1 = await context.ResaleListings.FirstOrDefaultAsync(l => l.Id == sellerPlaceholderListing1Id);
+        if (spl1 == null)
         {
-            combo2 = new ResaleListing { Id = combo2Id };
-            await context.ResaleListings.AddAsync(combo2);
+            spl1 = new ResaleListing { Id = sellerPlaceholderListing1Id };
+            await context.ResaleListings.AddAsync(spl1);
         }
-        combo2.EventId = eventId;
-        combo2.TierId = tierVipId;
-        combo2.SellerId = sellerId;
-        combo2.OriginalTicketCode = "ATSH-VIP-886";
-        combo2.OriginalPrice = 50000m; // TEST PRICE (prod: 2500000m)
-        combo2.ResalePrice = 50000m;
-        combo2.AppliedMarkupPercentage = 0m;
-        combo2.IsPrivate = false;
-        combo2.PrivateAccessToken = null;
-        combo2.VerificationStatus = VerificationStatus.Verified;
-        combo2.ListingStatus = ListingStatus.Verified;
-        combo2.SeatZone = "VIP Zone A - Row 2 Seat 09";
-        combo2.BundleId = sampleBundleId;
-        combo2.IsBundleAllOrNothing = true;
-        combo2.BundleTotalTickets = 2;
+        spl1.EventId = eventId;
+        spl1.TierId = tierVipId;
+        spl1.SellerId = buyerId;
+        spl1.OriginalTicketCode = "SEED-PLACEHOLDER-888";
+        spl1.OriginalPrice = 50000m;
+        spl1.ResalePrice = 50000m;
+        spl1.AppliedMarkupPercentage = 0m;
+        spl1.VerificationStatus = VerificationStatus.Verified;
+        spl1.ListingStatus = ListingStatus.Cancelled; // Cancelled → won't block seller's eligibility
+        spl1.SeatZone = "VIP Zone A";
+
+        var spl2 = await context.ResaleListings.FirstOrDefaultAsync(l => l.Id == sellerPlaceholderListing2Id);
+        if (spl2 == null)
+        {
+            spl2 = new ResaleListing { Id = sellerPlaceholderListing2Id };
+            await context.ResaleListings.AddAsync(spl2);
+        }
+        spl2.EventId = eventId;
+        spl2.TierId = tierVipId;
+        spl2.SellerId = buyerId;
+        spl2.OriginalTicketCode = "SEED-PLACEHOLDER-887";
+        spl2.OriginalPrice = 50000m;
+        spl2.ResalePrice = 50000m;
+        spl2.AppliedMarkupPercentage = 0m;
+        spl2.VerificationStatus = VerificationStatus.Verified;
+        spl2.ListingStatus = ListingStatus.Cancelled;
+        spl2.SeatZone = "VIP Zone A";
+
+        await context.SaveChangesAsync();
+
+        var seedEscrow1 = await context.EscrowTransactions.FirstOrDefaultAsync(e => e.Id == seedEscrow1Id);
+        if (seedEscrow1 == null)
+        {
+            seedEscrow1 = new EscrowTransaction { Id = seedEscrow1Id };
+            await context.EscrowTransactions.AddAsync(seedEscrow1);
+        }
+        seedEscrow1.ListingId = sellerPlaceholderListing1Id;
+        seedEscrow1.BuyerId = sellerId;
+        seedEscrow1.SellerId = buyerId;
+        seedEscrow1.OriginalTicketPrice = 50000m;
+        seedEscrow1.BuyerFee = 2500m;
+        seedEscrow1.SellerFee = 1500m;
+        seedEscrow1.TotalBuyerPaid = 52500m;
+        seedEscrow1.NetSellerPayout = 48500m;
+        seedEscrow1.Status = EscrowStatus.Released;
+        seedEscrow1.NewTicketCode = "ATSH-VIP-888";
+        seedEscrow1.QrCodeData = "ATSH-VIP-888";
+        seedEscrow1.BankTransactionReference = "BTC-SEED-TX-888";
+        seedEscrow1.RecipientName = "Nguyen Van Seller";
+        seedEscrow1.RecipientEmail = "linhtranlatao2004@gmail.com";
+
+        var seedEscrow2 = await context.EscrowTransactions.FirstOrDefaultAsync(e => e.Id == seedEscrow2Id);
+        if (seedEscrow2 == null)
+        {
+            seedEscrow2 = new EscrowTransaction { Id = seedEscrow2Id };
+            await context.EscrowTransactions.AddAsync(seedEscrow2);
+        }
+        seedEscrow2.ListingId = sellerPlaceholderListing2Id;
+        seedEscrow2.BuyerId = sellerId;
+        seedEscrow2.SellerId = buyerId;
+        seedEscrow2.OriginalTicketPrice = 50000m;
+        seedEscrow2.BuyerFee = 2500m;
+        seedEscrow2.SellerFee = 1500m;
+        seedEscrow2.TotalBuyerPaid = 52500m;
+        seedEscrow2.NetSellerPayout = 48500m;
+        seedEscrow2.Status = EscrowStatus.Released;
+        seedEscrow2.NewTicketCode = "ATSH-VIP-887";
+        seedEscrow2.QrCodeData = "ATSH-VIP-887";
+        seedEscrow2.BankTransactionReference = "BTC-SEED-TX-887";
+        seedEscrow2.RecipientName = "Nguyen Van Seller";
+        seedEscrow2.RecipientEmail = "linhtranlatao2004@gmail.com";
 
         await context.SaveChangesAsync();
 
