@@ -128,7 +128,7 @@ public static class OrganizerDatabaseSeeder
         ticket5.OrganizerId = vieOnId;
         ticket5.TicketCode = "ATSH-VIP-886";
         ticket5.EventName = "Anh Trai Say Hi Concert 2026";
-        ticket5.SeatZone = "VIP Zone A - Row 3 Seat 04";
+        ticket5.SeatZone = "VIP Zone A - Row 2 Seat 09";
         ticket5.OriginalPrice = 2500000;
         ticket5.OwnerEmail = "linhtranlatao2004@gmail.com";
         ticket5.OwnerPhone = "0901234567";

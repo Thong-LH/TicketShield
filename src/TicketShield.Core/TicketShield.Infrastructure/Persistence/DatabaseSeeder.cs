@@ -101,7 +101,7 @@ public static class DatabaseSeeder
         }
         tierVip.EventId = eventId;
         tierVip.TierName = "VIP Zone A";
-        tierVip.OriginalPrice = 50000m;
+        tierVip.OriginalPrice = 50000m; // TEST PRICE (prod: 2500000m)
         tierVip.Description = "Khu vực VIP sát sân khấu, tặng kèm lightstick";
 
         var tierGa = await context.TicketTiers.FirstOrDefaultAsync(t => t.Id == tierGaId);
@@ -112,7 +112,7 @@ public static class DatabaseSeeder
         }
         tierGa.EventId = eventId;
         tierGa.TierName = "GA Standing";
-        tierGa.OriginalPrice = 1200000m;
+        tierGa.OriginalPrice = 20000m; // TEST PRICE (prod: 1200000m)
         tierGa.Description = "Khu vực đứng tự do";
 
         // Event 2: My Tam Live Concert (Hanoi)
@@ -228,9 +228,14 @@ public static class DatabaseSeeder
         context.OutboxMessages.RemoveRange(await context.OutboxMessages.ToListAsync());
         context.EscrowTransactions.RemoveRange(await context.EscrowTransactions.ToListAsync());
 
-        // Delete all listings except sample listing (ATSH-GA-999)
+        var combo1Id = Guid.Parse("55555555-5555-5555-5555-555555555551");
+        var combo2Id = Guid.Parse("55555555-5555-5555-5555-555555555552");
+        var sampleBundleId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+
+        // Delete all listings except sample listings
+        var preservedIds = new[] { sampleListingId, combo1Id, combo2Id };
         var staleListings = await context.ResaleListings
-            .Where(l => l.Id != sampleListingId)
+            .Where(l => !preservedIds.Contains(l.Id))
             .ToListAsync();
         if (staleListings.Any())
         {
@@ -257,6 +262,54 @@ public static class DatabaseSeeder
         sampleListing.VerificationStatus = VerificationStatus.Verified;
         sampleListing.ListingStatus = ListingStatus.Verified;
         sampleListing.SeatZone = "GA Standing Zone 2";
+        sampleListing.BundleId = null;
+        sampleListing.IsBundleAllOrNothing = false;
+        sampleListing.BundleTotalTickets = 0;
+
+        // 5.1 Seed Sample Bundle Combo (2 Adjacent VIP Tickets: ATSH-VIP-887 & ATSH-VIP-886)
+        var combo1 = await context.ResaleListings.FirstOrDefaultAsync(l => l.Id == combo1Id);
+        if (combo1 == null)
+        {
+            combo1 = new ResaleListing { Id = combo1Id };
+            await context.ResaleListings.AddAsync(combo1);
+        }
+        combo1.EventId = eventId;
+        combo1.TierId = tierVipId;
+        combo1.SellerId = sellerId;
+        combo1.OriginalTicketCode = "ATSH-VIP-887";
+        combo1.OriginalPrice = 50000m; // TEST PRICE (prod: 2500000m)
+        combo1.ResalePrice = 50000m;
+        combo1.AppliedMarkupPercentage = 0m;
+        combo1.IsPrivate = false;
+        combo1.PrivateAccessToken = null;
+        combo1.VerificationStatus = VerificationStatus.Verified;
+        combo1.ListingStatus = ListingStatus.Verified;
+        combo1.SeatZone = "VIP Zone A - Row 2 Seat 08";
+        combo1.BundleId = sampleBundleId;
+        combo1.IsBundleAllOrNothing = true;
+        combo1.BundleTotalTickets = 2;
+
+        var combo2 = await context.ResaleListings.FirstOrDefaultAsync(l => l.Id == combo2Id);
+        if (combo2 == null)
+        {
+            combo2 = new ResaleListing { Id = combo2Id };
+            await context.ResaleListings.AddAsync(combo2);
+        }
+        combo2.EventId = eventId;
+        combo2.TierId = tierVipId;
+        combo2.SellerId = sellerId;
+        combo2.OriginalTicketCode = "ATSH-VIP-886";
+        combo2.OriginalPrice = 50000m; // TEST PRICE (prod: 2500000m)
+        combo2.ResalePrice = 50000m;
+        combo2.AppliedMarkupPercentage = 0m;
+        combo2.IsPrivate = false;
+        combo2.PrivateAccessToken = null;
+        combo2.VerificationStatus = VerificationStatus.Verified;
+        combo2.ListingStatus = ListingStatus.Verified;
+        combo2.SeatZone = "VIP Zone A - Row 2 Seat 09";
+        combo2.BundleId = sampleBundleId;
+        combo2.IsBundleAllOrNothing = true;
+        combo2.BundleTotalTickets = 2;
 
         await context.SaveChangesAsync();
 

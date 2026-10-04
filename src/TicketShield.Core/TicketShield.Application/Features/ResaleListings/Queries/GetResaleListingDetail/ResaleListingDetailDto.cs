@@ -24,4 +24,7 @@ public class ResaleListingDetailDto
     public string SellerFullName { get; set; } = string.Empty;
     public DateTimeOffset? UnlockAt { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
+    public Guid? BundleId { get; set; }
+    public bool IsBundleAllOrNothing { get; set; }
+    public int BundleTotalTickets { get; set; }
 }

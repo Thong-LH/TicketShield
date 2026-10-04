@@ -30,7 +30,10 @@ public static class ResaleListingExtensions
             SellerId = listing.SellerId,
             SellerFullName = listing.Seller?.FullName ?? string.Empty,
             UnlockAt = listing.EscrowTransaction?.UnlockAt,
-            CreatedAt = listing.CreatedAt
+            CreatedAt = listing.CreatedAt,
+            BundleId = listing.BundleId,
+            IsBundleAllOrNothing = listing.IsBundleAllOrNothing,
+            BundleTotalTickets = listing.BundleTotalTickets
         };
     }
 }
