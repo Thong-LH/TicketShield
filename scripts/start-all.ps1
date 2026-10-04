@@ -79,7 +79,8 @@ switch ($choice) {
             @{ Name = "MockOrganizer.API";         Path = "src/MockOrganizer/MockOrganizer.API";                 UseDoppler = $true },
             @{ Name = "TicketShield.Identity.API"; Path = "src/TicketShield.Identity/TicketShield.Identity.API"; UseDoppler = $true },
             @{ Name = "TicketShield.API (Core)";   Path = "src/TicketShield.Core/TicketShield.API";             UseDoppler = $true },
-            @{ Name = "TicketShield.Gateway";      Path = "src/TicketShield.Gateway";                          UseDoppler = $false }
+            @{ Name = "TicketShield.Gateway";      Path = "src/TicketShield.Gateway";                          UseDoppler = $false },
+            @{ Name = "TicketShield.Settlement.API"; Path = "src/TicketShield.Settlement.API";                 UseDoppler = $false }
         )
 
         foreach ($svc in $services) {
