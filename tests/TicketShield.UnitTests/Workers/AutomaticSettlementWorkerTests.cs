@@ -20,6 +20,9 @@ public class AutomaticSettlementWorkerTests
             SettledIds.Add(escrowId);
             return Task.FromResult(true);
         }
+
+        public Task<bool> TryResumeReleaseAsync(Guid escrowId, CancellationToken cancellationToken = default)
+            => Task.FromResult(false);
     }
 
     [Fact]

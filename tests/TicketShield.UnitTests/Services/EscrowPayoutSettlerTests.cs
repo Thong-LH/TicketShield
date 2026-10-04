@@ -132,6 +132,126 @@ public class EscrowPayoutSettlerTests
         Assert.Equal("STK không hợp lệ", payout.LastErrorMessage);
     }
 
+    [Fact]
+    public async Task TryResume_WhenReleaseDiedBeforeAReceipt_UsesTheSameIdempotencyKey()
+    {
+        await using var db = CreateDb();
+        var escrowId = await SeedLockedEscrowAsync(db, netPayout: 100_000m, accountNumber: "0938434102", bankCode: "MB");
+        await MarkReleasingAsync(db, escrowId, DateTimeOffset.UtcNow.AddMinutes(-20));
+        var gateway = new MockNapasPayoutGateway();
+        var first = await gateway.TransferAsync(new PayoutTransferRequest
+        {
+            EscrowId = escrowId,
+            RetryCount = 0,
+            BankCode = "MB",
+            AccountNumber = "0938434102",
+            Amount = 100_000m
+        });
+        var settler = new EscrowPayoutSettler(db, new EscrowSettlementCas(db), gateway, TimeSpan.Zero);
+
+        var resumed = await settler.TryResumeReleaseAsync(escrowId);
+
+        Assert.True(resumed);
+        var escrow = await db.EscrowTransactions.AsNoTracking().SingleAsync(row => row.Id == escrowId);
+        var payout = await db.PayoutTransactions.AsNoTracking().SingleAsync(row => row.EscrowId == escrowId);
+        Assert.Equal(EscrowStatus.Released, escrow.Status);
+        Assert.Equal(PayoutStatus.Success, payout.Status);
+        Assert.Equal(first.BankReferenceCode, payout.BankReferenceCode);
+        Assert.Equal(0, payout.RetryCount);
+    }
+
+    [Fact]
+    public async Task TryResume_WhenPayoutAlreadyFailed_DoesNotCallTheGateway()
+    {
+        await using var db = CreateDb();
+        var escrowId = await SeedLockedEscrowAsync(db, netPayout: 100_000m, accountNumber: "12", bankCode: "MB");
+        await MarkReleasingAsync(db, escrowId, DateTimeOffset.UtcNow.AddMinutes(-20));
+        db.PayoutTransactions.Add(new PayoutTransaction
+        {
+            Id = Guid.NewGuid(),
+            EscrowId = escrowId,
+            SellerId = (await db.EscrowTransactions.AsNoTracking().SingleAsync(row => row.Id == escrowId)).SellerId,
+            PayoutCode = "PO-FAILED",
+            Status = PayoutStatus.Failed,
+            RecipientAccountNumber = "12",
+            LastErrorMessage = "STK không hợp lệ",
+            RetryCount = 0
+        });
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+        var gateway = new CountingGateway();
+        var settler = new EscrowPayoutSettler(db, new EscrowSettlementCas(db), gateway, TimeSpan.Zero);
+
+        var resumed = await settler.TryResumeReleaseAsync(escrowId);
+
+        Assert.False(resumed);
+        Assert.Equal(0, gateway.Calls);
+        var payout = await db.PayoutTransactions.AsNoTracking().SingleAsync(row => row.EscrowId == escrowId);
+        Assert.Equal(PayoutStatus.Failed, payout.Status);
+    }
+
+    [Fact]
+    public async Task TryResume_WhenThreeTimeoutsAreAlreadyRecorded_DoesNotCallAgain()
+    {
+        await using var db = CreateDb();
+        var escrowId = await SeedLockedEscrowAsync(db, netPayout: 100_000m, accountNumber: "0938434102", bankCode: "MB");
+        await MarkReleasingAsync(db, escrowId, DateTimeOffset.UtcNow.AddMinutes(-20), retryCount: 3);
+        var sellerId = (await db.EscrowTransactions.AsNoTracking().SingleAsync(row => row.Id == escrowId)).SellerId;
+        db.PayoutTransactions.Add(new PayoutTransaction
+        {
+            Id = Guid.NewGuid(),
+            EscrowId = escrowId,
+            SellerId = sellerId,
+            PayoutCode = "PO-TIMEOUT",
+            Status = PayoutStatus.Processing,
+            RetryCount = 3,
+            LastErrorMessage = "Ngân hàng timeout"
+        });
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+        var gateway = new CountingGateway();
+        var settler = new EscrowPayoutSettler(db, new EscrowSettlementCas(db), gateway, TimeSpan.Zero);
+
+        var resumed = await settler.TryResumeReleaseAsync(escrowId);
+
+        Assert.False(resumed);
+        Assert.Equal(0, gateway.Calls);
+        var escrow = await db.EscrowTransactions.AsNoTracking().SingleAsync(row => row.Id == escrowId);
+        Assert.Equal(EscrowStatus.Releasing, escrow.Status);
+    }
+
+    [Fact]
+    public async Task TryResume_WhenClaimWonButAccountIsInvalid_MarksFailedWithoutATransfer()
+    {
+        await using var db = CreateDb();
+        var escrowId = await SeedLockedEscrowAsync(db, netPayout: 100_000m, accountNumber: "12", bankCode: "MB");
+        await MarkReleasingAsync(db, escrowId, DateTimeOffset.UtcNow.AddMinutes(-20));
+        var gateway = new CountingGateway();
+        var settler = new EscrowPayoutSettler(db, new EscrowSettlementCas(db), gateway, TimeSpan.Zero);
+
+        var resumed = await settler.TryResumeReleaseAsync(escrowId);
+
+        Assert.False(resumed);
+        Assert.Equal(0, gateway.Calls);
+        var payout = await db.PayoutTransactions.AsNoTracking().SingleAsync(row => row.EscrowId == escrowId);
+        Assert.Equal(PayoutStatus.Failed, payout.Status);
+        Assert.Equal("STK không hợp lệ", payout.LastErrorMessage);
+    }
+
+    private static async Task MarkReleasingAsync(
+        TicketShieldDbContext db,
+        Guid escrowId,
+        DateTimeOffset updatedAt,
+        int retryCount = 0)
+    {
+        var escrow = await db.EscrowTransactions.SingleAsync(row => row.Id == escrowId);
+        escrow.Status = EscrowStatus.Releasing;
+        escrow.RetryCount = retryCount;
+        escrow.UpdatedAt = updatedAt;
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+    }
+
     private static TicketShieldDbContext CreateDb()
     {
         var connection = new SqliteConnection("Data Source=:memory:");

@@ -19,6 +19,9 @@ public class ProcessTicketUsedWebhookCommandHandlerTests
             SettledEscrowId = escrowId;
             return Task.FromResult(true);
         }
+
+        public Task<bool> TryResumeReleaseAsync(Guid escrowId, CancellationToken cancellationToken = default)
+            => Task.FromResult(false);
     }
 
     private static (TicketShieldDbContext dbContext, EscrowTransaction escrow) CreateTestFixture(string? ticketCode = "TCK-12345")

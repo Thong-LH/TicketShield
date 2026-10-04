@@ -51,11 +51,67 @@ public class EscrowPayoutSettler : IEscrowPayoutSettler
             return false;
         }
 
+        return await TransferAfterClaimAsync(preview, accountNumber, preview.RetryCount, cancellationToken);
+    }
+
+    public async Task<bool> TryResumeReleaseAsync(Guid escrowId, CancellationToken cancellationToken = default)
+    {
+        var preview = await _db.EscrowTransactions
+            .AsNoTracking()
+            .Include(row => row.Seller)
+            .SingleOrDefaultAsync(row => row.Id == escrowId, cancellationToken);
+        if (preview?.Seller == null || preview.Status != EscrowStatus.Releasing)
+        {
+            return false;
+        }
+
+        var payout = await _db.PayoutTransactions
+            .AsNoTracking()
+            .FirstOrDefaultAsync(row => row.EscrowId == escrowId, cancellationToken);
+        if (payout?.Status == PayoutStatus.Failed)
+        {
+            return false;
+        }
+
+        if (payout?.Status == PayoutStatus.Success)
+        {
+            await SaveAttemptAsync(
+                preview,
+                payout.RetryCount,
+                PayoutStatus.Success,
+                payout.BankReferenceCode,
+                error: null,
+                release: true,
+                cancellationToken);
+            return true;
+        }
+
+        var retryCount = payout?.RetryCount ?? preview.RetryCount;
+        if (retryCount >= 3)
+        {
+            return false;
+        }
+
+        if (!PayoutAccountRules.IsPresent(preview.Seller.PayoutAccountNumber))
+        {
+            return false;
+        }
+
+        var accountNumber = preview.Seller.PayoutAccountNumber.Trim();
+        return await TransferAfterClaimAsync(preview, accountNumber, retryCount, cancellationToken);
+    }
+
+    private async Task<bool> TransferAfterClaimAsync(
+        EscrowTransaction preview,
+        string accountNumber,
+        int retryCount,
+        CancellationToken cancellationToken)
+    {
         if (!PayoutAccountRules.IsValidAccountNumber(accountNumber))
         {
             await SaveAttemptAsync(
                 preview,
-                preview.RetryCount,
+                retryCount,
                 PayoutStatus.Failed,
                 bankReference: null,
                 error: "STK không hợp lệ",
@@ -64,7 +120,6 @@ public class EscrowPayoutSettler : IEscrowPayoutSettler
             return false;
         }
 
-        var retryCount = preview.RetryCount;
         while (true)
         {
             var transfer = await _gateway.TransferAsync(new PayoutTransferRequest

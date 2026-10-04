@@ -40,6 +40,7 @@ public static class DependencyInjection
 
         // Auto-Settlement Escrow Payout Worker (Disburses funds to seller once UnlockAt is reached)
         services.AddHostedService<Workers.AutomaticSettlementWorker>();
+        services.AddHostedService<Workers.StuckSettlementWorker>();
 
         // Event Bus (RabbitMQ + MassTransit)
         services.AddEventBus(configuration);
