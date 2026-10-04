@@ -815,9 +815,15 @@ public class TicketVerificationService : ITicketVerificationService
     {
         ValidateUuid(key);
 
+        var isAlreadyClosed = false;
         await Transaction(async () =>
         {
             var s = await Owned(seller, id, ct);
+            if (s.State == "Closed")
+            {
+                isAlreadyClosed = true;
+                return true;
+            }
             if (s.State is "RequestPending" or "ConfirmPending" or "ResendPending")
             {
                 if (s.PendingOperationId is not null && await Read<CoreOperation>(s.PendingOperationId, ct) is { } old)
@@ -831,6 +837,11 @@ public class TicketVerificationService : ITicketVerificationService
             }
             return true;
         }, ct, id);
+
+        if (isAlreadyClosed)
+        {
+            return Result(await Owned(seller, id, ct));
+        }
 
         var (session, op) = await Begin(seller, key, "Close", id, new { }, null, ct);
         return op.State == "Succeeded" ? Result(session) : await Release(session, op, ct);

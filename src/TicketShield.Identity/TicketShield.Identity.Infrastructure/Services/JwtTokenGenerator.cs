@@ -36,8 +36,9 @@ public class JwtTokenGenerator : IJwtTokenGenerator
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
         };
 
-        // Access Token hạn 15 phút (900 giây) theo kiến trúc Microservice chuẩn
-        const int expiresInSeconds = 900;
+        // Đọc thời gian hết hạn của Access Token từ cấu hình (mặc định 1440 phút / 24h)
+        var expirationInMinutes = int.TryParse(_configuration["JwtSettings:ExpirationInMinutes"], out var exp) ? exp : 1440;
+        var expiresInSeconds = expirationInMinutes * 60;
         var tokenDescriptor = new SecurityTokenDescriptor
         {
             Subject = new ClaimsIdentity(claims),
