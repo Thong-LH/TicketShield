@@ -104,6 +104,8 @@ services:
       RabbitMQ__Password: "guest"
       RabbitMQ__UseInMemory: "false"
       OrganizerGrpc__Address: "http://mock-organizer-api:5004"
+      Settlement__BaseUrl: "http://settlement-api:5005"
+      Settlement__SharedSecret: "ticketshield-settlement-dev"
     ports:
       - "5003:5003"
     depends_on:
@@ -112,6 +114,28 @@ services:
       rabbitmq:
         condition: service_healthy
       mock-organizer-api:
+        condition: service_started
+    networks:
+      - ticketshield_network
+
+  settlement-api:
+    build:
+      context: .
+      dockerfile: src/TicketShield.Settlement.API/Dockerfile
+    container_name: ticketshield_settlement_api
+    restart: always
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:5005
+      ConnectionStrings__Settlement: "Host=postgres;Port=5432;Database=settlement_db;Username=postgres;Password=postgres"
+      Settlement__SharedSecret: "ticketshield-settlement-dev"
+      Settlement__CoreBaseUrl: "http://core-api:5003"
+    ports:
+      - "5005:5005"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      core-api:
         condition: service_started
     networks:
       - ticketshield_network

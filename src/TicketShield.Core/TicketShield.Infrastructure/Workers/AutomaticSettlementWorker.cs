@@ -7,9 +7,6 @@ using TicketShield.Domain.Enums;
 
 namespace TicketShield.Infrastructure.Workers;
 
-/// <summary>
-/// Background worker to automatically disburse funds (Payout) to sellers once the Escrow settlement buffer expires (UnlockAt reached).
-/// </summary>
 public class AutomaticSettlementWorker : BackgroundService
 {
     private readonly IServiceScopeFactory _scopeFactory;
@@ -29,7 +26,6 @@ public class AutomaticSettlementWorker : BackgroundService
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _logger.LogInformation("AutomaticSettlementWorker started with check interval {Interval} seconds.", _checkInterval.TotalSeconds);
-
         using var timer = new PeriodicTimer(_checkInterval);
         while (await timer.WaitForNextTickAsync(stoppingToken))
         {
@@ -49,7 +45,6 @@ public class AutomaticSettlementWorker : BackgroundService
         using var scope = _scopeFactory.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ITicketShieldDbContext>();
         var settler = scope.ServiceProvider.GetRequiredService<IEscrowPayoutSettler>();
-
         var now = DateTimeOffset.UtcNow;
         var dueEscrowIds = await dbContext.EscrowTransactions
             .Where(escrow => escrow.Status == EscrowStatus.Locked &&

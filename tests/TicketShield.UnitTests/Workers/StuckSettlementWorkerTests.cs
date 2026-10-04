@@ -1,39 +1,45 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using TicketShield.Application.Common.Interfaces;
+using TicketShield.Application.Common.Models;
 using TicketShield.Domain.Entities;
 using TicketShield.Domain.Enums;
 using TicketShield.Infrastructure.Persistence;
+using TicketShield.Infrastructure.Services;
 using TicketShield.Infrastructure.Workers;
 
 namespace TicketShield.UnitTests.Workers;
 
 public class StuckSettlementWorkerTests
 {
-    private sealed class RecordingSettler : IEscrowPayoutSettler
+    private sealed class FakeSettlement : ISettlementClient
     {
-        public List<Guid> ResumedIds { get; } = [];
+        public List<string> SentKeys { get; } = [];
 
-        public Task<bool> TrySettleAsync(Guid escrowId, CancellationToken cancellationToken = default)
-            => Task.FromResult(false);
-
-        public Task<bool> TryResumeReleaseAsync(Guid escrowId, CancellationToken cancellationToken = default)
+        public Task<bool> SendAsync(PayoutRequestedEvent command, CancellationToken cancellationToken = default)
         {
-            ResumedIds.Add(escrowId);
+            SentKeys.Add(command.IdempotencyKey);
             return Task.FromResult(true);
         }
+
+        public Task<SettlementTransferStatus?> GetStatusAsync(string idempotencyKey, CancellationToken cancellationToken = default)
+            => Task.FromResult<SettlementTransferStatus?>(null);
     }
 
     [Fact]
     public async Task Reconcile_ResumesOnlyReleasingEscrowsOlderThan15MinutesThatCanStillBePaid()
     {
         var databaseName = Guid.NewGuid().ToString();
-        var settler = new RecordingSettler();
+        var settlement = new FakeSettlement();
         var services = new ServiceCollection();
         services.AddDbContext<TicketShieldDbContext>(options => options.UseInMemoryDatabase(databaseName));
         services.AddScoped<ITicketShieldDbContext>(provider => provider.GetRequiredService<TicketShieldDbContext>());
-        services.AddSingleton<IEscrowPayoutSettler>(settler);
+        services.AddScoped<IPayoutReportApplier, PayoutReportApplier>();
+        services.AddSingleton<ISettlementClient>(settlement);
+        services.AddSingleton<PayoutOutboxDispatcher>();
+        services.AddLogging();
         var provider = services.BuildServiceProvider();
 
         var crashedId = Guid.NewGuid();
@@ -44,10 +50,13 @@ public class StuckSettlementWorkerTests
         await using (var db = provider.GetRequiredService<TicketShieldDbContext>())
         {
             db.EscrowTransactions.AddRange(
-                Escrow(crashedId, sellerId, EscrowStatus.Releasing, DateTimeOffset.UtcNow.AddMinutes(-16)),
-                Escrow(recentId, sellerId, EscrowStatus.Releasing, DateTimeOffset.UtcNow.AddMinutes(-5)),
-                Escrow(failedId, sellerId, EscrowStatus.Releasing, DateTimeOffset.UtcNow.AddMinutes(-20)),
-                Escrow(exhaustedId, sellerId, EscrowStatus.Releasing, DateTimeOffset.UtcNow.AddMinutes(-20)));
+                Escrow(crashedId, sellerId, DateTimeOffset.UtcNow.AddMinutes(-16)),
+                Escrow(recentId, sellerId, DateTimeOffset.UtcNow.AddMinutes(-5)),
+                Escrow(failedId, sellerId, DateTimeOffset.UtcNow.AddMinutes(-20)),
+                Escrow(exhaustedId, sellerId, DateTimeOffset.UtcNow.AddMinutes(-20)));
+            db.OutboxMessages.Add(Letter(crashedId, processed: false));
+            db.OutboxMessages.Add(Letter(failedId, processed: true));
+            db.OutboxMessages.Add(Letter(exhaustedId, processed: true));
             db.PayoutTransactions.AddRange(
                 new PayoutTransaction
                 {
@@ -55,8 +64,7 @@ public class StuckSettlementWorkerTests
                     EscrowId = failedId,
                     SellerId = sellerId,
                     PayoutCode = "PO-FAILED",
-                    Status = PayoutStatus.Failed,
-                    RetryCount = 0
+                    Status = PayoutStatus.Failed
                 },
                 new PayoutTransaction
                 {
@@ -79,17 +87,33 @@ public class StuckSettlementWorkerTests
         var recovered = await worker.ReconcileStuckReleasesAsync();
 
         Assert.Equal(1, recovered);
-        Assert.Equal([crashedId], settler.ResumedIds);
+        Assert.Equal([$"IDEMP-{crashedId}-0"], settlement.SentKeys);
     }
 
-    private static EscrowTransaction Escrow(Guid id, Guid sellerId, EscrowStatus status, DateTimeOffset updatedAt) => new()
+    private static EscrowTransaction Escrow(Guid id, Guid sellerId, DateTimeOffset updatedAt) => new()
     {
         Id = id,
         ListingId = Guid.NewGuid(),
         BuyerId = Guid.NewGuid(),
         SellerId = sellerId,
-        Status = status,
+        Status = EscrowStatus.Releasing,
         InSettlementBuffer = true,
         UpdatedAt = updatedAt
     };
+
+    private static OutboxMessage Letter(Guid escrowId, bool processed)
+    {
+        var command = new PayoutRequestedEvent
+        {
+            EscrowId = escrowId,
+            IdempotencyKey = $"IDEMP-{escrowId}-0"
+        };
+        return new OutboxMessage
+        {
+            Id = Guid.NewGuid(),
+            EventType = nameof(PayoutRequestedEvent),
+            Payload = JsonSerializer.Serialize(command),
+            ProcessedAt = processed ? DateTimeOffset.UtcNow : null
+        };
+    }
 }

@@ -7,6 +7,9 @@ public class PayoutRequestedEvent
     public decimal Amount { get; set; }
     public int RetryCount { get; set; }
     public string IdempotencyKey { get; set; } = string.Empty;
+    public string BankCode { get; set; } = string.Empty;
+    public string AccountNumber { get; set; } = string.Empty;
+    public string AccountName { get; set; } = string.Empty;
 }
 
 public static class PayoutIdempotency

@@ -34,11 +34,16 @@ public static class DependencyInjection
         // Atomic escrow handoff between settlement and dispute (SCRUM-179)
         services.AddScoped<IEscrowSettlementCas, Services.EscrowSettlementCas>();
 
-        // Mock NAPAS payout. One instance keeps idempotency keys for the process lifetime (SCRUM-184).
-        services.AddSingleton<IPayoutGateway, Services.MockNapasPayoutGateway>();
         services.AddScoped<IEscrowPayoutSettler, Services.EscrowPayoutSettler>();
+        services.AddScoped<IPayoutReportApplier, Services.PayoutReportApplier>();
+        services.AddHttpClient<ISettlementClient, Services.HttpSettlementClient>(client =>
+        {
+            var baseUrl = configuration["Settlement:BaseUrl"] ?? "http://localhost:5005";
+            client.BaseAddress = new Uri(baseUrl.TrimEnd('/') + "/");
+        });
+        services.AddSingleton<Workers.PayoutOutboxDispatcher>();
+        services.AddHostedService(provider => provider.GetRequiredService<Workers.PayoutOutboxDispatcher>());
 
-        // Auto-Settlement Escrow Payout Worker (Disburses funds to seller once UnlockAt is reached)
         services.AddHostedService<Workers.AutomaticSettlementWorker>();
         services.AddHostedService<Workers.StuckSettlementWorker>();
 

@@ -19,6 +19,16 @@ public class EscrowSettlementCas : IEscrowSettlementCas
     public async Task<bool> TryBeginReleaseAsync(Guid escrowId, CancellationToken cancellationToken = default)
     {
         await using var transaction = await _db.Database.BeginTransactionAsync(cancellationToken);
+        var escrow = await _db.EscrowTransactions
+            .AsNoTracking()
+            .Include(row => row.Seller)
+            .SingleOrDefaultAsync(row => row.Id == escrowId, cancellationToken);
+        if (escrow?.Seller == null || !PayoutAccountRules.IsPresent(escrow.Seller.PayoutAccountNumber))
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return false;
+        }
+
         var won = await TryTransitionFromLockedAsync(escrowId, EscrowStatus.Releasing, cancellationToken);
         if (!won)
         {
@@ -26,16 +36,18 @@ public class EscrowSettlementCas : IEscrowSettlementCas
             return false;
         }
 
-        var escrow = await _db.EscrowTransactions.AsNoTracking()
-            .SingleAsync(row => row.Id == escrowId, cancellationToken);
         var now = DateTimeOffset.UtcNow;
+        var accountNumber = escrow.Seller.PayoutAccountNumber.Trim();
         var payoutRequested = new PayoutRequestedEvent
         {
             EscrowId = escrow.Id,
             SellerId = escrow.SellerId,
             Amount = escrow.NetSellerPayout,
             RetryCount = escrow.RetryCount,
-            IdempotencyKey = PayoutIdempotency.Key(escrow.Id, escrow.RetryCount)
+            IdempotencyKey = PayoutIdempotency.Key(escrow.Id, escrow.RetryCount),
+            BankCode = escrow.Seller.PayoutBankCode,
+            AccountNumber = accountNumber,
+            AccountName = escrow.Seller.PayoutAccountName
         };
         _db.OutboxMessages.Add(new OutboxMessage
         {
@@ -45,6 +57,28 @@ public class EscrowSettlementCas : IEscrowSettlementCas
             CreatedAt = now,
             UpdatedAt = now
         });
+
+        var payout = await _db.PayoutTransactions.FirstOrDefaultAsync(row => row.EscrowId == escrow.Id, cancellationToken);
+        if (payout == null)
+        {
+            payout = new PayoutTransaction
+            {
+                Id = Guid.NewGuid(),
+                EscrowId = escrow.Id,
+                SellerId = escrow.SellerId,
+                PayoutCode = $"PO-{escrow.Id.ToString("N")[..8].ToUpperInvariant()}",
+                CreatedAt = now
+            };
+            _db.PayoutTransactions.Add(payout);
+        }
+
+        payout.RecipientBankCode = payoutRequested.BankCode;
+        payout.RecipientAccountNumber = accountNumber;
+        payout.RecipientAccountName = payoutRequested.AccountName;
+        payout.Amount = escrow.NetSellerPayout;
+        payout.Status = PayoutStatus.Processing;
+        payout.RetryCount = escrow.RetryCount;
+        payout.UpdatedAt = now;
         await _db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return true;

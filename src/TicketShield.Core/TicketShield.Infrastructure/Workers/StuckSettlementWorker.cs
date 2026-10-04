@@ -1,15 +1,14 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using TicketShield.Application.Common.Interfaces;
+using TicketShield.Application.Common.Models;
 using TicketShield.Domain.Enums;
 
 namespace TicketShield.Infrastructure.Workers;
 
-/// <summary>
-/// Recovers escrows left in Releasing after the payout call stopped before a receipt was stored.
-/// </summary>
 public class StuckSettlementWorker : BackgroundService
 {
     public static readonly TimeSpan DefaultStuckAge = TimeSpan.FromMinutes(15);
@@ -37,7 +36,6 @@ public class StuckSettlementWorker : BackgroundService
             "StuckSettlementWorker started. Interval {Interval} seconds, stuck age {Age} minutes.",
             _checkInterval.TotalSeconds,
             _stuckAge.TotalMinutes);
-
         using var timer = new PeriodicTimer(_checkInterval);
         while (await timer.WaitForNextTickAsync(stoppingToken))
         {
@@ -55,27 +53,61 @@ public class StuckSettlementWorker : BackgroundService
     public async Task<int> ReconcileStuckReleasesAsync(CancellationToken ct = default)
     {
         using var scope = _scopeFactory.CreateScope();
-        var dbContext = scope.ServiceProvider.GetRequiredService<ITicketShieldDbContext>();
-        var settler = scope.ServiceProvider.GetRequiredService<IEscrowPayoutSettler>();
-
+        var db = scope.ServiceProvider.GetRequiredService<ITicketShieldDbContext>();
+        var client = scope.ServiceProvider.GetRequiredService<ISettlementClient>();
+        var applier = scope.ServiceProvider.GetRequiredService<IPayoutReportApplier>();
+        var dispatcher = scope.ServiceProvider.GetRequiredService<PayoutOutboxDispatcher>();
         var cutoff = DateTimeOffset.UtcNow - _stuckAge;
-        var stuckEscrowIds = await dbContext.EscrowTransactions
+        var stuckIds = await db.EscrowTransactions
             .Where(escrow => escrow.Status == EscrowStatus.Releasing && escrow.UpdatedAt <= cutoff)
-            .Where(escrow => escrow.PayoutTransaction == null
-                || (escrow.PayoutTransaction.Status != PayoutStatus.Failed
-                    && escrow.PayoutTransaction.RetryCount < 3))
             .Select(escrow => escrow.Id)
             .ToListAsync(ct);
 
-        var recovered = 0;
-        foreach (var escrowId in stuckEscrowIds)
+        var handled = 0;
+        foreach (var escrowId in stuckIds)
         {
-            if (await settler.TryResumeReleaseAsync(escrowId, ct))
+            var message = await db.OutboxMessages
+                .Where(row => row.EventType == nameof(PayoutRequestedEvent) && row.Payload.Contains(escrowId.ToString()))
+                .OrderByDescending(row => row.CreatedAt)
+                .FirstOrDefaultAsync(ct);
+            if (message == null)
             {
-                recovered++;
+                continue;
+            }
+
+            if (message.ProcessedAt == null)
+            {
+                var sent = await dispatcher.DispatchPendingAsync(ct);
+                if (sent > 0)
+                {
+                    handled++;
+                }
+
+                continue;
+            }
+
+            var command = JsonSerializer.Deserialize<PayoutRequestedEvent>(message.Payload);
+            if (command == null)
+            {
+                continue;
+            }
+
+            var status = await client.GetStatusAsync(command.IdempotencyKey, ct);
+            if (status == null)
+            {
+                continue;
+            }
+
+            if (status.State == "Succeeded" && await applier.ApplyAsync(escrowId, succeeded: true, status.BankReference, ct))
+            {
+                handled++;
+            }
+            else if (status.State == "Failed" && await applier.ApplyAsync(escrowId, succeeded: false, bankReference: null, ct))
+            {
+                handled++;
             }
         }
 
-        return recovered;
+        return handled;
     }
 }

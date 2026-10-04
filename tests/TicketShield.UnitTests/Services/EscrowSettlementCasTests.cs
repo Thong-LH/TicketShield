@@ -83,7 +83,10 @@ public class EscrowSettlementCasTests
         {
             Id = Guid.NewGuid(),
             Email = $"seller-{suffix}@test.local",
-            FullName = "Seller"
+            FullName = "Seller",
+            PayoutBankCode = "MB",
+            PayoutAccountNumber = "0938434102",
+            PayoutAccountName = "SELLER"
         };
         var buyer = new ShadowUser
         {
