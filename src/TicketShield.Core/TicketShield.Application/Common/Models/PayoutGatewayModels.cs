@@ -10,8 +10,16 @@ public class PayoutTransferRequest
     public decimal Amount { get; set; }
 }
 
+public enum PayoutGatewayOutcome
+{
+    Succeeded,
+    TimedOut,
+    InvalidAccount
+}
+
 public class PayoutGatewayResult
 {
+    public PayoutGatewayOutcome Outcome { get; set; } = PayoutGatewayOutcome.Succeeded;
     public string IdempotencyKey { get; set; } = string.Empty;
     public string BankReferenceCode { get; set; } = string.Empty;
     public decimal Amount { get; set; }

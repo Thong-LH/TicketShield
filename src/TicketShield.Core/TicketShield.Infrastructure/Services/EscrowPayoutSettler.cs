@@ -11,69 +11,173 @@ public class EscrowPayoutSettler : IEscrowPayoutSettler
     private readonly ITicketShieldDbContext _db;
     private readonly IEscrowSettlementCas _cas;
     private readonly IPayoutGateway _gateway;
+    private readonly TimeSpan _firstRetryDelay;
 
     public EscrowPayoutSettler(
         ITicketShieldDbContext db,
         IEscrowSettlementCas cas,
         IPayoutGateway gateway)
+        : this(db, cas, gateway, TimeSpan.FromSeconds(1))
+    {
+    }
+
+    public EscrowPayoutSettler(
+        ITicketShieldDbContext db,
+        IEscrowSettlementCas cas,
+        IPayoutGateway gateway,
+        TimeSpan firstRetryDelay)
     {
         _db = db;
         _cas = cas;
         _gateway = gateway;
+        _firstRetryDelay = firstRetryDelay;
     }
 
     public async Task<bool> TrySettleAsync(Guid escrowId, CancellationToken cancellationToken = default)
     {
+        var preview = await _db.EscrowTransactions
+            .AsNoTracking()
+            .Include(row => row.Seller)
+            .SingleOrDefaultAsync(row => row.Id == escrowId, cancellationToken);
+        if (preview?.Seller == null || !PayoutAccountRules.IsPresent(preview.Seller.PayoutAccountNumber))
+        {
+            return false;
+        }
+
+        var accountNumber = preview.Seller.PayoutAccountNumber.Trim();
         var won = await _cas.TryBeginReleaseAsync(escrowId, cancellationToken);
         if (!won)
         {
             return false;
         }
 
-        var escrow = await _db.EscrowTransactions
-            .AsNoTracking()
-            .Include(row => row.Seller)
-            .SingleAsync(row => row.Id == escrowId, cancellationToken);
-
-        var transfer = await _gateway.TransferAsync(new PayoutTransferRequest
+        if (!PayoutAccountRules.IsValidAccountNumber(accountNumber))
         {
-            EscrowId = escrow.Id,
-            RetryCount = escrow.RetryCount,
-            AccountName = escrow.Seller?.FullName ?? string.Empty,
-            Amount = escrow.NetSellerPayout
-        }, cancellationToken);
+            await SaveAttemptAsync(
+                preview,
+                preview.RetryCount,
+                PayoutStatus.Failed,
+                bankReference: null,
+                error: "STK không hợp lệ",
+                release: false,
+                cancellationToken);
+            return false;
+        }
 
+        var retryCount = preview.RetryCount;
+        while (true)
+        {
+            var transfer = await _gateway.TransferAsync(new PayoutTransferRequest
+            {
+                EscrowId = preview.Id,
+                RetryCount = retryCount,
+                BankCode = preview.Seller.PayoutBankCode,
+                AccountNumber = accountNumber,
+                AccountName = preview.Seller.PayoutAccountName,
+                Amount = preview.NetSellerPayout
+            }, cancellationToken);
+
+            if (transfer.Outcome == PayoutGatewayOutcome.Succeeded)
+            {
+                await SaveAttemptAsync(
+                    preview,
+                    retryCount,
+                    PayoutStatus.Success,
+                    transfer.BankReferenceCode,
+                    error: null,
+                    release: true,
+                    cancellationToken);
+                return true;
+            }
+
+            if (transfer.Outcome == PayoutGatewayOutcome.InvalidAccount)
+            {
+                await SaveAttemptAsync(
+                    preview,
+                    retryCount,
+                    PayoutStatus.Failed,
+                    bankReference: null,
+                    error: "STK không hợp lệ",
+                    release: false,
+                    cancellationToken);
+                return false;
+            }
+
+            retryCount++;
+            if (retryCount >= 3)
+            {
+                await SaveAttemptAsync(
+                    preview,
+                    retryCount,
+                    PayoutStatus.Processing,
+                    bankReference: null,
+                    error: "Ngân hàng timeout",
+                    release: false,
+                    cancellationToken);
+                return false;
+            }
+
+            await SaveAttemptAsync(
+                preview,
+                retryCount,
+                PayoutStatus.Processing,
+                bankReference: null,
+                error: "Ngân hàng timeout",
+                release: false,
+                cancellationToken);
+
+            if (_firstRetryDelay > TimeSpan.Zero)
+            {
+                await Task.Delay(_firstRetryDelay * retryCount, cancellationToken);
+            }
+        }
+    }
+
+    private async Task SaveAttemptAsync(
+        EscrowTransaction preview,
+        int retryCount,
+        PayoutStatus status,
+        string? bankReference,
+        string? error,
+        bool release,
+        CancellationToken cancellationToken)
+    {
         var now = DateTimeOffset.UtcNow;
         var payout = await _db.PayoutTransactions
-            .FirstOrDefaultAsync(row => row.EscrowId == escrowId, cancellationToken);
+            .FirstOrDefaultAsync(row => row.EscrowId == preview.Id, cancellationToken);
         if (payout == null)
         {
             payout = new PayoutTransaction
             {
                 Id = Guid.NewGuid(),
-                EscrowId = escrow.Id,
-                SellerId = escrow.SellerId,
-                PayoutCode = $"PO-{escrow.Id.ToString("N")[..8].ToUpperInvariant()}",
+                EscrowId = preview.Id,
+                SellerId = preview.SellerId,
+                PayoutCode = $"PO-{preview.Id.ToString("N")[..8].ToUpperInvariant()}",
                 CreatedAt = now
             };
             _db.PayoutTransactions.Add(payout);
         }
 
-        payout.RecipientAccountName = string.IsNullOrWhiteSpace(escrow.Seller?.FullName)
-            ? string.Empty
-            : escrow.Seller.FullName.ToUpperInvariant();
-        payout.Amount = transfer.Amount;
-        payout.Status = PayoutStatus.Success;
-        payout.BankReferenceCode = transfer.BankReferenceCode;
-        payout.RetryCount = escrow.RetryCount;
-        payout.ProcessedAt = now;
+        payout.RecipientBankCode = preview.Seller.PayoutBankCode;
+        payout.RecipientAccountNumber = preview.Seller.PayoutAccountNumber;
+        payout.RecipientAccountName = preview.Seller.PayoutAccountName;
+        payout.Amount = preview.NetSellerPayout;
+        payout.Status = status;
+        payout.BankReferenceCode = bankReference;
+        payout.RetryCount = retryCount;
+        payout.LastErrorMessage = error;
+        payout.ProcessedAt = status == PayoutStatus.Success ? now : null;
         payout.UpdatedAt = now;
 
-        var tracked = await _db.EscrowTransactions.SingleAsync(row => row.Id == escrowId, cancellationToken);
-        tracked.Status = EscrowStatus.Released;
-        tracked.InSettlementBuffer = false;
+        var tracked = await _db.EscrowTransactions.SingleAsync(row => row.Id == preview.Id, cancellationToken);
+        tracked.RetryCount = retryCount;
         tracked.UpdatedAt = now;
+        if (release)
+        {
+            tracked.Status = EscrowStatus.Released;
+            tracked.InSettlementBuffer = false;
+        }
+
         await _db.SaveChangesAsync(cancellationToken);
-        return true;
     }
 }

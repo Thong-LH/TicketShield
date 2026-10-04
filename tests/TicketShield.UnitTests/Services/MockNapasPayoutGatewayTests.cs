@@ -65,6 +65,34 @@ public class MockNapasPayoutGatewayTests
         Assert.False(retry.AlreadyTransferred);
     }
 
+    [Fact]
+    public async Task Transfer_WhenTimeoutIsQueued_DoesNotStoreAReceipt()
+    {
+        var gateway = new MockNapasPayoutGateway();
+        var escrowId = Guid.NewGuid();
+        gateway.TimeoutNext(escrowId, 1);
+
+        var timedOut = await gateway.TransferAsync(Request(escrowId, retryCount: 0));
+        var succeeded = await gateway.TransferAsync(Request(escrowId, retryCount: 0));
+
+        Assert.Equal(PayoutGatewayOutcome.TimedOut, timedOut.Outcome);
+        Assert.Equal(PayoutGatewayOutcome.Succeeded, succeeded.Outcome);
+        Assert.False(string.IsNullOrWhiteSpace(succeeded.BankReferenceCode));
+    }
+
+    [Fact]
+    public async Task Transfer_WhenAccountIsRejected_ReturnsInvalidAccount()
+    {
+        var gateway = new MockNapasPayoutGateway();
+        var escrowId = Guid.NewGuid();
+        gateway.RejectAccount(escrowId);
+
+        var result = await gateway.TransferAsync(Request(escrowId, retryCount: 0));
+
+        Assert.Equal(PayoutGatewayOutcome.InvalidAccount, result.Outcome);
+        Assert.True(string.IsNullOrWhiteSpace(result.BankReferenceCode));
+    }
+
     private static PayoutTransferRequest Request(Guid escrowId, int retryCount) => new()
     {
         EscrowId = escrowId,
