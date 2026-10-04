@@ -16,5 +16,14 @@ public sealed class CoreSession
     public Guid? ListingId { get; set; }
     public string? PrivateAccessToken { get; set; }
     public long? Price { get; set; }
+
+    /// <summary>
+    /// Ý định gói vé của phiên Publish. Được ghi lại cùng lúc đặt giá để tiến trình
+    /// khôi phục (Recover) tái tạo listing đúng BundleId, tránh sinh vé mồ côi.
+    /// </summary>
+    public Guid? BundleId { get; set; }
+    public bool IsBundleAllOrNothing { get; set; }
+    public int BundleTotalTickets { get; set; }
+
     public DateTimeOffset UpdatedAt { get; set; }
 }

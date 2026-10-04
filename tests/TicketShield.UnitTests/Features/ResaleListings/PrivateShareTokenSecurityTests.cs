@@ -94,6 +94,8 @@ public class PrivateShareTokenSecurityTests
         public Task<VerificationResult> Get(string seller, string id, CancellationToken ct) => throw new NotImplementedException();
         public Task<VerificationResult> Close(string seller, string id, string key, CancellationToken ct) => throw new NotImplementedException();
         public Task<VerificationResult> Publish(string seller, string key, PublishBody body, CancellationToken ct) => throw new NotImplementedException();
+        public Task<VerificationResult> PublishBundleItem(
+            string seller, string key, PublishBody body, Guid bundleId, int bundleTotalTickets, bool allOrNothing, CancellationToken ct) => throw new NotImplementedException();
         public Task<VerificationResult> Cancel(string seller, string id, string key, CancellationToken ct) => throw new NotImplementedException();
         public Task<List<ListingResult>> Marketplace(int page, int size, CancellationToken ct) => throw new NotImplementedException();
         public Task RecoverPending(CancellationToken ct) => throw new NotImplementedException();

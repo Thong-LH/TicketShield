@@ -544,7 +544,7 @@ public class TicketVerificationService : ITicketVerificationService
         }
         if (op.Kind == "Publish")
         {
-            return await PublishClaimed(s, op, s.Price!.Value, s.PrivateAccessToken != null, ct);
+            return await PublishClaimed(s, op, s.Price!.Value, s.PrivateAccessToken != null, ct, s.BundleId, s.IsBundleAllOrNothing, s.BundleTotalTickets);
         }
 
         var kind = op.Kind switch
@@ -598,6 +598,39 @@ public class TicketVerificationService : ITicketVerificationService
 
     public async Task<VerificationResult> Publish(string seller, string key, PublishBody body, CancellationToken ct)
     {
+        return await PublishCore(seller, key, body, ct, null, false, 1);
+    }
+
+    public async Task<VerificationResult> PublishBundleItem(
+        string seller,
+        string key,
+        PublishBody body,
+        Guid bundleId,
+        int bundleTotalTickets,
+        bool allOrNothing,
+        CancellationToken ct)
+    {
+        if (bundleId == Guid.Empty)
+        {
+            throw Error("INVALID_BUNDLE_REFERENCE", 400);
+        }
+        if (bundleTotalTickets is < 2 or > ResaleListing.MaxBundleTickets)
+        {
+            throw Error("BUNDLE_SIZE_OUT_OF_RANGE", 400);
+        }
+
+        return await PublishCore(seller, key, body, ct, bundleId, allOrNothing, bundleTotalTickets);
+    }
+
+    private async Task<VerificationResult> PublishCore(
+        string seller,
+        string key,
+        PublishBody body,
+        CancellationToken ct,
+        Guid? bundleId,
+        bool isBundleAllOrNothing,
+        int bundleTotalTickets)
+    {
         if (body.ResalePrice <= 0 || body.ResalePrice > VndAmount.MaxDatabaseValue)
         {
             throw Error("INVALID_VND_PRICE", 422);
@@ -621,12 +654,15 @@ public class TicketVerificationService : ITicketVerificationService
             if (fresh.PendingOperationId == OpKey(seller, "Publish", key))
             {
                 fresh.Price = body.ResalePrice;
+                fresh.BundleId = bundleId;
+                fresh.IsBundleAllOrNothing = isBundleAllOrNothing;
+                fresh.BundleTotalTickets = bundleTotalTickets;
                 await Put(SessionKey(fresh.Id), fresh, ct);
             }
             return fresh;
         }, ct, s.Id);
 
-        return await PublishClaimed(s, op, body.ResalePrice, body.IsPrivate, ct, body.BundleId, body.IsBundleAllOrNothing, body.BundleTotalTickets);
+        return await PublishClaimed(s, op, body.ResalePrice, body.IsPrivate, ct, bundleId, isBundleAllOrNothing, bundleTotalTickets);
     }
 
     private async Task<VerificationResult> PublishClaimed(

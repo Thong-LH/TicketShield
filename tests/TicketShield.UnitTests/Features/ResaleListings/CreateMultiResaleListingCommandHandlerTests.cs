@@ -90,6 +90,23 @@ public class CreateMultiResaleListingCommandHandlerTests
                 throw new ResaleWorkflowException("SIMULATED_PUBLISH_FAILURE", 500);
             }
 
+            return PersistListing(seller, body, null, false, 1);
+        }
+
+        public Task<VerificationResult> PublishBundleItem(
+            string seller, string key, PublishBody body, Guid bundleId, int bundleTotalTickets, bool allOrNothing, CancellationToken ct)
+        {
+            if (ShouldFailOnSecondItem && body.VerificationId == "VERIFY-2")
+            {
+                throw new ResaleWorkflowException("SIMULATED_PUBLISH_FAILURE", 500);
+            }
+
+            return PersistListing(seller, body, bundleId, allOrNothing, bundleTotalTickets);
+        }
+
+        private Task<VerificationResult> PersistListing(
+            string seller, PublishBody body, Guid? bundleId, bool allOrNothing, int bundleTotalTickets)
+        {
             var listingId = Guid.NewGuid();
             var eventEntity = _dbContext.Events.First();
             var tierEntity = _dbContext.TicketTiers.First();
@@ -106,9 +123,9 @@ public class CreateMultiResaleListingCommandHandlerTests
                 IsPrivate = body.IsPrivate,
                 ListingStatus = ListingStatus.Verified,
                 VerificationStatus = VerificationStatus.Verified,
-                BundleId = body.BundleId,
-                IsBundleAllOrNothing = body.IsBundleAllOrNothing,
-                BundleTotalTickets = body.BundleTotalTickets,
+                BundleId = bundleId,
+                IsBundleAllOrNothing = allOrNothing,
+                BundleTotalTickets = bundleTotalTickets,
                 CreatedAt = DateTimeOffset.UtcNow,
                 UpdatedAt = DateTimeOffset.UtcNow
             };
@@ -179,7 +196,7 @@ public class CreateMultiResaleListingCommandHandlerTests
     }
 
     [Fact]
-    public async Task Handle_WhenItemsLessThanTwo_ThrowsResaleWorkflowException_BULK_REQUIRES_MIN_2_ITEMS()
+    public async Task Handle_WhenSingleItem_ThrowsResaleWorkflowException_BUNDLE_REQUIRES_2_TO_3_ITEMS()
     {
         var (dbContext, seller) = CreateInMemoryDbContext();
         var handler = new CreateMultiResaleListingCommandHandler(dbContext, null, new MockCurrentUserService(seller.Id));
@@ -195,7 +212,53 @@ public class CreateMultiResaleListingCommandHandlerTests
         };
 
         var ex = await Assert.ThrowsAsync<ResaleWorkflowException>(() => handler.Handle(command, CancellationToken.None));
-        Assert.Equal("BULK_REQUIRES_MIN_2_ITEMS", ex.Code);
+        Assert.Equal("BUNDLE_REQUIRES_2_TO_3_ITEMS", ex.Code);
+        Assert.Equal(400, ex.HttpStatus);
+    }
+
+    [Fact]
+    public async Task Handle_WhenMoreThanThreeItems_ThrowsResaleWorkflowException_BUNDLE_REQUIRES_2_TO_3_ITEMS()
+    {
+        var (dbContext, seller) = CreateInMemoryDbContext();
+        var handler = new CreateMultiResaleListingCommandHandler(dbContext, null, new MockCurrentUserService(seller.Id));
+
+        var command = new CreateMultiResaleListingCommand
+        {
+            Seller = seller.Id.ToString("D"),
+            RootIdempotencyKey = Guid.NewGuid().ToString("D"),
+            Body = new BulkPublishBody(new List<BulkPublishItem>
+            {
+                new("VERIFY-1", 1_500_000),
+                new("VERIFY-2", 1_500_000),
+                new("VERIFY-3", 1_500_000),
+                new("VERIFY-4", 1_500_000)
+            })
+        };
+
+        var ex = await Assert.ThrowsAsync<ResaleWorkflowException>(() => handler.Handle(command, CancellationToken.None));
+        Assert.Equal("BUNDLE_REQUIRES_2_TO_3_ITEMS", ex.Code);
+        Assert.Equal(400, ex.HttpStatus);
+    }
+
+    [Fact]
+    public async Task Handle_WhenItemMissingVerificationId_ThrowsResaleWorkflowException_BULK_ITEM_MISSING_VERIFICATION_ID()
+    {
+        var (dbContext, seller) = CreateInMemoryDbContext();
+        var handler = new CreateMultiResaleListingCommandHandler(dbContext, null, new MockCurrentUserService(seller.Id));
+
+        var command = new CreateMultiResaleListingCommand
+        {
+            Seller = seller.Id.ToString("D"),
+            RootIdempotencyKey = Guid.NewGuid().ToString("D"),
+            Body = new BulkPublishBody(new List<BulkPublishItem>
+            {
+                new("VERIFY-1", 1_500_000),
+                new("   ", 1_500_000)
+            })
+        };
+
+        var ex = await Assert.ThrowsAsync<ResaleWorkflowException>(() => handler.Handle(command, CancellationToken.None));
+        Assert.Equal("BULK_ITEM_MISSING_VERIFICATION_ID", ex.Code);
         Assert.Equal(400, ex.HttpStatus);
     }
 

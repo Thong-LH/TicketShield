@@ -97,51 +97,51 @@ public class GetMyPurchasedTicketsQueryHandler : IRequestHandler<GetMyPurchasedT
             };
 
             var bundleId = e.BundleId ?? e.Listing?.BundleId;
-            var bundleTotal = e.Listing?.BundleTotalTickets ?? 1;
 
+            // Chỉ dựng combo từ listing THẬT trong DB. Không bao giờ suy diễn mã vé
+            // bằng cách nối hậu tố (ví dụ "-T1") khi thiếu vé thật.
             List<ResaleListing> bundleListings = new();
             if (bundleId != null)
             {
                 bundleListings = await _dbContext.ResaleListings
                     .AsNoTracking()
                     .Where(l => l.BundleId == bundleId)
+                    .OrderBy(l => l.CreatedAt)
+                    .ThenBy(l => l.Id)
                     .ToListAsync(cancellationToken);
             }
 
-            var effectiveBundleTotal = Math.Max(bundleTotal, bundleListings.Count);
+            // Mã vé được cấp theo đúng thứ tự listing đã sang tên ở SePay webhook.
+            var issuedCodes = SplitIssuedCodes(e.NewTicketCode);
+            var issuedQrCodes = SplitIssuedCodes(e.QrCodeData);
+
+            var effectiveBundleTotal = bundleListings.Count >= 2 ? bundleListings.Count : 1;
             var bundleItems = new List<PurchasedTicketItemDto>();
 
-            if (bundleListings.Count >= 2)
+            for (var index = 0; index < bundleListings.Count; index++)
             {
-                foreach (var bl in bundleListings)
+                var bl = bundleListings[index];
+                var itemSeat = !string.IsNullOrWhiteSpace(bl.SeatZone) ? bl.SeatZone : tierName;
+                var itemCode = index < issuedCodes.Count ? issuedCodes[index] : string.Empty;
+                var itemQr = index < issuedQrCodes.Count ? issuedQrCodes[index] : itemCode;
+
+                bundleItems.Add(new PurchasedTicketItemDto
                 {
-                    var itemSeat = !string.IsNullOrWhiteSpace(bl.SeatZone) ? bl.SeatZone : tierName;
-                    bundleItems.Add(new PurchasedTicketItemDto
-                    {
-                        ListingId = bl.Id,
-                        TicketCode = passCode,
-                        SeatZone = itemSeat,
-                        QrCodeData = qrPayload,
-                        QrCodeImageUrl = qrUrl
-                    });
-                }
+                    ListingId = bl.Id,
+                    TicketCode = itemCode,
+                    SeatZone = itemSeat,
+                    QrCodeData = itemQr,
+                    QrCodeImageUrl = BuildQrImageUrl(itemQr)
+                });
             }
-            else if (effectiveBundleTotal >= 2)
-            {
-                var seats = rawSeatZone.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-                for (int i = 0; i < effectiveBundleTotal; i++)
-                {
-                    var seatText = seats.Length > i ? seats[i] : (seats.Length > 0 ? $"{seats[0]} (#{i + 1})" : $"{tierName} (Seat {i + 1})");
-                    bundleItems.Add(new PurchasedTicketItemDto
-                    {
-                        ListingId = e.ListingId,
-                        TicketCode = !string.IsNullOrEmpty(passCode) ? $"{passCode}-T{i + 1}" : string.Empty,
-                        SeatZone = seatText,
-                        QrCodeData = qrPayload,
-                        QrCodeImageUrl = qrUrl
-                    });
-                }
-            }
+
+            // Vé đầu tiên của gói làm vé chính để các màn hình đơn lẻ vẫn hiển thị đúng.
+            var primaryPassCode = bundleItems.Count > 0 && bundleItems[0].TicketCode.Length > 0
+                ? bundleItems[0].TicketCode
+                : passCode;
+            var primaryQrPayload = bundleItems.Count > 0 && bundleItems[0].QrCodeData.Length > 0
+                ? bundleItems[0].QrCodeData
+                : qrPayload;
 
             dtos.Add(new PurchasedTicketDto
             {
@@ -152,16 +152,16 @@ public class GetMyPurchasedTicketsQueryHandler : IRequestHandler<GetMyPurchasedT
                 EventVenue = eventVenue,
                 EventStartAt = eventStart,
                 TierName = tierName,
-                SeatZone = rawSeatZone,
-                TicketPassCode = passCode,
+                SeatZone = bundleItems.Count > 0 ? bundleItems[0].SeatZone : rawSeatZone,
+                TicketPassCode = primaryPassCode,
                 TotalAmountPaid = e.TotalBuyerPaid,
                 Status = status,
                 PaymentReference = e.PaymentReference,
                 HoldExpiresAt = null,
                 RecipientName = e.RecipientName ?? e.Buyer?.FullName ?? "Buyer",
                 RecipientEmail = e.RecipientEmail ?? e.Buyer?.Email ?? "",
-                QrCodeData = qrPayload,
-                QrCodeImageUrl = qrUrl,
+                QrCodeData = primaryQrPayload,
+                QrCodeImageUrl = BuildQrImageUrl(primaryQrPayload),
                 PurchasedAt = e.CreatedAt,
                 BundleId = bundleId,
                 BundleTotalTickets = effectiveBundleTotal >= 2 ? effectiveBundleTotal : null,
@@ -170,5 +170,24 @@ public class GetMyPurchasedTicketsQueryHandler : IRequestHandler<GetMyPurchasedT
         }
 
         return ApiResponse<List<PurchasedTicketDto>>.SuccessResponse(dtos, "Lấy danh sách vé đã mua thành công.");
+    }
+
+    private static List<string> SplitIssuedCodes(string? rawCodes)
+    {
+        if (string.IsNullOrWhiteSpace(rawCodes))
+        {
+            return new List<string>();
+        }
+
+        return rawCodes
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .ToList();
+    }
+
+    private static string BuildQrImageUrl(string payload)
+    {
+        return string.IsNullOrWhiteSpace(payload)
+            ? string.Empty
+            : $"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={Uri.EscapeDataString(payload)}";
     }
 }

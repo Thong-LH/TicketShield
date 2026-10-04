@@ -38,8 +38,23 @@ public interface ITicketVerificationService
 
     /// <summary>
     /// Đăng bán vé lên sàn TicketShield sau khi vé đã được xác thực và khóa thành công.
+    /// Luôn tạo listing đơn lẻ (không thuộc gói vé nào).
     /// </summary>
     Task<VerificationResult> Publish(string seller, string key, PublishBody body, CancellationToken ct);
+
+    /// <summary>
+    /// Đăng bán một vé vào một gói vé (bundle) đã được người bán chọn.
+    /// Chỉ được gọi từ luồng bulk publish: mỗi vé của gói phải có phiên OTP riêng đã verify,
+    /// nên không thể dùng để đăng bán vé chưa từng được BTC xác thực.
+    /// </summary>
+    Task<VerificationResult> PublishBundleItem(
+        string seller,
+        string key,
+        PublishBody body,
+        Guid bundleId,
+        int bundleTotalTickets,
+        bool allOrNothing,
+        CancellationToken ct);
 
     /// <summary>
     /// Hủy tin đăng bán vé và yêu cầu Nhà tổ chức mở khóa vé (Release Lock) trả lại cho chủ vé.

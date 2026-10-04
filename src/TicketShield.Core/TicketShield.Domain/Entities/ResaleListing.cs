@@ -6,6 +6,12 @@ namespace TicketShield.Domain.Entities;
 
 public class ResaleListing : BaseEntity
 {
+    /// <summary>
+    /// Domain Law 2 (Bundle Size Law): một gói vé chỉ được chứa từ 2 đến <see cref="MaxBundleTickets"/> vé.
+    /// Mỗi vé trong gói phải có phiên OTP riêng đã xác thực — không được suy diễn vé từ vé khác.
+    /// </summary>
+    public const int MaxBundleTickets = 3;
+
     public Guid EventId { get; set; }
     public Guid TierId { get; set; }
     public Guid SellerId { get; set; }

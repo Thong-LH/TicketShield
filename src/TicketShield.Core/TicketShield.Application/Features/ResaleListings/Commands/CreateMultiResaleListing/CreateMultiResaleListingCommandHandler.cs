@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using TicketShield.Application.Common.Interfaces;
 using TicketShield.Application.Common.Models;
 using TicketShield.Application.Resale;
+using TicketShield.Domain.Entities;
 using TicketShield.Domain.Exceptions;
 
 namespace TicketShield.Application.Features.ResaleListings.Commands.CreateMultiResaleListing;
@@ -51,9 +52,14 @@ public class CreateMultiResaleListingCommandHandler : IRequestHandler<CreateMult
             throw new ResaleWorkflowException("BULK_ITEMS_EMPTY", 400);
         }
 
-        if (request.Body.Items.Count < 2)
+        if (request.Body.Items.Count < 2 || request.Body.Items.Count > ResaleListing.MaxBundleTickets)
         {
-            throw new ResaleWorkflowException("BULK_REQUIRES_MIN_2_ITEMS", 400);
+            throw new ResaleWorkflowException("BUNDLE_REQUIRES_2_TO_3_ITEMS", 400);
+        }
+
+        if (request.Body.Items.Any(i => string.IsNullOrWhiteSpace(i.VerificationId)))
+        {
+            throw new ResaleWorkflowException("BULK_ITEM_MISSING_VERIFICATION_ID", 400);
         }
 
         if (request.Body.Items.Select(i => i.VerificationId).Distinct(StringComparer.OrdinalIgnoreCase).Count() != request.Body.Items.Count)
@@ -90,15 +96,15 @@ public class CreateMultiResaleListingCommandHandler : IRequestHandler<CreateMult
                 var publishBody = new PublishBody(
                     item.VerificationId,
                     item.ResalePrice,
-                    item.IsPrivate,
-                    BundleId: bundleId,
-                    IsBundleAllOrNothing: request.Body.AllOrNothing,
-                    BundleTotalTickets: request.Body.Items.Count);
+                    item.IsPrivate);
 
-                var publishResult = await _verificationService.Publish(
+                var publishResult = await _verificationService.PublishBundleItem(
                     seller,
                     itemKey.ToString("D"),
                     publishBody,
+                    bundleId,
+                    request.Body.Items.Count,
+                    request.Body.AllOrNothing,
                     cancellationToken);
 
                 if (publishResult.ListingId == null)

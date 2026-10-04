@@ -307,5 +307,89 @@ public class GetMyPurchasedTicketsQueryHandlerTests
         Assert.Equal("VALID", result.Data![0].Status);
         Assert.Equal("BTC-AUTHENTIC-PASS-777", result.Data![0].TicketPassCode);
     }
+
+    [Fact]
+    public async Task Handle_WhenBundleComesFromRealListings_ShouldReturnOneItemPerListingWithoutFabricatedCodes()
+    {
+        var (context, buyerId, buyerEmail) = CreateTestFixture();
+        var escrow = context.EscrowTransactions.Single();
+        var anchor = context.ResaleListings.Single();
+
+        var bundleId = Guid.NewGuid();
+        anchor.BundleId = bundleId;
+        anchor.BundleTotalTickets = 3;
+        anchor.IsBundleAllOrNothing = true;
+
+        var siblings = new List<ResaleListing>();
+        for (var i = 2; i <= 3; i++)
+        {
+            siblings.Add(new ResaleListing
+            {
+                Id = Guid.NewGuid(),
+                EventId = anchor.EventId,
+                TierId = anchor.TierId,
+                SellerId = anchor.SellerId,
+                OriginalTicketCode = $"OLD-SELLER-TICKET-00{i}",
+                ResalePrice = 1_500_000m,
+                ListingStatus = ListingStatus.Sold,
+                BundleId = bundleId,
+                BundleTotalTickets = 3,
+                IsBundleAllOrNothing = true
+            });
+        }
+        context.ResaleListings.AddRange(siblings);
+
+        // BTC cấp 3 mã/3 QR thật, lưu theo thứ tự CreatedAt rồi Id.
+        escrow.BundleId = bundleId;
+        escrow.NewTicketCode = "BTC-REAL-PASS-1,BTC-REAL-PASS-2,BTC-REAL-PASS-3";
+        escrow.QrCodeData = "https://organizer.ticket/real-1,https://organizer.ticket/real-2,https://organizer.ticket/real-3";
+        context.SaveChanges();
+
+        var currentUserService = new Mock<ICurrentUserService>();
+        currentUserService.Setup(u => u.UserId).Returns(buyerId);
+        currentUserService.Setup(u => u.Email).Returns(buyerEmail);
+
+        var handler = new GetMyPurchasedTicketsQueryHandler(context, currentUserService.Object);
+        var result = await handler.Handle(new GetMyPurchasedTicketsQuery(), CancellationToken.None);
+
+        Assert.True(result.Success);
+        var ticket = Assert.Single(result.Data!);
+        Assert.Equal(3, ticket.BundleTotalTickets);
+        Assert.NotNull(ticket.BundleItems);
+        Assert.Equal(3, ticket.BundleItems!.Count);
+        Assert.Equal(new[] { "BTC-REAL-PASS-1", "BTC-REAL-PASS-2", "BTC-REAL-PASS-3" },
+            ticket.BundleItems!.Select(i => i.TicketCode).ToArray());
+        Assert.Equal(new[] { "https://organizer.ticket/real-1", "https://organizer.ticket/real-2", "https://organizer.ticket/real-3" },
+            ticket.BundleItems!.Select(i => i.QrCodeData).ToArray());
+        Assert.Equal("BTC-REAL-PASS-1", ticket.TicketPassCode);
+    }
+
+    [Fact]
+    public async Task Handle_WhenBundleHasNoRealListings_ShouldNotFabricateTicketCodes()
+    {
+        var (context, buyerId, buyerEmail) = CreateTestFixture();
+        var escrow = context.EscrowTransactions.Single();
+
+        // Escrow cũ ghi "3 vé" nhưng DB không có listing nào thuộc bundle -> không được bịa vé.
+        escrow.BundleId = Guid.NewGuid();
+        escrow.NewTicketCode = "BTC-AUTHENTIC-PASS-777";
+        escrow.QrCodeData = "https://organizer.ticket/authentic-pass-777";
+        context.SaveChanges();
+
+        var currentUserService = new Mock<ICurrentUserService>();
+        currentUserService.Setup(u => u.UserId).Returns(buyerId);
+        currentUserService.Setup(u => u.Email).Returns(buyerEmail);
+
+        var handler = new GetMyPurchasedTicketsQueryHandler(context, currentUserService.Object);
+        var result = await handler.Handle(new GetMyPurchasedTicketsQuery(), CancellationToken.None);
+
+        var ticket = Assert.Single(result.Data!);
+        Assert.Empty(ticket.BundleItems!);
+        Assert.Null(ticket.BundleTotalTickets);
+        Assert.DoesNotContain("-T1", ticket.TicketPassCode);
+        Assert.DoesNotContain("-T2", ticket.TicketPassCode);
+        Assert.DoesNotContain("-T3", ticket.TicketPassCode);
+        Assert.DoesNotContain(",", ticket.TicketPassCode);
+    }
 }
 

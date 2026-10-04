@@ -23,6 +23,12 @@ public class PublishResaleListingCommandHandlerTests
                 Guid.NewGuid()));
         }
 
+        public Task<VerificationResult> PublishBundleItem(
+            string seller, string key, PublishBody body, Guid bundleId, int bundleTotalTickets, bool allOrNothing, CancellationToken ct)
+        {
+            throw new InvalidOperationException("Single-ticket publish must not create bundle listings.");
+        }
+
         public Task CancelByListingId(string seller, Guid listingId, string key, CancellationToken ct) => Task.CompletedTask;
         public Task<VerificationResult> Request(string seller, string key, string ticket, CancellationToken ct) => throw new NotImplementedException();
         public Task<VerificationResult> Resend(string seller, string id, string key, CancellationToken ct) => throw new NotImplementedException();

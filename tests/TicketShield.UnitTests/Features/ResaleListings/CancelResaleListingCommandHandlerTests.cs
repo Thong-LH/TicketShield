@@ -203,6 +203,8 @@ public class CancelResaleListingCommandHandlerTests
         public Task<TicketShield.Application.Resale.VerificationResult> Get(string seller, string id, CancellationToken ct) => throw new NotImplementedException();
         public Task<TicketShield.Application.Resale.VerificationResult> Close(string seller, string id, string key, CancellationToken ct) => throw new NotImplementedException();
         public Task<TicketShield.Application.Resale.VerificationResult> Publish(string seller, string key, TicketShield.Application.Resale.PublishBody body, CancellationToken ct) => throw new NotImplementedException();
+        public Task<TicketShield.Application.Resale.VerificationResult> PublishBundleItem(
+            string seller, string key, TicketShield.Application.Resale.PublishBody body, Guid bundleId, int bundleTotalTickets, bool allOrNothing, CancellationToken ct) => throw new NotImplementedException();
         public Task<TicketShield.Application.Resale.VerificationResult> Cancel(string seller, string id, string key, CancellationToken ct) => throw new NotImplementedException();
         public Task CancelByListingId(string seller, Guid listingId, string key, CancellationToken ct)
         {

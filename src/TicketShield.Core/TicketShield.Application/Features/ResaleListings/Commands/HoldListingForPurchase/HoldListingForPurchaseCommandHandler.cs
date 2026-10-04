@@ -322,13 +322,27 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
                 .Include(l => l.EscrowTransactions)
                 .Include(l => l.Event)
                 .Where(l => (anchorListing.BundleId != null && l.BundleId == anchorListing.BundleId) || l.Id == anchorListing.Id)
+                .OrderBy(l => l.CreatedAt)
+                .ThenBy(l => l.Id)
                 .ToListAsync(cancellationToken);
 
-            var effectiveBundleTotal = anchorListing.BundleTotalTickets > 0 ? anchorListing.BundleTotalTickets : bundleListings.Count;
-            if (bundleListings.Count < 2 && effectiveBundleTotal < 2)
+            // Chỉ tính giá và cấp vé trên danh sách listing THẬT của gói.
+            // BundleTotalTickets khai trong listing không được phép vượt quá số listing thật,
+            // tránh tình trạng "1 vé thật nhưng tính tiền N vé" hoặc sinh mã vé giả.
+            if (bundleListings.Count < 2 || bundleListings.Count > ResaleListing.MaxBundleTickets)
             {
-                throw new BusinessRuleViolationException("Gói vé này không hợp lệ (cần ít nhất 2 vé trong bundle).");
+                throw new BusinessRuleViolationException(
+                    $"Gói vé này không hợp lệ (cần từ 2 đến {ResaleListing.MaxBundleTickets} vé, thực tế tìm thấy {bundleListings.Count} vé).");
             }
+
+            var claimedTotal = anchorListing.BundleTotalTickets;
+            if (claimedTotal != bundleListings.Count)
+            {
+                throw new BusinessRuleViolationException(
+                    $"Gói vé không hợp lệ: khai báo {claimedTotal} vé nhưng hệ thống chỉ tìm thấy {bundleListings.Count} vé thật. Vui lòng thử lại.");
+            }
+
+            var effectiveBundleTotal = bundleListings.Count;
 
             // 3. Per-listing validation
             var now = DateTimeOffset.UtcNow;

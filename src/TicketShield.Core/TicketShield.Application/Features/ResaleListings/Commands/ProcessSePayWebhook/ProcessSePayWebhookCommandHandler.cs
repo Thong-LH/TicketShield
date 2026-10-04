@@ -220,16 +220,23 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
         var eventStartAt = escrow.Listing.Event?.EventStartAt
             ?? throw new BusinessRuleViolationException("Thiếu EventStartAt để tính UnlockAt giải ngân.");
 
-        var newTicketCodes = new List<string>();
-        var qrCodeDatas = new List<string>();
+        var issuedTickets = new List<IssuedTicket>();
 
         var listingsToTransfer = new List<ResaleListing> { escrow.Listing };
         if (escrow.BundleId.HasValue)
         {
             var bundleListings = await _dbContext.ResaleListings
                 .Where(l => l.BundleId == escrow.BundleId)
+                .OrderBy(l => l.CreatedAt)
+                .ThenBy(l => l.Id)
                 .ToListAsync(cancellationToken);
-                
+
+            if (bundleListings.Count < 2 || bundleListings.Count > ResaleListing.MaxBundleTickets)
+            {
+                throw new BusinessRuleViolationException(
+                    $"Gói vé không hợp lệ: cần từ 2 đến {ResaleListing.MaxBundleTickets} vé thật nhưng chỉ tìm thấy {bundleListings.Count} vé. Giao dịch bị từ chối.");
+            }
+
             listingsToTransfer = bundleListings;
         }
 
@@ -280,8 +287,7 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
                     throw new BusinessRuleViolationException($"Không thể xác định mã vé hợp lệ cho vé {listing.OriginalTicketCode}.");
                 }
 
-                newTicketCodes.Add(currentNewCode);
-                qrCodeDatas.Add(currentQrCode);
+                issuedTickets.Add(new IssuedTicket(listing.Id, currentNewCode, currentQrCode ?? currentNewCode, listing.SeatZone));
                 listing.ListingStatus = ListingStatus.Sold;
             }
         }
@@ -322,16 +328,17 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
         escrow.BankTransactionReference = bankTxRef;
         escrow.InSettlementBuffer = true;
         escrow.UnlockAt = EscrowTransaction.ComputeSettlementUnlockAt(now, eventStartAt);
-        escrow.NewTicketCode = string.Join(",", newTicketCodes);
-        escrow.QrCodeData = string.Join(",", qrCodeDatas);
+        escrow.NewTicketCode = string.Join(",", issuedTickets.Select(t => t.NewCode));
+        escrow.QrCodeData = string.Join(",", issuedTickets.Select(t => t.QrCodeData));
 
         await _dbContext.SaveChangesAsync(cancellationToken);
-        await TrySendLockEmailsAsync(escrow, cancellationToken);
+        await TrySendLockEmailsAsync(escrow, issuedTickets, cancellationToken);
 
         if (_paymentNotifier != null)
         {
             foreach (var listing in listingsToTransfer)
             {
+                var issued = issuedTickets.First(t => t.ListingId == listing.Id);
                 var notificationPayload = new
                 {
                     listingId = listing.Id,
@@ -340,8 +347,8 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
                     escrowStatus = escrow.Status.ToString(),
                     listingStatus = listing.ListingStatus.ToString(),
                     totalBuyerPaid = escrow.TotalBuyerPaid,
-                    newTicketCode = escrow.NewTicketCode,
-                    qrCodeData = escrow.QrCodeData
+                    newTicketCode = issued.NewCode,
+                    qrCodeData = issued.QrCodeData
                 };
                 await _paymentNotifier.NotifyPaymentApprovedAsync(listing.Id, notificationPayload, cancellationToken);
                 await _paymentNotifier.NotifyOrderSettledAsync(listing.Id, notificationPayload, cancellationToken);
@@ -365,7 +372,10 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
             "Xử lý Webhook thanh toán thành công! Đã khóa Escrow và xác nhận bán vé.");
     }
 
-    private async Task TrySendLockEmailsAsync(EscrowTransaction escrow, CancellationToken cancellationToken)
+    private async Task TrySendLockEmailsAsync(
+        EscrowTransaction escrow,
+        IReadOnlyList<IssuedTicket> issuedTickets,
+        CancellationToken cancellationToken)
     {
         if (_emailService is null || _emailTemplates is null)
         {
@@ -375,35 +385,44 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
         try
         {
             var ev = escrow.Listing.Event;
-
-            // Build a publicly-loadable QR image URL for the email.
-            // Gmail blocks inline base64 images; qrserver.com returns a PNG via HTTPS that all clients can display.
-            var qrPayloadForEmail = escrow.NewTicketCode ?? string.Empty;
-            var qrImageUrlForEmail = string.IsNullOrWhiteSpace(qrPayloadForEmail)
-                ? string.Empty
-                : $"https://api.qrserver.com/v1/create-qr-code/?size=200x200&data={Uri.EscapeDataString(qrPayloadForEmail)}";
-
-            var buyerHtml = _emailTemplates.GetBuyerTicketIssuedEmailHtml(
-                escrow.Buyer.FullName,
-                ev.Name,
-                ev.EventStartAt.ToString("dd/MM/yyyy HH:mm"),
-                ev.Venue,
-                escrow.Listing.Tier?.TierName ?? string.Empty,
-                string.Empty,
-                escrow.NewTicketCode ?? string.Empty,
-                qrImageUrlForEmail,
-                escrow.PaymentReference ?? string.Empty,
-                escrow.TotalBuyerPaid);
             var buyerTo = string.IsNullOrWhiteSpace(escrow.RecipientEmail)
                 ? escrow.Buyer.Email
                 : escrow.RecipientEmail;
-            await _emailService.SendEmailAsync(
-                buyerTo,
-                "TicketShield — Xác nhận thanh toán vé",
-                buyerHtml,
-                cancellationToken);
 
-            var originalTicketCodes = escrow.BundleId.HasValue ? "Gói vé (Combo)" : escrow.Listing.OriginalTicketCode;
+            // Gửi MỘT email cho MỖI vé thật: mỗi vé có mã và QR riêng, không gộp chuỗi.
+            for (var issuedIndex = 0; issuedIndex < issuedTickets.Count; issuedIndex++)
+            {
+                var issued = issuedTickets[issuedIndex];
+
+                // Gmail chặn ảnh base64 inline; qrserver.com trả về PNG qua HTTPS mọi client đều hiển thị được.
+                var qrImageUrlForEmail = string.IsNullOrWhiteSpace(issued.QrCodeData)
+                    ? string.Empty
+                    : $"https://api.qrserver.com/v1/create-qr-code/?size=200x200&data={Uri.EscapeDataString(issued.QrCodeData)}";
+
+                var buyerHtml = _emailTemplates.GetBuyerTicketIssuedEmailHtml(
+                    escrow.Buyer.FullName,
+                    ev.Name,
+                    ev.EventStartAt.ToString("dd/MM/yyyy HH:mm"),
+                    ev.Venue,
+                    escrow.Listing.Tier?.TierName ?? string.Empty,
+                    issued.SeatZone ?? string.Empty,
+                    issued.NewCode,
+                    qrImageUrlForEmail,
+                    escrow.PaymentReference ?? string.Empty,
+                    escrow.TotalBuyerPaid);
+
+                await _emailService.SendEmailAsync(
+                    buyerTo,
+                    issuedTickets.Count > 1
+                        ? $"TicketShield — Vé {issuedIndex + 1}/{issuedTickets.Count} đã được cấp"
+                        : "TicketShield — Xác nhận thanh toán vé",
+                    buyerHtml,
+                    cancellationToken);
+            }
+
+            var originalTicketCodes = escrow.BundleId.HasValue
+                ? string.Join(", ", issuedTickets.Select(t => t.NewCode))
+                : escrow.Listing.OriginalTicketCode;
 
             var sellerHtml = _emailTemplates.GetSellerEscrowLockedEmailHtml(
                 escrow.Seller.FullName,
