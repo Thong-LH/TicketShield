@@ -342,6 +342,7 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
                 var notificationPayload = new
                 {
                     listingId = listing.Id,
+                    sellerId = listing.SellerId,
                     escrowId = escrow.Id,
                     paymentReference = escrow.PaymentReference ?? paymentReference,
                     escrowStatus = escrow.Status.ToString(),

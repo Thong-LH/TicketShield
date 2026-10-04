@@ -23,6 +23,13 @@ public class SignalRPaymentRealtimeNotifier : IPaymentRealtimeNotifier
         {
             await _hubContext.Clients.Group($"payment_{paymentRef.Trim().ToUpperInvariant()}").SendAsync("PaymentApproved", payload, cancellationToken);
         }
+
+        var sellerId = ExtractSellerId(payload);
+        if (!string.IsNullOrWhiteSpace(sellerId))
+        {
+            await _hubContext.Clients.Group($"seller_{sellerId.Trim().ToLowerInvariant()}").SendAsync("PaymentApproved", payload, cancellationToken);
+            await _hubContext.Clients.Group($"user_{sellerId.Trim().ToLowerInvariant()}").SendAsync("PaymentApproved", payload, cancellationToken);
+        }
     }
 
     public async Task NotifyOrderSettledAsync(Guid listingId, object payload, CancellationToken cancellationToken = default)
@@ -34,6 +41,13 @@ public class SignalRPaymentRealtimeNotifier : IPaymentRealtimeNotifier
         if (!string.IsNullOrWhiteSpace(paymentRef))
         {
             await _hubContext.Clients.Group($"payment_{paymentRef.Trim().ToUpperInvariant()}").SendAsync("OrderSettled", payload, cancellationToken);
+        }
+
+        var sellerId = ExtractSellerId(payload);
+        if (!string.IsNullOrWhiteSpace(sellerId))
+        {
+            await _hubContext.Clients.Group($"seller_{sellerId.Trim().ToLowerInvariant()}").SendAsync("OrderSettled", payload, cancellationToken);
+            await _hubContext.Clients.Group($"user_{sellerId.Trim().ToLowerInvariant()}").SendAsync("OrderSettled", payload, cancellationToken);
         }
     }
 
@@ -47,6 +61,13 @@ public class SignalRPaymentRealtimeNotifier : IPaymentRealtimeNotifier
         {
             await _hubContext.Clients.Group($"payment_{paymentRef.Trim().ToUpperInvariant()}").SendAsync("HoldExpired", payload, cancellationToken);
         }
+
+        var sellerId = ExtractSellerId(payload);
+        if (!string.IsNullOrWhiteSpace(sellerId))
+        {
+            await _hubContext.Clients.Group($"seller_{sellerId.Trim().ToLowerInvariant()}").SendAsync("HoldExpired", payload, cancellationToken);
+            await _hubContext.Clients.Group($"user_{sellerId.Trim().ToLowerInvariant()}").SendAsync("HoldExpired", payload, cancellationToken);
+        }
     }
 
     private static string? ExtractPaymentReference(object? payload)
@@ -57,6 +78,17 @@ public class SignalRPaymentRealtimeNotifier : IPaymentRealtimeNotifier
         }
 
         var prop = payload.GetType().GetProperty("paymentReference", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.IgnoreCase);
+        return prop?.GetValue(payload)?.ToString();
+    }
+
+    private static string? ExtractSellerId(object? payload)
+    {
+        if (payload == null)
+        {
+            return null;
+        }
+
+        var prop = payload.GetType().GetProperty("sellerId", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.IgnoreCase);
         return prop?.GetValue(payload)?.ToString();
     }
 }
