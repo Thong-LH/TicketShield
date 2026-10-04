@@ -94,6 +94,21 @@ public class EscrowPayoutSettlerTests
     }
 
     [Fact]
+    public async Task TrySettle_WhenTheBankTimesOut_SendsTheSameIdempotencyKeyAgain()
+    {
+        await using var db = CreateDb();
+        var escrowId = await SeedLockedEscrowAsync(db, netPayout: 100_000m, accountNumber: "0938434102", bankCode: "MB");
+        var gateway = new RecordingTimeoutGateway(timeoutsBeforeSuccess: 2);
+        var settler = new EscrowPayoutSettler(db, new EscrowSettlementCas(db), gateway, TimeSpan.Zero);
+
+        var settled = await settler.TrySettleAsync(escrowId);
+
+        Assert.True(settled);
+        Assert.Equal(3, gateway.Keys.Count);
+        Assert.All(gateway.Keys, key => Assert.Equal($"IDEMP-{escrowId}-0", key));
+    }
+
+    [Fact]
     public async Task TrySettle_WhenGatewayTimesOutThreeTimes_LeavesPayoutProcessing()
     {
         await using var db = CreateDb();
@@ -319,6 +334,40 @@ public class EscrowPayoutSettlerTests
         await db.SaveChangesAsync();
         db.ChangeTracker.Clear();
         return escrow.Id;
+    }
+
+    private sealed class RecordingTimeoutGateway : IPayoutGateway
+    {
+        private readonly int _timeoutsBeforeSuccess;
+        private int _calls;
+
+        public RecordingTimeoutGateway(int timeoutsBeforeSuccess) => _timeoutsBeforeSuccess = timeoutsBeforeSuccess;
+
+        public List<string> Keys { get; } = [];
+
+        public Task<PayoutGatewayResult> TransferAsync(PayoutTransferRequest request, CancellationToken cancellationToken = default)
+        {
+            var key = PayoutIdempotency.Key(request.EscrowId, request.RetryCount);
+            Keys.Add(key);
+            _calls++;
+            if (_calls <= _timeoutsBeforeSuccess)
+            {
+                return Task.FromResult(new PayoutGatewayResult
+                {
+                    Outcome = PayoutGatewayOutcome.TimedOut,
+                    IdempotencyKey = key,
+                    Amount = request.Amount
+                });
+            }
+
+            return Task.FromResult(new PayoutGatewayResult
+            {
+                Outcome = PayoutGatewayOutcome.Succeeded,
+                IdempotencyKey = key,
+                BankReferenceCode = "FTSAMEKEY",
+                Amount = request.Amount
+            });
+        }
     }
 
     private sealed class CountingGateway : IPayoutGateway

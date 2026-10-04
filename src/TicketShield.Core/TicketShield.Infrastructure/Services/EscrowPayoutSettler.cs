@@ -120,12 +120,14 @@ public class EscrowPayoutSettler : IEscrowPayoutSettler
             return false;
         }
 
+        var idempotencyRetry = retryCount;
+        var timeouts = 0;
         while (true)
         {
             var transfer = await _gateway.TransferAsync(new PayoutTransferRequest
             {
                 EscrowId = preview.Id,
-                RetryCount = retryCount,
+                RetryCount = idempotencyRetry,
                 BankCode = preview.Seller.PayoutBankCode,
                 AccountNumber = accountNumber,
                 AccountName = preview.Seller.PayoutAccountName,
@@ -136,7 +138,7 @@ public class EscrowPayoutSettler : IEscrowPayoutSettler
             {
                 await SaveAttemptAsync(
                     preview,
-                    retryCount,
+                    idempotencyRetry + timeouts,
                     PayoutStatus.Success,
                     transfer.BankReferenceCode,
                     error: null,
@@ -149,7 +151,7 @@ public class EscrowPayoutSettler : IEscrowPayoutSettler
             {
                 await SaveAttemptAsync(
                     preview,
-                    retryCount,
+                    idempotencyRetry,
                     PayoutStatus.Failed,
                     bankReference: null,
                     error: "STK không hợp lệ",
@@ -158,12 +160,12 @@ public class EscrowPayoutSettler : IEscrowPayoutSettler
                 return false;
             }
 
-            retryCount++;
-            if (retryCount >= 3)
+            timeouts++;
+            if (timeouts >= 3)
             {
                 await SaveAttemptAsync(
                     preview,
-                    retryCount,
+                    idempotencyRetry + timeouts,
                     PayoutStatus.Processing,
                     bankReference: null,
                     error: "Ngân hàng timeout",
@@ -174,7 +176,7 @@ public class EscrowPayoutSettler : IEscrowPayoutSettler
 
             await SaveAttemptAsync(
                 preview,
-                retryCount,
+                idempotencyRetry,
                 PayoutStatus.Processing,
                 bankReference: null,
                 error: "Ngân hàng timeout",
@@ -183,7 +185,7 @@ public class EscrowPayoutSettler : IEscrowPayoutSettler
 
             if (_firstRetryDelay > TimeSpan.Zero)
             {
-                await Task.Delay(_firstRetryDelay * retryCount, cancellationToken);
+                await Task.Delay(_firstRetryDelay * timeouts, cancellationToken);
             }
         }
     }
