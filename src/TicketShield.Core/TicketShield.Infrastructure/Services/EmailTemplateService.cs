@@ -67,6 +67,41 @@ public class EmailTemplateService : IEmailTemplateService
             .Replace("{{EscrowCode}}", escrowCode);
     }
 
+    public string GetSellerPayoutStatementEmailHtml(
+        string sellerName,
+        string payoutCode,
+        string bankReference,
+        string escrowCode,
+        string eventName,
+        string tierName,
+        string ticketCode,
+        decimal grossPrice,
+        decimal sellerFee,
+        decimal netPayout,
+        string bankCode,
+        string accountNumber,
+        string accountName,
+        string processedAt)
+    {
+        var html = LoadTemplate("payout_statement.html");
+
+        return html
+            .Replace("{{SellerName}}", sellerName)
+            .Replace("{{PayoutCode}}", payoutCode)
+            .Replace("{{BankReference}}", bankReference)
+            .Replace("{{EscrowCode}}", escrowCode)
+            .Replace("{{EventName}}", eventName)
+            .Replace("{{TierName}}", tierName)
+            .Replace("{{TicketCode}}", ticketCode)
+            .Replace("{{GrossPrice}}", grossPrice.ToString("N0"))
+            .Replace("{{SellerFee}}", sellerFee.ToString("N0"))
+            .Replace("{{NetPayout}}", netPayout.ToString("N0"))
+            .Replace("{{BankCode}}", bankCode)
+            .Replace("{{AccountNumber}}", accountNumber)
+            .Replace("{{AccountName}}", accountName)
+            .Replace("{{ProcessedAt}}", processedAt);
+    }
+
     private string LoadTemplate(string templateFileName)
     {
         // 1. Check template base path probed at startup

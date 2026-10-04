@@ -21,4 +21,20 @@ public interface IEmailTemplateService
         string eventName,
         decimal amountLocked,
         string escrowCode);
+
+    string GetSellerPayoutStatementEmailHtml(
+        string sellerName,
+        string payoutCode,
+        string bankReference,
+        string escrowCode,
+        string eventName,
+        string tierName,
+        string ticketCode,
+        decimal grossPrice,
+        decimal sellerFee,
+        decimal netPayout,
+        string bankCode,
+        string accountNumber,
+        string accountName,
+        string processedAt);
 }

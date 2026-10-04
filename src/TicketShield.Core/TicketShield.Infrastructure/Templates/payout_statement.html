@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sao Kê Giải Ngân Bán Vé - TicketShield AI</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, Arial, sans-serif;
+            background-color: #0f172a;
+            margin: 0;
+            padding: 24px 12px;
+            color: #1e293b;
+            -webkit-font-smoothing: antialiased;
+        }
+        .container {
+            max-width: 620px;
+            margin: 0 auto;
+            background-color: #ffffff;
+            border-radius: 20px;
+            overflow: hidden;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.25), 0 8px 10px -6px rgba(0, 0, 0, 0.2);
+            border: 1px solid #e2e8f0;
+        }
+        .header {
+            background: linear-gradient(135deg, #064e3b 0%, #047857 50%, #10b981 100%);
+            padding: 36px 24px;
+            text-align: center;
+            color: #ffffff;
+            position: relative;
+        }
+        .logo {
+            font-size: 26px;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+            color: #a7f3d0;
+            margin-bottom: 10px;
+            display: inline-block;
+        }
+        .badge {
+            display: inline-block;
+            background-color: rgba(255, 255, 255, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.4);
+            color: #ffffff;
+            font-size: 11px;
+            font-weight: 700;
+            padding: 6px 16px;
+            border-radius: 9999px;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+        }
+        .content {
+            padding: 32px 28px;
+        }
+        .greeting {
+            font-size: 17px;
+            font-weight: 700;
+            color: #0f172a;
+            margin-bottom: 8px;
+        }
+        .intro-text {
+            color: #475569;
+            font-size: 14px;
+            line-height: 1.6;
+            margin-bottom: 24px;
+        }
+        .payout-hero-box {
+            background: linear-gradient(135deg, #ecfdf5 0%, #f0fdf4 100%);
+            border: 1.5px solid #a7f3d0;
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 24px;
+            text-align: center;
+        }
+        .payout-hero-label {
+            font-size: 12px;
+            color: #047857;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1.2px;
+            margin-bottom: 6px;
+        }
+        .payout-hero-amount {
+            font-size: 34px;
+            font-weight: 800;
+            color: #065f46;
+            margin: 6px 0;
+            font-family: 'Courier New', monospace, sans-serif;
+            letter-spacing: -0.5px;
+        }
+        .payout-hero-status {
+            display: inline-block;
+            background-color: #10b981;
+            color: #ffffff;
+            font-size: 11px;
+            font-weight: 700;
+            padding: 4px 12px;
+            border-radius: 6px;
+            margin-top: 4px;
+        }
+        .section-title {
+            font-size: 13px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #64748b;
+            margin: 20px 0 12px 0;
+            border-bottom: 1px solid #f1f5f9;
+            padding-bottom: 6px;
+        }
+        .breakdown-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+        .breakdown-table tr {
+            border-bottom: 1px dashed #e2e8f0;
+        }
+        .breakdown-table tr:last-child {
+            border-bottom: none;
+        }
+        .breakdown-table td {
+            padding: 10px 4px;
+        }
+        .breakdown-label {
+            color: #64748b;
+        }
+        .breakdown-value {
+            text-align: right;
+            font-weight: 600;
+            color: #1e293b;
+        }
+        .breakdown-fee {
+            color: #e11d48;
+            font-weight: 700;
+        }
+        .breakdown-total {
+            font-size: 16px;
+            font-weight: 800;
+            color: #059669;
+        }
+        .bank-card {
+            background-color: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 14px;
+            padding: 18px 20px;
+            margin-bottom: 24px;
+        }
+        .bank-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            font-size: 13px;
+        }
+        .bank-item-title {
+            color: #64748b;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 2px;
+        }
+        .bank-item-value {
+            color: #0f172a;
+            font-weight: 700;
+            font-family: monospace;
+            font-size: 14px;
+        }
+        .ticket-info-box {
+            background-color: #f1f5f9;
+            border-left: 4px solid #059669;
+            border-radius: 0 12px 12px 0;
+            padding: 14px 18px;
+            margin-bottom: 24px;
+            font-size: 13px;
+            line-height: 1.6;
+        }
+        .cta-button {
+            display: inline-block;
+            background: linear-gradient(135deg, #059669 0%, #10b981 100%);
+            color: #ffffff !important;
+            font-weight: 700;
+            text-decoration: none;
+            padding: 14px 32px;
+            border-radius: 12px;
+            font-size: 14px;
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.35);
+        }
+        .footer {
+            background-color: #f8fafc;
+            padding: 24px;
+            text-align: center;
+            font-size: 12px;
+            color: #94a3b8;
+            border-top: 1px solid #e2e8f0;
+            line-height: 1.6;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- HEADER -->
+        <div class="header">
+            <div class="logo">🛡️ TicketShield AI</div>
+            <br>
+            <div class="badge">SAO KÊ GIẢI NGÂN / PAYOUT STATEMENT</div>
+        </div>
+
+        <!-- CONTENT -->
+        <div class="content">
+            <div class="greeting">Kính gửi {{SellerName}},</div>
+            <p class="intro-text">
+                TicketShield AI trân trọng thông báo giao dịch bán lại vé của bạn đã hoàn tất đối soát an toàn. Số tiền thanh toán đã được giải ngân thành công qua cổng thanh toán liên ngân hàng <strong>NAPAS 247</strong> vào tài khoản thụ hưởng của bạn.
+            </p>
+
+            <!-- HERO PAYOUT BOX -->
+            <div class="payout-hero-box">
+                <div class="payout-hero-label">Số Tiền Thực Nhận (Net Payout)</div>
+                <div class="payout-hero-amount">+{{NetPayout}} VNĐ</div>
+                <div class="payout-hero-status">✓ CHUYỂN KHOẢN THÀNH CÔNG</div>
+            </div>
+
+            <!-- FINANCIAL BREAKDOWN -->
+            <div class="section-title">Chi Tiết Sao Kê & Khấu Trừ Phí Sàn</div>
+            <table class="breakdown-table">
+                <tr>
+                    <td class="breakdown-label">Giá niêm yết bán vé:</td>
+                    <td class="breakdown-value">{{GrossPrice}} VNĐ</td>
+                </tr>
+                <tr>
+                    <td class="breakdown-label">Phí dịch vụ bảo hộ sàn (3%):</td>
+                    <td class="breakdown-value breakdown-fee">-{{SellerFee}} VNĐ</td>
+                </tr>
+                <tr>
+                    <td class="breakdown-label">Phí chuyển khoản NAPAS 247:</td>
+                    <td class="breakdown-value" style="color: #059669;">Miễn phí (0 VNĐ)</td>
+                </tr>
+                <tr style="border-top: 1.5px solid #059669;">
+                    <td class="breakdown-label" style="font-weight: 700; color: #0f172a; padding-top: 12px;">Số tiền giải ngân thực tế:</td>
+                    <td class="breakdown-value breakdown-total" style="padding-top: 12px;">{{NetPayout}} VNĐ</td>
+                </tr>
+            </table>
+
+            <!-- TRANSACTION & BANK DETAILS -->
+            <div class="section-title">Thông Tin Giao Dịch & Tài Khoản Thụ Hưởng</div>
+            <div class="bank-card">
+                <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                    <tr>
+                        <td style="padding: 6px 0; color: #64748b;">Mã lệnh giải ngân:</td>
+                        <td style="padding: 6px 0; font-weight: 700; text-align: right; font-family: monospace;">{{PayoutCode}}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 6px 0; color: #64748b;">Mã tham chiếu ngân hàng:</td>
+                        <td style="padding: 6px 0; font-weight: 700; text-align: right; font-family: monospace; color: #059669;">{{BankReference}}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 6px 0; color: #64748b;">Mã phiên ký quỹ (Escrow):</td>
+                        <td style="padding: 6px 0; font-weight: 600; text-align: right; font-family: monospace;">{{EscrowCode}}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 6px 0; color: #64748b;">Thời gian xử lý:</td>
+                        <td style="padding: 6px 0; font-weight: 600; text-align: right;">{{ProcessedAt}}</td>
+                    </tr>
+                    <tr style="border-top: 1px solid #e2e8f0;">
+                        <td style="padding: 10px 0 6px 0; color: #64748b;">Ngân hàng nhận:</td>
+                        <td style="padding: 10px 0 6px 0; font-weight: 700; text-align: right;">{{BankCode}}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 6px 0; color: #64748b;">Số tài khoản:</td>
+                        <td style="padding: 6px 0; font-weight: 700; text-align: right; font-family: monospace;">{{AccountNumber}}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 6px 0; color: #64748b;">Chủ tài khoản:</td>
+                        <td style="padding: 6px 0; font-weight: 700; text-align: right; text-transform: uppercase;">{{AccountName}}</td>
+                    </tr>
+                </table>
+            </div>
+
+            <!-- TICKET INFO -->
+            <div class="section-title">Thông Tin Vé Đã Chuyển Nhượng</div>
+            <div class="ticket-info-box">
+                <div>🎭 <strong>Sự kiện:</strong> {{EventName}}</div>
+                <div>🎫 <strong>Hạng vé:</strong> {{TierName}}</div>
+                <div>🔢 <strong>Mã vé gốc:</strong> <span style="font-family: monospace; font-weight: 700;">{{TicketCode}}</span></div>
+            </div>
+
+            <!-- ACTION BUTTON -->
+            <div style="text-align: center; margin-top: 28px; margin-bottom: 12px;">
+                <a href="https://ticketshield.vn/my-listings" class="cta-button">Xem Chi Tiết Trong Lịch Sử Bán Vé</a>
+            </div>
+        </div>
+
+        <!-- FOOTER -->
+        <div class="footer">
+            <p><strong>Cảm ơn bạn đã lựa chọn TicketShield AI làm nền tảng mua bán vé thứ cấp an toàn!</strong></p>
+            <p>© 2026 TicketShield AI Capstone Team. Mọi giao dịch được bảo chứng qua cổng Escrow ký quỹ thông minh.</p>
+            <p style="font-size: 11px; color: #cbd5e1;">Email này được gửi tự động từ máy chủ TicketShield Mailer (ticketshieldai@gmail.com). Vui lòng không trả lời trực tiếp email này.</p>
+        </div>
+    </div>
+</body>
+</html>

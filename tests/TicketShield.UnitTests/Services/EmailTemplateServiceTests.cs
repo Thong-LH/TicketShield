@@ -58,4 +58,44 @@ public class EmailTemplateServiceTests
         Assert.Contains("1,400,000", html);
         Assert.Contains("TS12345678", html);
     }
+
+    [Fact]
+    public void GetSellerPayoutStatementEmailHtml_ShouldLoadTemplateAndReplaceTokens()
+    {
+        // Arrange
+        var service = new EmailTemplateService();
+
+        // Act
+        var html = service.GetSellerPayoutStatementEmailHtml(
+            sellerName: "Tran Duc Linh",
+            payoutCode: "PO-ABCD1234",
+            bankReference: "FT262788192837",
+            escrowCode: "TSREF-98765432",
+            eventName: "Anh Trai Say Hi",
+            tierName: "VIP Zone A",
+            ticketCode: "ATSH-VIP-888",
+            grossPrice: 2500000m,
+            sellerFee: 75000m,
+            netPayout: 2425000m,
+            bankCode: "MB",
+            accountNumber: "0329952127",
+            accountName: "TRAN DUC LINH",
+            processedAt: "05/10/2026 10:15:30");
+
+        // Assert
+        Assert.NotNull(html);
+        Assert.Contains("Tran Duc Linh", html);
+        Assert.Contains("PO-ABCD1234", html);
+        Assert.Contains("FT262788192837", html);
+        Assert.Contains("TSREF-98765432", html);
+        Assert.Contains("Anh Trai Say Hi", html);
+        Assert.Contains("VIP Zone A", html);
+        Assert.Contains("ATSH-VIP-888", html);
+        Assert.Contains("2,500,000", html);
+        Assert.Contains("75,000", html);
+        Assert.Contains("2,425,000", html);
+        Assert.Contains("MB", html);
+        Assert.Contains("0329952127", html);
+        Assert.Contains("TRAN DUC LINH", html);
+    }
 }
