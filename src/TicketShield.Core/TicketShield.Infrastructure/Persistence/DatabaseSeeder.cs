@@ -216,10 +216,7 @@ public static class DatabaseSeeder
 
         await context.SaveChangesAsync();
 
-
         // 4. Reset & Purge extraneous operational data (Disputes, Escrows, Non-Seed Listings)
-        var sampleListingId = Guid.Parse("44444444-4444-4444-4444-444444444444");
-
         // Clear dependent tables first
         context.DisputeMessages.RemoveRange(await context.DisputeMessages.ToListAsync());
         context.DisputeEvidences.RemoveRange(await context.DisputeEvidences.ToListAsync());
@@ -233,7 +230,7 @@ public static class DatabaseSeeder
         var sampleBundleId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
 
         // Delete all listings except sample listings
-        var preservedIds = new[] { sampleListingId, combo1Id, combo2Id };
+        var preservedIds = new[] { combo1Id, combo2Id };
         var staleListings = await context.ResaleListings
             .Where(l => !preservedIds.Contains(l.Id))
             .ToListAsync();
@@ -241,30 +238,6 @@ public static class DatabaseSeeder
         {
             context.ResaleListings.RemoveRange(staleListings);
         }
-
-        // 5. Seed / Reset Sample Resale Listing (ATSH-GA-999) for buyer marketplace page demo
-        // ATSH-VIP-888 is intentionally unseeded so users can test the full OTP sell workflow from scratch.
-        var sampleListing = await context.ResaleListings.FirstOrDefaultAsync(l => l.Id == sampleListingId);
-        if (sampleListing == null)
-        {
-            sampleListing = new ResaleListing { Id = sampleListingId };
-            await context.ResaleListings.AddAsync(sampleListing);
-        }
-        sampleListing.EventId = eventId;
-        sampleListing.TierId = tierGaId;
-        sampleListing.SellerId = sellerId;
-        sampleListing.OriginalTicketCode = "ATSH-GA-999";
-        sampleListing.OriginalPrice = 50000m;
-        sampleListing.ResalePrice = 50000m;
-        sampleListing.AppliedMarkupPercentage = 0m;
-        sampleListing.IsPrivate = false;
-        sampleListing.PrivateAccessToken = null;
-        sampleListing.VerificationStatus = VerificationStatus.Verified;
-        sampleListing.ListingStatus = ListingStatus.Verified;
-        sampleListing.SeatZone = "GA Standing Zone 2";
-        sampleListing.BundleId = null;
-        sampleListing.IsBundleAllOrNothing = false;
-        sampleListing.BundleTotalTickets = 0;
 
         // 5.1 Seed Sample Bundle Combo (2 Adjacent VIP Tickets: ATSH-VIP-887 & ATSH-VIP-886)
         var combo1 = await context.ResaleListings.FirstOrDefaultAsync(l => l.Id == combo1Id);

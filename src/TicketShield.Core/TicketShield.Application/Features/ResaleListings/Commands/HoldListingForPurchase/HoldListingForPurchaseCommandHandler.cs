@@ -73,28 +73,27 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
             throw new UnauthorizedException("Tài khoản của bạn đã bị vô hiệu hóa.");
         }
 
-        // 2. Fetch Resale Listing
-        var listing = await _dbContext.ResaleListings
-            .Include(l => l.EscrowTransactions)
-            .Include(l => l.Event)
-            .FirstOrDefaultAsync(l => l.Id == request.ListingId, cancellationToken);
-
-        if (listing == null)
-        {
-            throw new NotFoundException("Tin đăng bán vé", request.ListingId);
-        }
-
-        // BE-CORE-5.2.3: Branch to bundle hold if listing is part of an AllOrNothing bundle
-        if (listing.BundleId != null && listing.IsBundleAllOrNothing)
-        {
-            return await HandleBundleHoldAsync(listing, buyer, request, cancellationToken);
-        }
-
-        // Concurrency Control: Acquire PostgreSQL transaction advisory lock hashed by ListingId for single listing
+        // 2. Concurrency Control: Acquire PostgreSQL transaction advisory lock hashed by ListingId for single listing
         await using var tx = await _dbContext.BeginAdvisoryLockTransactionAsync(ComputeLockKey(request.ListingId), cancellationToken);
 
         try
         {
+            // 2.1 Fetch Resale Listing FRESH inside the locked transaction to guarantee we inspect fresh state
+            var listing = await _dbContext.ResaleListings
+                .Include(l => l.EscrowTransactions)
+                .Include(l => l.Event)
+                .FirstOrDefaultAsync(l => l.Id == request.ListingId, cancellationToken);
+
+            if (listing == null)
+            {
+                throw new NotFoundException("Tin đăng bán vé", request.ListingId);
+            }
+
+            // BE-CORE-5.2.3: Branch to bundle hold if listing is part of an AllOrNothing bundle
+            if (listing.BundleId != null && listing.IsBundleAllOrNothing)
+            {
+                return await HandleBundleHoldAsync(listing, buyer, request, cancellationToken);
+            }
 
             // 3. Business Rule Validation: Buyer cannot be Seller (BE-CORE-3.1.6)
             if (listing.SellerId == buyerId)
@@ -296,74 +295,74 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
         var buyerId = buyer.Id;
         var bundleId = anchorListing.BundleId!.Value;
 
-        // 1. Query all listings in the bundle
-        var bundleListings = await _dbContext.ResaleListings
-            .Include(l => l.EscrowTransactions)
-            .Include(l => l.Event)
-            .Where(l => l.BundleId == bundleId)
-            .ToListAsync(cancellationToken);
-
-        if (bundleListings.Count < 2)
-        {
-            throw new BusinessRuleViolationException("Gói vé này không hợp lệ (cần ít nhất 2 vé trong bundle).");
-        }
-
-        // 2. Per-listing validation
-        var now = DateTimeOffset.UtcNow;
-        foreach (var listing in bundleListings)
-        {
-            if (listing.SellerId == buyerId)
-            {
-                throw new BadRequestException("Bạn không thể tự mua vé của chính mình.");
-            }
-
-            if (listing.IsPrivate)
-            {
-                if (string.IsNullOrWhiteSpace(request.PrivateAccessToken) || listing.PrivateAccessToken != request.PrivateAccessToken)
-                {
-                    throw new ForbiddenAccessException("Mã truy cập vé riêng tư không hợp lệ hoặc bị thiếu.");
-                }
-            }
-
-            if (listing.ListingStatus == ListingStatus.Sold ||
-                listing.ListingStatus == ListingStatus.Cancelled ||
-                listing.ListingStatus == ListingStatus.Expired)
-            {
-                throw new BusinessRuleViolationException($"Vé '{listing.OriginalTicketCode}' trong gói đang ở trạng thái '{listing.ListingStatus}' và không thể đặt mua.");
-            }
-
-            var eventStartAt = listing.Event?.EventStartAt;
-            if (eventStartAt.HasValue && eventStartAt.Value.AddHours(-2) <= now)
-            {
-                throw new BusinessRuleViolationException(
-                    $"Không thể đặt mua gói vé. Sự kiện sẽ bắt đầu lúc {eventStartAt.Value:dd/MM/yyyy HH:mm} UTC và đã qua thời hạn mua vé.");
-            }
-
-            if (listing.ListingStatus == ListingStatus.Transacting)
-            {
-                var otherHold = listing.EscrowTransactions
-                    .Any(e => e.Status == EscrowStatus.Pending && e.UnlockAt.HasValue && e.UnlockAt.Value > now && e.BuyerId != buyerId);
-                if (otherHold)
-                {
-                    throw new BusinessRuleViolationException("Gói vé này đang được giữ chỗ bởi người mua khác. Vui lòng thử lại sau.");
-                }
-            }
-        }
-
-        // 3. Check for existing bundle escrow (renew scenario)
-        var existingBundleEscrow = await _dbContext.EscrowTransactions
-            .Where(e => e.BundleId == bundleId && e.BuyerId == buyerId && e.Status == EscrowStatus.Pending
-                        && e.UnlockAt.HasValue && e.UnlockAt.Value > now)
-            .OrderByDescending(e => e.CreatedAt)
-            .FirstOrDefaultAsync(cancellationToken);
-
-        var isRenew = existingBundleEscrow != null;
-
-        // 4. Acquire advisory lock by BundleId
+        // 1. Concurrency Control: Acquire advisory lock by BundleId BEFORE querying and validating
         await using var bundleTx = await _dbContext.BeginAdvisoryLockTransactionAsync(ComputeBundleLockKey(bundleId), cancellationToken);
 
         try
         {
+            // 2. Query all listings in the bundle fresh inside the locked transaction
+            var bundleListings = await _dbContext.ResaleListings
+                .Include(l => l.EscrowTransactions)
+                .Include(l => l.Event)
+                .Where(l => l.BundleId == bundleId)
+                .ToListAsync(cancellationToken);
+
+            if (bundleListings.Count < 2)
+            {
+                throw new BusinessRuleViolationException("Gói vé này không hợp lệ (cần ít nhất 2 vé trong bundle).");
+            }
+
+            // 3. Per-listing validation
+            var now = DateTimeOffset.UtcNow;
+            foreach (var listing in bundleListings)
+            {
+                if (listing.SellerId == buyerId)
+                {
+                    throw new BadRequestException("Bạn không thể tự mua vé của chính mình.");
+                }
+
+                if (listing.IsPrivate)
+                {
+                    if (string.IsNullOrWhiteSpace(request.PrivateAccessToken) || listing.PrivateAccessToken != request.PrivateAccessToken)
+                    {
+                        throw new ForbiddenAccessException("Mã truy cập vé riêng tư không hợp lệ hoặc bị thiếu.");
+                    }
+                }
+
+                if (listing.ListingStatus == ListingStatus.Sold ||
+                    listing.ListingStatus == ListingStatus.Cancelled ||
+                    listing.ListingStatus == ListingStatus.Expired)
+                {
+                    throw new BusinessRuleViolationException($"Vé '{listing.OriginalTicketCode}' trong gói đang ở trạng thái '{listing.ListingStatus}' và không thể đặt mua.");
+                }
+
+                var eventStartAt = listing.Event?.EventStartAt;
+                if (eventStartAt.HasValue && eventStartAt.Value.AddHours(-2) <= now)
+                {
+                    throw new BusinessRuleViolationException(
+                        $"Không thể đặt mua gói vé. Sự kiện sẽ bắt đầu lúc {eventStartAt.Value:dd/MM/yyyy HH:mm} UTC và đã qua thời hạn mua vé.");
+                }
+
+                if (listing.ListingStatus == ListingStatus.Transacting)
+                {
+                    var otherHold = listing.EscrowTransactions
+                        .Any(e => e.Status == EscrowStatus.Pending && e.UnlockAt.HasValue && e.UnlockAt.Value > now && e.BuyerId != buyerId);
+                    if (otherHold)
+                    {
+                        throw new BusinessRuleViolationException("Gói vé này đang được giữ chỗ bởi người mua khác. Vui lòng thử lại sau.");
+                    }
+                }
+            }
+
+            // 4. Check for existing bundle escrow (renew scenario)
+            var existingBundleEscrow = await _dbContext.EscrowTransactions
+                .Where(e => e.BundleId == bundleId && e.BuyerId == buyerId && e.Status == EscrowStatus.Pending
+                            && e.UnlockAt.HasValue && e.UnlockAt.Value > now)
+                .OrderByDescending(e => e.CreatedAt)
+                .FirstOrDefaultAsync(cancellationToken);
+
+            var isRenew = existingBundleEscrow != null;
+
             // 5. Calculate aggregated fees
             var unlockAt = now.AddMinutes(10);
             decimal totalOriginalPrice = 0m;
