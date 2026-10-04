@@ -2,6 +2,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using TicketShield.Application.Common.Interfaces;
 using TicketShield.Application.Common.Models;
+using TicketShield.Domain.Entities;
 using TicketShield.Domain.Enums;
 using TicketShield.Domain.Exceptions;
 
@@ -66,13 +67,15 @@ public class GetMyPurchasedTicketsQueryHandler : IRequestHandler<GetMyPurchasedT
             .OrderByDescending(e => e.CreatedAt)
             .ToListAsync(cancellationToken);
 
-        var dtos = purchases.Select(e =>
+        var dtos = new List<PurchasedTicketDto>();
+
+        foreach (var e in purchases)
         {
             var eventName = e.Listing?.Event?.Name ?? "Concert Pass";
             var eventVenue = e.Listing?.Event?.Venue ?? "Sân Vận Động";
             var eventStart = e.Listing?.Event?.EventStartAt ?? e.CreatedAt.AddDays(30);
             var tierName = e.Listing?.Tier?.TierName ?? "Standard Pass";
-            // Only BTC-issued codes after payment. Never fall back to the seller's original ticket.
+            var rawSeatZone = !string.IsNullOrWhiteSpace(e.Listing?.SeatZone) ? e.Listing.SeatZone : tierName;
             var passCode = e.NewTicketCode?.Trim() ?? string.Empty;
             var qrPayload = !string.IsNullOrWhiteSpace(e.QrCodeData)
                 ? e.QrCodeData.Trim()
@@ -93,7 +96,54 @@ public class GetMyPurchasedTicketsQueryHandler : IRequestHandler<GetMyPurchasedT
                 _ => e.Status.ToString()
             };
 
-            return new PurchasedTicketDto
+            var bundleId = e.BundleId ?? e.Listing?.BundleId;
+            var bundleTotal = e.Listing?.BundleTotalTickets ?? 1;
+
+            List<ResaleListing> bundleListings = new();
+            if (bundleId != null)
+            {
+                bundleListings = await _dbContext.ResaleListings
+                    .AsNoTracking()
+                    .Where(l => l.BundleId == bundleId)
+                    .ToListAsync(cancellationToken);
+            }
+
+            var effectiveBundleTotal = Math.Max(bundleTotal, bundleListings.Count);
+            var bundleItems = new List<PurchasedTicketItemDto>();
+
+            if (bundleListings.Count >= 2)
+            {
+                foreach (var bl in bundleListings)
+                {
+                    var itemSeat = !string.IsNullOrWhiteSpace(bl.SeatZone) ? bl.SeatZone : tierName;
+                    bundleItems.Add(new PurchasedTicketItemDto
+                    {
+                        ListingId = bl.Id,
+                        TicketCode = passCode,
+                        SeatZone = itemSeat,
+                        QrCodeData = qrPayload,
+                        QrCodeImageUrl = qrUrl
+                    });
+                }
+            }
+            else if (effectiveBundleTotal >= 2)
+            {
+                var seats = rawSeatZone.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                for (int i = 0; i < effectiveBundleTotal; i++)
+                {
+                    var seatText = seats.Length > i ? seats[i] : (seats.Length > 0 ? $"{seats[0]} (#{i + 1})" : $"{tierName} (Seat {i + 1})");
+                    bundleItems.Add(new PurchasedTicketItemDto
+                    {
+                        ListingId = e.ListingId,
+                        TicketCode = !string.IsNullOrEmpty(passCode) ? $"{passCode}-T{i + 1}" : string.Empty,
+                        SeatZone = seatText,
+                        QrCodeData = qrPayload,
+                        QrCodeImageUrl = qrUrl
+                    });
+                }
+            }
+
+            dtos.Add(new PurchasedTicketDto
             {
                 EscrowId = e.Id,
                 ListingId = e.ListingId,
@@ -102,7 +152,7 @@ public class GetMyPurchasedTicketsQueryHandler : IRequestHandler<GetMyPurchasedT
                 EventVenue = eventVenue,
                 EventStartAt = eventStart,
                 TierName = tierName,
-                SeatZone = $"{tierName} • Chính chủ",
+                SeatZone = rawSeatZone,
                 TicketPassCode = passCode,
                 TotalAmountPaid = e.TotalBuyerPaid,
                 Status = status,
@@ -112,9 +162,12 @@ public class GetMyPurchasedTicketsQueryHandler : IRequestHandler<GetMyPurchasedT
                 RecipientEmail = e.RecipientEmail ?? e.Buyer?.Email ?? "",
                 QrCodeData = qrPayload,
                 QrCodeImageUrl = qrUrl,
-                PurchasedAt = e.CreatedAt
-            };
-        }).ToList();
+                PurchasedAt = e.CreatedAt,
+                BundleId = bundleId,
+                BundleTotalTickets = effectiveBundleTotal >= 2 ? effectiveBundleTotal : null,
+                BundleItems = bundleItems
+            });
+        }
 
         return ApiResponse<List<PurchasedTicketDto>>.SuccessResponse(dtos, "Lấy danh sách vé đã mua thành công.");
     }

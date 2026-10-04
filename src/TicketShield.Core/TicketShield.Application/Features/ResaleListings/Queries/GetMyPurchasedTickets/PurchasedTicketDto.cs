@@ -20,4 +20,8 @@ public class PurchasedTicketDto
     public string QrCodeData { get; set; } = string.Empty;
     public string QrCodeImageUrl { get; set; } = string.Empty;
     public DateTimeOffset PurchasedAt { get; set; }
+
+    public Guid? BundleId { get; set; }
+    public int? BundleTotalTickets { get; set; }
+    public List<PurchasedTicketItemDto> BundleItems { get; set; } = new();
 }

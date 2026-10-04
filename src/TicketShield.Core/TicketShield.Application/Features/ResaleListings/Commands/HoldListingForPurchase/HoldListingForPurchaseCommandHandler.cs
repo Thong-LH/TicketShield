@@ -73,12 +73,29 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
             throw new UnauthorizedException("Tài khoản của bạn đã bị vô hiệu hóa.");
         }
 
-        // 2. Concurrency Control: Acquire PostgreSQL transaction advisory lock hashed by ListingId for single listing
+        // 2. Route bundle listings before opening the single-listing transaction.
+        // Bundle hold opens its own bundle-scoped advisory lock below; nesting EF transactions
+        // on PostgreSQL causes a 500 before the checkout QR can be generated.
+        var routingListing = await _dbContext.ResaleListings
+            .AsNoTracking()
+            .FirstOrDefaultAsync(l => l.Id == request.ListingId, cancellationToken);
+
+        if (routingListing == null)
+        {
+            throw new NotFoundException("Tin đăng bán vé", request.ListingId);
+        }
+
+        if (routingListing.BundleId != null || routingListing.BundleTotalTickets >= 2)
+        {
+            return await HandleBundleHoldAsync(routingListing, buyer, request, cancellationToken);
+        }
+
+        // 3. Concurrency Control: Acquire PostgreSQL transaction advisory lock hashed by ListingId for single listing
         await using var tx = await _dbContext.BeginAdvisoryLockTransactionAsync(ComputeLockKey(request.ListingId), cancellationToken);
 
         try
         {
-            // 2.1 Fetch Resale Listing FRESH inside the locked transaction to guarantee we inspect fresh state
+            // 3.1 Fetch Resale Listing FRESH inside the locked transaction to guarantee we inspect fresh state
             var listing = await _dbContext.ResaleListings
                 .Include(l => l.EscrowTransactions)
                 .Include(l => l.Event)
@@ -89,19 +106,16 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
                 throw new NotFoundException("Tin đăng bán vé", request.ListingId);
             }
 
-            // BE-CORE-5.2.3: Branch to bundle hold if listing is part of an AllOrNothing bundle
-            if (listing.BundleId != null && listing.IsBundleAllOrNothing)
-            {
-                return await HandleBundleHoldAsync(listing, buyer, request, cancellationToken);
-            }
-
-            // 3. Business Rule Validation: Buyer cannot be Seller (BE-CORE-3.1.6)
+            // 4. Business Rule Validation: Buyer cannot be Seller (BE-CORE-3.1.6)
             if (listing.SellerId == buyerId)
             {
                 throw new BadRequestException("Bạn không thể tự mua vé của chính mình.");
             }
 
-            // 4. Validate Private Access Token if listing is private
+            // Ensure Seller exists in ShadowUsers table to prevent FK violations
+            await EnsureUserExistsInShadowUsersAsync(listing.SellerId, cancellationToken);
+
+            // 5. Validate Private Access Token if listing is private
             if (listing.IsPrivate)
             {
                 if (string.IsNullOrWhiteSpace(request.PrivateAccessToken) || listing.PrivateAccessToken != request.PrivateAccessToken)
@@ -110,7 +124,7 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
                 }
             }
 
-            // 5. Validate Listing Status & Active 10-Minute Lock
+            // 6. Validate Listing Status & Active 10-Minute Lock
             var now = DateTimeOffset.UtcNow;
             if (listing.ListingStatus == ListingStatus.Sold ||
                 listing.ListingStatus == ListingStatus.Cancelled ||
@@ -140,10 +154,10 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
                 }
             }
 
-            // 6. Calculate Fees via Dynamic DynamicResaleFeeCalculator
+            // 7. Calculate Fees via Dynamic DynamicResaleFeeCalculator
             var feeResult = await _feeCalculator.CalculateFeeAsync(listing.ResalePrice, listing.IsPrivate, cancellationToken);
 
-            // 7. Determine Payment Reference (transfer_content for VietQR / NAPAS 247)
+            // 8. Determine Payment Reference (transfer_content for VietQR / NAPAS 247)
             string paymentReference;
             if (activePendingEscrow != null && activePendingEscrow.BuyerId == buyerId && !string.IsNullOrWhiteSpace(activePendingEscrow.PaymentReference))
             {
@@ -154,10 +168,10 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
                 paymentReference = await GenerateUniquePaymentReferenceAsync(cancellationToken);
             }
 
-            // 8. Generate VietQR QuickLink (BE-CORE-3.1.2)
+            // 9. Generate VietQR QuickLink (BE-CORE-3.1.2)
             var vietQrResult = _vietQrService?.GenerateSystemQuickLink(feeResult.TotalBuyerPaid, paymentReference);
 
-            // 9. Update Listing Status & Create / Renew EscrowTransaction
+            // 10. Update Listing Status & Create / Renew EscrowTransaction
             var unlockAt = now.AddMinutes(10);
             listing.ListingStatus = ListingStatus.Transacting;
 
@@ -293,7 +307,10 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
         CancellationToken cancellationToken)
     {
         var buyerId = buyer.Id;
-        var bundleId = anchorListing.BundleId!.Value;
+        var bundleId = anchorListing.BundleId ?? anchorListing.Id;
+
+        // Ensure Seller exists in ShadowUsers table to prevent FK violations
+        await EnsureUserExistsInShadowUsersAsync(anchorListing.SellerId, cancellationToken);
 
         // 1. Concurrency Control: Acquire advisory lock by BundleId BEFORE querying and validating
         await using var bundleTx = await _dbContext.BeginAdvisoryLockTransactionAsync(ComputeBundleLockKey(bundleId), cancellationToken);
@@ -304,10 +321,11 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
             var bundleListings = await _dbContext.ResaleListings
                 .Include(l => l.EscrowTransactions)
                 .Include(l => l.Event)
-                .Where(l => l.BundleId == bundleId)
+                .Where(l => (anchorListing.BundleId != null && l.BundleId == anchorListing.BundleId) || l.Id == anchorListing.Id)
                 .ToListAsync(cancellationToken);
 
-            if (bundleListings.Count < 2)
+            var effectiveBundleTotal = anchorListing.BundleTotalTickets > 0 ? anchorListing.BundleTotalTickets : bundleListings.Count;
+            if (bundleListings.Count < 2 && effectiveBundleTotal < 2)
             {
                 throw new BusinessRuleViolationException("Gói vé này không hợp lệ (cần ít nhất 2 vé trong bundle).");
             }
@@ -471,13 +489,13 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
                 UnlockAt = unlockAt,
                 HoldDurationSeconds = (int)Math.Max(0, (unlockAt - DateTimeOffset.UtcNow).TotalSeconds),
                 BundleId = bundleId,
-                BundleTotalTickets = bundleListings.Count,
+                BundleTotalTickets = effectiveBundleTotal,
                 BundleItems = bundleItems
             };
 
             return ApiResponse<HoldListingForPurchaseResponse>.SuccessResponse(
                 response,
-                $"Giữ chỗ gói {bundleListings.Count} vé thành công! Vui lòng thanh toán trong vòng 10 phút.");
+                $"Giữ chỗ gói {effectiveBundleTotal} vé thành công! Vui lòng thanh toán trong vòng 10 phút.");
         }
         catch
         {
@@ -493,6 +511,29 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
     {
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes("ts:hold:bundle:" + bundleId));
         return BitConverter.ToInt64(hash, 0);
+    }
+
+    private async Task EnsureUserExistsInShadowUsersAsync(Guid userId, CancellationToken cancellationToken)
+    {
+        if (userId == Guid.Empty) return;
+        var exists = await _dbContext.ShadowUsers.AnyAsync(u => u.Id == userId, cancellationToken);
+        if (!exists)
+        {
+            var userStr = userId.ToString();
+            var shortId = userStr.Length >= 8 ? userStr[..8] : userStr;
+            var shadowUser = new ShadowUser
+            {
+                Id = userId,
+                Email = $"seller_{shortId}@ticketshield.vn",
+                FullName = "Người bán vé " + shortId,
+                Role = UserRole.User,
+                IsActive = true,
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow
+            };
+            await _dbContext.ShadowUsers.AddAsync(shadowUser, cancellationToken);
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
     }
 }
 
