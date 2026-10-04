@@ -1,5 +1,7 @@
+using MassTransit;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using TicketShield.Contracts.Events;
 using TicketShield.Identity.Application.Common.Interfaces;
 using TicketShield.Identity.Application.Common.Models;
 using TicketShield.Identity.Application.Features.UserBankAccounts.Dtos;
@@ -12,13 +14,16 @@ public class CreateUserBankAccountCommandHandler : IRequestHandler<CreateUserBan
 {
     private readonly IIdentityDbContext _dbContext;
     private readonly ICurrentUserService _currentUserService;
+    private readonly IPublishEndpoint _publishEndpoint;
 
     public CreateUserBankAccountCommandHandler(
         IIdentityDbContext dbContext,
-        ICurrentUserService currentUserService)
+        ICurrentUserService currentUserService,
+        IPublishEndpoint publishEndpoint)
     {
         _dbContext = dbContext;
         _currentUserService = currentUserService;
+        _publishEndpoint = publishEndpoint;
     }
 
     public async Task<ApiResponse<UserBankAccountDto>> Handle(CreateUserBankAccountCommand request, CancellationToken cancellationToken)
@@ -71,6 +76,18 @@ public class CreateUserBankAccountCommandHandler : IRequestHandler<CreateUserBan
         };
 
         _dbContext.UserBankAccounts.Add(bankAccount);
+
+        var published = isDefault
+            ? bankAccount
+            : existingAccounts.FirstOrDefault(account => account.IsDefault) ?? bankAccount;
+
+        await _publishEndpoint.Publish<IUserBankAccountLinkedEvent>(new UserBankAccountLinkedEvent(
+            UserId: userId,
+            BankCode: published.BankCode,
+            AccountNumber: published.BankAccountNumber,
+            AccountHolderName: published.AccountHolderName
+        ), cancellationToken);
+
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         var dto = new UserBankAccountDto

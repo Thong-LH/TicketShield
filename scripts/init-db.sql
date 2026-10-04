@@ -6,6 +6,7 @@
 SELECT 'CREATE DATABASE organizer_db' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'organizer_db')\gexec
 SELECT 'CREATE DATABASE ticketshield_db' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'ticketshield_db')\gexec
 SELECT 'CREATE DATABASE identity_db' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'identity_db')\gexec
+SELECT 'CREATE DATABASE settlement_db' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'settlement_db')\gexec
 
 -- 2. CONNECT TO ORGANIZER DATABASE & CREATE TABLES
 \c organizer_db;

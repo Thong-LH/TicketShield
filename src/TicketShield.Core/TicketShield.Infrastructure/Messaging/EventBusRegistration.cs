@@ -25,6 +25,7 @@ public static class EventBusRegistration
             // Đăng ký Consumers đồng bộ Shadow User và Hold Expiry
             x.AddConsumer<UserCreatedConsumer>();
             x.AddConsumer<UserProfileUpdatedConsumer>();
+            x.AddConsumer<UserBankAccountLinkedConsumer>();
             x.AddConsumer<HoldExpiredConsumer>();
 
             if (useDelayedScheduler)
