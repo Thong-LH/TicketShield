@@ -7,10 +7,12 @@ namespace TicketShield.Infrastructure.Services;
 public class PayoutReportApplier : IPayoutReportApplier
 {
     private readonly ITicketShieldDbContext _db;
+    private readonly IPayoutRealtimeNotifier? _payoutNotifier;
 
-    public PayoutReportApplier(ITicketShieldDbContext db)
+    public PayoutReportApplier(ITicketShieldDbContext db, IPayoutRealtimeNotifier? payoutNotifier = null)
     {
         _db = db;
+        _payoutNotifier = payoutNotifier;
     }
 
     public async Task<bool> ApplyAsync(Guid escrowId, bool succeeded, string? bankReference, CancellationToken cancellationToken = default)
@@ -43,6 +45,26 @@ public class PayoutReportApplier : IPayoutReportApplier
             escrow.InSettlementBuffer = false;
             escrow.UpdatedAt = now;
             await _db.SaveChangesAsync(cancellationToken);
+
+            if (_payoutNotifier != null)
+            {
+                var payload = new
+                {
+                    EscrowId = escrow.Id,
+                    ListingId = escrow.ListingId,
+                    SellerId = escrow.SellerId,
+                    Amount = payout.Amount,
+                    NetSellerPayout = escrow.NetSellerPayout,
+                    BankCode = payout.RecipientBankCode,
+                    AccountNumber = payout.RecipientAccountNumber,
+                    AccountName = payout.RecipientAccountName,
+                    BankReference = bankReference,
+                    Status = "Success",
+                    ProcessedAt = now
+                };
+                await _payoutNotifier.NotifyPayoutCompletedAsync(escrow.SellerId, escrow.Id, escrow.ListingId, payload, cancellationToken);
+            }
+
             return true;
         }
 

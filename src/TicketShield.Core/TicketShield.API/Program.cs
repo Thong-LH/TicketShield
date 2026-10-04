@@ -119,6 +119,7 @@ builder.Services.AddAuthentication(options =>
 builder.Services.AddAuthorization();
 builder.Services.AddSignalR();
 builder.Services.AddScoped<IPaymentRealtimeNotifier, SignalRPaymentRealtimeNotifier>();
+builder.Services.AddScoped<IPayoutRealtimeNotifier, SignalRPayoutRealtimeNotifier>();
 
 var app = builder.Build();
 
