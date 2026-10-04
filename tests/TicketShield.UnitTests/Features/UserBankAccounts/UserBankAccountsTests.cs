@@ -1,4 +1,7 @@
+using MassTransit;
 using Microsoft.EntityFrameworkCore;
+using Moq;
+using TicketShield.Contracts.Events;
 using TicketShield.Identity.Application.Common.Interfaces;
 using TicketShield.Identity.Application.Features.UserBankAccounts.Commands.CreateUserBankAccount;
 using TicketShield.Identity.Application.Features.UserBankAccounts.Queries.GetUserBankAccounts;
@@ -41,13 +44,31 @@ public class UserBankAccountsTests
         public MockCurrentUserService(Guid? userId) => UserId = userId;
     }
 
+    private static CreateUserBankAccountCommandHandler CreateHandler(
+        IdentityDbContext dbContext,
+        MockCurrentUserService currentUserService,
+        Mock<IPublishEndpoint>? publish = null)
+    {
+        if (publish == null)
+        {
+            publish = new Mock<IPublishEndpoint>();
+            publish
+                .Setup(endpoint => endpoint.Publish<IUserBankAccountLinkedEvent>(
+                    It.IsAny<IUserBankAccountLinkedEvent>(),
+                    It.IsAny<CancellationToken>()))
+                .Returns(Task.CompletedTask);
+        }
+
+        return new CreateUserBankAccountCommandHandler(dbContext, currentUserService, publish.Object);
+    }
+
     [Fact]
     public async Task CreateUserBankAccount_FirstAccount_ShouldSetIsDefaultTrue()
     {
         // Arrange
         var (dbContext, testUser) = CreateInMemoryIdentityDbContext();
         var currentUserService = new MockCurrentUserService(testUser.Id);
-        var handler = new CreateUserBankAccountCommandHandler(dbContext, currentUserService);
+        var handler = CreateHandler(dbContext, currentUserService);
 
         var command = new CreateUserBankAccountCommand("MB", "0938434102", "NGUYEN VAN SELLER BANK", isDefault: false);
 
@@ -69,7 +90,7 @@ public class UserBankAccountsTests
         // Arrange
         var (dbContext, testUser) = CreateInMemoryIdentityDbContext();
         var currentUserService = new MockCurrentUserService(testUser.Id);
-        var handler = new CreateUserBankAccountCommandHandler(dbContext, currentUserService);
+        var handler = CreateHandler(dbContext, currentUserService);
 
         var firstAccountCommand = new CreateUserBankAccountCommand("MB", "0938434102", "NGUYEN VAN SELLER BANK", isDefault: true);
         await handler.Handle(firstAccountCommand, CancellationToken.None);
@@ -100,7 +121,7 @@ public class UserBankAccountsTests
         // Arrange
         var (dbContext, testUser) = CreateInMemoryIdentityDbContext();
         var currentUserService = new MockCurrentUserService(testUser.Id);
-        var createHandler = new CreateUserBankAccountCommandHandler(dbContext, currentUserService);
+        var createHandler = CreateHandler(dbContext, currentUserService);
         var getHandler = new GetUserBankAccountsQueryHandler(dbContext, currentUserService);
 
         await createHandler.Handle(new CreateUserBankAccountCommand("MB", "0938434102", "NGUYEN VAN SELLER BANK"), CancellationToken.None);
@@ -123,11 +144,35 @@ public class UserBankAccountsTests
         // Arrange
         var (dbContext, _) = CreateInMemoryIdentityDbContext();
         var currentUserService = new MockCurrentUserService(null); // Anonymous
-        var handler = new CreateUserBankAccountCommandHandler(dbContext, currentUserService);
+        var handler = CreateHandler(dbContext, currentUserService);
 
         var command = new CreateUserBankAccountCommand("MB", "0938434102", "NGUYEN VAN SELLER BANK");
 
         // Act & Assert
         await Assert.ThrowsAsync<UnauthorizedException>(() => handler.Handle(command, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task CreateUserBankAccount_WhenAddingNonDefault_PublishesTheCurrentDefaultAccount()
+    {
+        var (dbContext, testUser) = CreateInMemoryIdentityDbContext();
+        var currentUserService = new MockCurrentUserService(testUser.Id);
+        IUserBankAccountLinkedEvent? published = null;
+        var publish = new Mock<IPublishEndpoint>();
+        publish
+            .Setup(endpoint => endpoint.Publish<IUserBankAccountLinkedEvent>(
+                It.IsAny<IUserBankAccountLinkedEvent>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<IUserBankAccountLinkedEvent, CancellationToken>((message, _) => published = message)
+            .Returns(Task.CompletedTask);
+        var handler = CreateHandler(dbContext, currentUserService, publish);
+
+        await handler.Handle(new CreateUserBankAccountCommand("MB", "0938434102", "NGUYEN VAN SELLER BANK"), CancellationToken.None);
+        await handler.Handle(new CreateUserBankAccountCommand("TCB", "1900000001", "NGUYEN VAN SELLER BANK", isDefault: false), CancellationToken.None);
+
+        Assert.NotNull(published);
+        Assert.Equal(testUser.Id, published.UserId);
+        Assert.Equal("MB", published.BankCode);
+        Assert.Equal("0938434102", published.AccountNumber);
     }
 }

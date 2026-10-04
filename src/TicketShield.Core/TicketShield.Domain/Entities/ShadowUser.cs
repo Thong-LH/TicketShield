@@ -14,6 +14,9 @@ public class ShadowUser : BaseEntity
     public string? PhoneNumber { get; set; }
     public UserRole Role { get; set; } = UserRole.User;
     public bool IsActive { get; set; } = true;
+    public string PayoutBankCode { get; set; } = string.Empty;
+    public string PayoutAccountNumber { get; set; } = string.Empty;
+    public string PayoutAccountName { get; set; } = string.Empty;
 
     // Navigation properties phục vụ query Marketplace & Escrow trong Core
     public ICollection<ResaleListing> ResaleListings { get; set; } = new List<ResaleListing>();
