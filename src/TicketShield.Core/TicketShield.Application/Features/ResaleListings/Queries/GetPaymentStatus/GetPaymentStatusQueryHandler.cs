@@ -27,10 +27,20 @@ public sealed class GetPaymentStatusQueryHandler : IRequestHandler<GetPaymentSta
             throw new UnauthorizedException("Bạn phải đăng nhập để xem trạng thái thanh toán.");
         }
 
-        // SQL-level filter: chỉ lấy escrow của buyer này cho listing này, project thẳng ra DTO
+        // FIX Lỗi 13: EscrowTransaction chỉ lưu ListingId của vé đại diện (vé đầu tiên trong Combo).
+        // Khi Buyer check trạng thái cho vé con thứ 2/3/4, cần tìm theo BundleId.
         var dto = await _dbContext.EscrowTransactions
             .AsNoTracking()
-            .Where(e => e.ListingId == request.ListingId && e.BuyerId == buyerId)
+            .Where(e => (e.ListingId == request.ListingId
+                         || (_dbContext.ResaleListings
+                                 .Where(l => l.Id == request.ListingId && l.BundleId != null)
+                                 .Select(l => (Guid?)l.BundleId)
+                                 .FirstOrDefault()) != null
+                             && e.BundleId == _dbContext.ResaleListings
+                                 .Where(l => l.Id == request.ListingId)
+                                 .Select(l => (Guid?)l.BundleId)
+                                 .FirstOrDefault())
+                        && e.BuyerId == buyerId)
             .OrderByDescending(e => e.CreatedAt)
             .Select(e => new GetPaymentStatusDto
             {

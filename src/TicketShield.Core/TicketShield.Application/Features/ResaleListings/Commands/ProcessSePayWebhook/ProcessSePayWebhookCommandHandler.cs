@@ -273,9 +273,22 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
                                 $"Không nhận được mã vé mới từ BTC Organizer cho vé {listing.OriginalTicketCode}. Giao dịch bị huỷ để bảo vệ Buyer.");
                         }
                     }
+                    else if (transferResponse != null && transferResponse.Outcome == TicketShield.Contracts.Organizer.V1.TransferOutcome.Unspecified
+                        && !string.IsNullOrWhiteSpace(listing.OriginalTicketCode)
+                        && listing.OriginalTicketCode != "ATSH-GA-999"
+                        && listing.OriginalTicketCode != "ATSH-VIP-888"
+                        && listing.OriginalTicketCode != "ATSH-VIP-887")
+                    {
+                        // FIX Lỗi 20: Listing thật từ OTP workflow nhưng BTC trả Unspecified (session không tìm thấy hoặc RpcException).
+                        // TUYỆT ĐỐI KHÔNG fallback sang OriginalTicketCode cũ của Seller — vi phạm cam kết cốt lõi nền tảng.
+                        // Kích hoạt Saga Compensation: rollback listing, hoàn tiền Buyer.
+                        throw new BusinessRuleViolationException(
+                            $"Sang tên vé thất bại: BTC Organizer không xác nhận phiên sang tên cho vé {listing.OriginalTicketCode}. Giao dịch bị huỷ để bảo vệ Buyer.");
+                    }
                 }
 
-                // Seeded marketplace listings (e.g. ATSH-GA-999) without an external BTC lock session
+                // Seeded marketplace listings (ATSH-GA-999 / ATSH-VIP-888 / ATSH-VIP-887) without an external BTC lock session.
+                // Đây là listing demo — OriginalTicketCode là mã vé seed hợp lệ, không phải fallback nguy hiểm.
                 if (string.IsNullOrWhiteSpace(currentNewCode))
                 {
                     currentNewCode = listing.OriginalTicketCode;

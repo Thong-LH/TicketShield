@@ -63,6 +63,28 @@ public class HoldExpiredConsumer : IConsumer<IHoldExpiredEvent>
                 }
             }
 
+            // FIX Lỗi 19: Khôi phục toàn bộ vé con Combo bị bỏ quên về trạng thái đúng.
+            // Trước fix: chỉ vé đại diện (escrow.Listing) được reset, các vé con kẹt Transacting vĩnh viễn.
+            if (escrow.BundleId.HasValue)
+            {
+                var bundleChildListings = await _dbContext.ResaleListings
+                    .Include(l => l.Event)
+                    .Where(l => l.BundleId == escrow.BundleId.Value && l.Id != escrow.ListingId)
+                    .ToListAsync(context.CancellationToken);
+
+                foreach (var childListing in bundleChildListings)
+                {
+                    if (childListing.ListingStatus == ListingStatus.Transacting)
+                    {
+                        childListing.ListingStatus = (childListing.Event != null && childListing.Event.EventStartAt.AddHours(-2) <= now)
+                            ? ListingStatus.Expired
+                            : ListingStatus.Verified;
+                        _logger.LogInformation("Bundle child Listing {ListingId} (BundleId: {BundleId}) reset to {Status} after 10-minute hold expired.",
+                            childListing.Id, escrow.BundleId.Value, childListing.ListingStatus);
+                    }
+                }
+            }
+
             await _dbContext.SaveChangesAsync(context.CancellationToken);
         }
     }

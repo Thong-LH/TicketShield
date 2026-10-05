@@ -76,15 +76,5 @@ public class TicketVerificationsController(
         CancellationToken ct) =>
         WorkflowResponse(await verificationService.Close(Seller, id, key ?? Guid.NewGuid().ToString("N"), ct));
 
-    /// <summary>
-    /// Hủy tin đăng bán và yêu cầu Nhà tổ chức Mở khóa vé (Release Lock)
-    /// </summary>
-    [Obsolete("Sử dụng endpoint chuẩn POST /api/v1/resale-listings/{id}/cancel thay thế.")]
-    [HttpPost("{id}/cancel-listing")]
-    public async Task<IActionResult> Cancel(
-        string id,
-        [FromHeader(Name = "Idempotency-Key")] string? key,
-        CancellationToken ct) =>
-        WorkflowResponse(await verificationService.Cancel(Seller, id, key ?? Guid.NewGuid().ToString("N"), ct));
 }
 

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using TicketShield.Application.Common.Interfaces;
 using TicketShield.Domain.Entities;
 
@@ -309,6 +310,31 @@ public class TicketShieldDbContext : DbContext, ITicketShieldDbContext
         return null;
     }
 
+    public async Task<IDbContextTransactionProxy?> TryBeginAdvisoryLockTransactionAsync(long lockKey, CancellationToken cancellationToken = default)
+    {
+        if (Database.IsRelational())
+        {
+            var tx = await Database.BeginTransactionAsync(cancellationToken);
+            var conn = Database.GetDbConnection();
+            await using var cmd = conn.CreateCommand();
+            cmd.Transaction = tx.GetDbTransaction();
+            cmd.CommandText = "SELECT pg_try_advisory_xact_lock(@lockKey)";
+            var param = cmd.CreateParameter();
+            param.ParameterName = "lockKey";
+            param.Value = lockKey;
+            cmd.Parameters.Add(param);
+
+            var result = await cmd.ExecuteScalarAsync(cancellationToken);
+            if (result is bool acquired && acquired)
+            {
+                return new DbContextTransactionProxy(tx);
+            }
+            await tx.RollbackAsync(cancellationToken);
+            return null;
+        }
+        return new DbContextTransactionProxy(null);
+    }
+
     public async Task<T?> ReadCoreResaleRecordAsync<T>(string id, CancellationToken ct = default) where T : class
     {
         var row = await CoreResaleRecords.FindAsync([id], ct);
@@ -327,11 +353,11 @@ public class TicketShieldDbContext : DbContext, ITicketShieldDbContext
         await SaveChangesAsync(ct);
     }
 
-    private sealed class DbContextTransactionProxy(Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction tx) : IDbContextTransactionProxy
+    private sealed class DbContextTransactionProxy(Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction? tx) : IDbContextTransactionProxy
     {
-        public Task CommitAsync(CancellationToken cancellationToken = default) => tx.CommitAsync(cancellationToken);
-        public Task RollbackAsync(CancellationToken cancellationToken = default) => tx.RollbackAsync(cancellationToken);
-        public ValueTask DisposeAsync() => tx.DisposeAsync();
+        public Task CommitAsync(CancellationToken cancellationToken = default) => tx != null ? tx.CommitAsync(cancellationToken) : Task.CompletedTask;
+        public Task RollbackAsync(CancellationToken cancellationToken = default) => tx != null ? tx.RollbackAsync(cancellationToken) : Task.CompletedTask;
+        public ValueTask DisposeAsync() => tx != null ? tx.DisposeAsync() : ValueTask.CompletedTask;
     }
 }
 

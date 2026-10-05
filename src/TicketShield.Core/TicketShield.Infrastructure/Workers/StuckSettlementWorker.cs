@@ -54,6 +54,16 @@ public class StuckSettlementWorker : BackgroundService
     {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ITicketShieldDbContext>();
+
+        // FIX Lỗi 03: Non-blocking Distributed Advisory Lock (Leader Election)
+        var lockKey = ComputeWorkerLockKey(nameof(StuckSettlementWorker));
+        await using var lockTx = await db.TryBeginAdvisoryLockTransactionAsync(lockKey, ct);
+        if (lockTx == null)
+        {
+            _logger.LogDebug("Another instance is already reconciling stuck settlements. Skipping cycle.");
+            return 0;
+        }
+
         var client = scope.ServiceProvider.GetRequiredService<ISettlementClient>();
         var applier = scope.ServiceProvider.GetRequiredService<IPayoutReportApplier>();
         var dispatcher = scope.ServiceProvider.GetRequiredService<PayoutOutboxDispatcher>();
@@ -102,12 +112,18 @@ public class StuckSettlementWorker : BackgroundService
             {
                 handled++;
             }
-            else if (status.State == "Failed" && await applier.ApplyAsync(escrowId, succeeded: false, bankReference: null, ct))
+            else if ((status.State == "Failed" || status.State == "Exhausted") && await applier.ApplyAsync(escrowId, succeeded: false, bankReference: null, ct))
             {
                 handled++;
             }
         }
 
         return handled;
+    }
+
+    private static long ComputeWorkerLockKey(string workerName)
+    {
+        var hash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes("ts:worker:" + workerName));
+        return BitConverter.ToInt64(hash, 0);
     }
 }

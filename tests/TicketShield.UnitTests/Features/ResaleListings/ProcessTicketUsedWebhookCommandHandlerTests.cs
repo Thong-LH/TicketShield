@@ -102,11 +102,26 @@ public class ProcessTicketUsedWebhookCommandHandlerTests
         var settler = new RecordingSettler();
         var handler = new ProcessTicketUsedWebhookCommandHandler(context, settler);
 
-        var result = await handler.Handle(
+        // 1. Quét vé con đầu tiên: không giải ngân sớm
+        var partialResult = await handler.Handle(
             new ProcessTicketUsedWebhookCommand(new OrganizerTicketUsedWebhookRequest { TicketCode = "TCK-2" }),
             CancellationToken.None);
 
-        Assert.True(result.Success);
+        Assert.True(partialResult.Success);
+        Assert.Null(settler.SettledEscrowId);
+
+        // 2. Quét vé con thứ hai: vẫn chưa giải ngân
+        await handler.Handle(
+            new ProcessTicketUsedWebhookCommand(new OrganizerTicketUsedWebhookRequest { TicketCode = "TCK-1" }),
+            CancellationToken.None);
+        Assert.Null(settler.SettledEscrowId);
+
+        // 3. Quét vé con cuối cùng: giải ngân giao dịch ký quỹ
+        var finalResult = await handler.Handle(
+            new ProcessTicketUsedWebhookCommand(new OrganizerTicketUsedWebhookRequest { TicketCode = "TCK-3" }),
+            CancellationToken.None);
+
+        Assert.True(finalResult.Success);
         Assert.Equal(escrow.Id, settler.SettledEscrowId);
     }
 

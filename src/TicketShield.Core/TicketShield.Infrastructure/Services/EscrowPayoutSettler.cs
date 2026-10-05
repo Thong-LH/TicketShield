@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using TicketShield.Application.Common.Interfaces;
 using TicketShield.Application.Common.Models;
+using TicketShield.Domain.Enums;
 
 namespace TicketShield.Infrastructure.Services;
 
@@ -81,6 +82,45 @@ public class EscrowPayoutSettler : IEscrowPayoutSettler
         return null;
     }
 
-    public Task<bool> TryResumeReleaseAsync(Guid escrowId, CancellationToken cancellationToken = default)
-        => Task.FromResult(false);
+    public async Task<bool> TryResumeReleaseAsync(Guid escrowId, CancellationToken cancellationToken = default)
+    {
+        // FIX Lỗi 02: Khôi phục và tái kích hoạt giải ngân cho escrow bị treo
+        var escrow = await _db.EscrowTransactions
+            .Include(e => e.PayoutTransaction)
+            .FirstOrDefaultAsync(row => row.Id == escrowId, cancellationToken);
+
+        if (escrow == null)
+        {
+            return false;
+        }
+
+        if (escrow.Status != EscrowStatus.Locked && escrow.Status != EscrowStatus.Releasing)
+        {
+            return false;
+        }
+
+        var sellerAccount = await _db.ShadowUsers
+            .Where(u => u.Id == escrow.SellerId)
+            .Select(u => u.PayoutAccountNumber)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (!PayoutAccountRules.IsPresent(sellerAccount))
+        {
+            sellerAccount = await TrySyncSellerBankFromIdentityAsync(escrow.SellerId, cancellationToken);
+            if (!PayoutAccountRules.IsPresent(sellerAccount))
+            {
+                return false;
+            }
+        }
+
+        if (escrow.PayoutTransaction != null && escrow.PayoutTransaction.Status == PayoutStatus.Failed)
+        {
+            escrow.PayoutTransaction.Status = PayoutStatus.Pending;
+            escrow.PayoutTransaction.LastErrorMessage = null;
+            escrow.PayoutTransaction.UpdatedAt = DateTimeOffset.UtcNow;
+            await _db.SaveChangesAsync(cancellationToken);
+        }
+
+        return await _cas.TryBeginReleaseAsync(escrowId, cancellationToken);
+    }
 }

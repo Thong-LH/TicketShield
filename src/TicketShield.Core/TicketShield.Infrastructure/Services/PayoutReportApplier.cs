@@ -105,6 +105,16 @@ public class PayoutReportApplier : IPayoutReportApplier
         payout.Status = PayoutStatus.Failed;
         payout.LastErrorMessage = "STK không hợp lệ";
         payout.UpdatedAt = now;
+
+        // FIX Lỗi 02: Khôi phục escrow.Status về Locked và tắt InSettlementBuffer
+        // để không bị đóng băng vĩnh viễn ở trạng thái Releasing.
+        // Khi seller liên kết STK hợp lệ mới, tiền sẽ được kích hoạt giải ngân lại.
+        if (escrow.Status == EscrowStatus.Releasing)
+        {
+            escrow.Status = EscrowStatus.Locked;
+            escrow.InSettlementBuffer = false;
+        }
+
         escrow.UpdatedAt = now;
         await _db.SaveChangesAsync(cancellationToken);
         return true;

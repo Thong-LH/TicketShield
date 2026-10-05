@@ -24,6 +24,8 @@ public interface ITicketShieldDbContext
 
     Task<IDbContextTransactionProxy?> BeginAdvisoryLockTransactionAsync(long lockKey, CancellationToken cancellationToken = default);
 
+    Task<IDbContextTransactionProxy?> TryBeginAdvisoryLockTransactionAsync(long lockKey, CancellationToken cancellationToken = default);
+
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }
 

@@ -54,7 +54,7 @@ public class CreateMultiResaleListingCommandHandler : IRequestHandler<CreateMult
 
         if (request.Body.Items.Count < 2 || request.Body.Items.Count > ResaleListing.MaxBundleTickets)
         {
-            throw new ResaleWorkflowException("BUNDLE_REQUIRES_2_TO_3_ITEMS", 400);
+            throw new ResaleWorkflowException("BUNDLE_REQUIRES_2_TO_4_ITEMS", 400);
         }
 
         if (request.Body.Items.Any(i => string.IsNullOrWhiteSpace(i.VerificationId)))

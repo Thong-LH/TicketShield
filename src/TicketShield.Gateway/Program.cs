@@ -40,6 +40,20 @@ app.MapGet("/", () => Results.Ok(new
     }
 }));
 
+// FIX Lỗi 06: Chặn toàn bộ endpoint nội bộ /api/v1/internal/** khỏi bị lộ ra Internet.
+// Endpoint POST /api/v1/internal/payouts/reports chỉ được phép gọi từ Settlement.API nội bộ.
+// Bất kỳ request bên ngoài nào vào path /internal/ đều bị Gateway trả 404 trước khi forward.
+app.Use(async (context, next) =>
+{
+    if (context.Request.Path.StartsWithSegments("/api/v1/internal", StringComparison.OrdinalIgnoreCase))
+    {
+        context.Response.StatusCode = StatusCodes.Status404NotFound;
+        await context.Response.WriteAsync("Not Found");
+        return;
+    }
+    await next();
+});
+
 app.MapReverseProxy();
 
 app.Run();

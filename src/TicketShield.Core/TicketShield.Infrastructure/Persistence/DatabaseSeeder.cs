@@ -216,33 +216,13 @@ public static class DatabaseSeeder
 
         await context.SaveChangesAsync();
 
-        // 4. Reset & Purge extraneous operational data (Disputes, Escrows, Non-Seed Listings)
-        // Clear dependent tables first
-        context.DisputeMessages.RemoveRange(await context.DisputeMessages.ToListAsync());
-        context.DisputeEvidences.RemoveRange(await context.DisputeEvidences.ToListAsync());
-        context.Disputes.RemoveRange(await context.Disputes.ToListAsync());
-        context.PayoutTransactions.RemoveRange(await context.PayoutTransactions.ToListAsync());
-        context.OutboxMessages.RemoveRange(await context.OutboxMessages.ToListAsync());
-        context.EscrowTransactions.RemoveRange(await context.EscrowTransactions.ToListAsync());
-
+        // 4. Seed IDs cho các listing mẫu (KHÔNG xóa dữ liệu operational — FIX Lỗi 21)
+        // ANTI-PATTERN đã bị loại bỏ: RemoveRange(Disputes / PayoutTransactions / OutboxMessages /
+        // EscrowTransactions / ResaleListings) sẽ xóa sạch dữ liệu test thật mỗi lần server restart.
+        // Chỉ Upsert các bản ghi seed theo ID cố định bên dưới.
         var sampleListingId = Guid.Parse("44444444-4444-4444-4444-444444444444");
         var sellerPlaceholderListing1Id = Guid.Parse("cc111111-1111-1111-1111-111111111111");
         var sellerPlaceholderListing2Id = Guid.Parse("cc222222-2222-2222-2222-222222222222");
-
-        // Delete all listings except sample listings
-        var preservedIds = new[]
-        {
-            sampleListingId,
-            sellerPlaceholderListing1Id, // seller placeholder 888
-            sellerPlaceholderListing2Id, // seller placeholder 887
-        };
-        var staleListings = await context.ResaleListings
-            .Where(l => !preservedIds.Contains(l.Id))
-            .ToListAsync();
-        if (staleListings.Any())
-        {
-            context.ResaleListings.RemoveRange(staleListings);
-        }
 
         // 5.1 Seed Sample Single Resale Listing (ATSH-GA-999) for marketplace demo
         var sampleListing = await context.ResaleListings.FirstOrDefaultAsync(l => l.Id == sampleListingId);

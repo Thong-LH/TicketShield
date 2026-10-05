@@ -21,9 +21,16 @@ public class SimulatePaymentSuccessCommandHandler : IRequestHandler<SimulatePaym
 
     public async Task<ApiResponse<ProcessSePayWebhookResponse>> Handle(SimulatePaymentSuccessCommand request, CancellationToken cancellationToken)
     {
+        // FIX Lỗi 27: EscrowTransaction chỉ lưu ListingId của vé đại diện đầu tiên trong Combo.
+        // Khi dev thử nghiệm bấm simulate cho vé con thứ 2/3/4, cần tìm theo BundleId.
         var escrow = await _dbContext.EscrowTransactions
             .AsNoTracking()
-            .Where(e => e.ListingId == request.ListingId && e.Status == EscrowStatus.Pending)
+            .Where(e => e.Status == EscrowStatus.Pending &&
+                        (e.ListingId == request.ListingId
+                         || e.BundleId == _dbContext.ResaleListings
+                             .Where(l => l.Id == request.ListingId)
+                             .Select(l => (Guid?)l.BundleId)
+                             .FirstOrDefault()))
             .OrderByDescending(e => e.CreatedAt)
             .FirstOrDefaultAsync(cancellationToken);
 

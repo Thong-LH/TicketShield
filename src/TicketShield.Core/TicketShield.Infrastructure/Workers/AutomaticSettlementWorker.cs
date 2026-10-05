@@ -44,13 +44,28 @@ public class AutomaticSettlementWorker : BackgroundService
     {
         using var scope = _scopeFactory.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ITicketShieldDbContext>();
+
+        // FIX Lỗi 03: Non-blocking Distributed Advisory Lock (Leader Election)
+        var lockKey = ComputeWorkerLockKey(nameof(AutomaticSettlementWorker));
+        await using var lockTx = await dbContext.TryBeginAdvisoryLockTransactionAsync(lockKey, ct);
+        if (lockTx == null)
+        {
+            _logger.LogDebug("Another instance is already processing automatic settlements. Skipping cycle.");
+            return 0;
+        }
+
         var settler = scope.ServiceProvider.GetRequiredService<IEscrowPayoutSettler>();
         var now = DateTimeOffset.UtcNow;
         var dueEscrowIds = await dbContext.EscrowTransactions
+            .Include(escrow => escrow.Seller)
             .Where(escrow => escrow.Status == EscrowStatus.Locked &&
                              escrow.InSettlementBuffer &&
                              escrow.UnlockAt.HasValue &&
-                             escrow.UnlockAt.Value <= now)
+                             escrow.UnlockAt.Value <= now &&
+                             // FIX Lỗi 01: Bỏ qua escrow của seller chưa liên kết STK.
+                             // Tránh vòng lặp quét DB vô tận 60s/lần khi TrySettleAsync luôn return false.
+                             // Escrow sẽ tự được quét lại ngay sau khi Seller liên kết STK qua LinkBankAccountCommand.
+                             !string.IsNullOrEmpty(escrow.Seller.PayoutAccountNumber))
             .Select(escrow => escrow.Id)
             .ToListAsync(ct);
 
@@ -64,5 +79,11 @@ public class AutomaticSettlementWorker : BackgroundService
         }
 
         return settled;
+    }
+
+    private static long ComputeWorkerLockKey(string workerName)
+    {
+        var hash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes("ts:worker:" + workerName));
+        return BitConverter.ToInt64(hash, 0);
     }
 }

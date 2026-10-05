@@ -24,6 +24,7 @@ namespace TicketShield.API.Controllers;
 [Route("api/v1/resale-listings")]
 [ResaleErrors]
 public class ResaleListingsController(
+    IWebHostEnvironment env,
     ICurrentUserService? currentUserService = null) : ApiControllerBase
 {
     private string Seller => currentUserService?.UserId?.ToString("D")
@@ -253,8 +254,8 @@ public class ResaleListingsController(
     }
 
     /// <summary>
-    /// DEV ONLY / TEST SIMULATOR: Giả lập thanh toán thành công cho phiên giữ vé đang chờ thanh toán.
-    /// Kích hoạt 100% quy trình SePay Webhook và ký quỹ Escrow thật.
+    /// DEV ONLY: Giả lập thanh toán thành công cho phiên giữ vé đang chờ thanh toán.
+    /// Chỉ hoạt động ở môi trường Development. Production tự động trả 404.
     /// </summary>
     [Authorize]
     [HttpPost("{id:guid}/simulate-payment")]
@@ -263,6 +264,13 @@ public class ResaleListingsController(
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> SimulatePaymentSuccess([FromRoute] Guid id, CancellationToken ct)
     {
+        // FIX Lỗi 08: Chặn endpoint simulate-payment trên môi trường Production.
+        // Endpoint này là Fake Path vi phạm kiến trúc nếu bị lộ ra ngoài.
+        if (!env.IsDevelopment())
+        {
+            return NotFound();
+        }
+
         var result = await Mediator.Send(new SimulatePaymentSuccessCommand(id), ct);
         return Ok(result);
     }

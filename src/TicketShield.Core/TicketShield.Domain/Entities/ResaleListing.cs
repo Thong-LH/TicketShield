@@ -9,8 +9,9 @@ public class ResaleListing : BaseEntity
     /// <summary>
     /// Domain Law 2 (Bundle Size Law): một gói vé chỉ được chứa từ 2 đến <see cref="MaxBundleTickets"/> vé.
     /// Mỗi vé trong gói phải có phiên OTP riêng đã xác thực — không được suy diễn vé từ vé khác.
+    /// FIX Lỗi 12: Nâng lên 4 theo đặc tả mới (trước là 3).
     /// </summary>
-    public const int MaxBundleTickets = 3;
+    public const int MaxBundleTickets = 4;
 
     public Guid EventId { get; set; }
     public Guid TierId { get; set; }

@@ -33,7 +33,9 @@ public class GetMarketplaceListingsQueryHandler : IRequestHandler<GetMarketplace
             .Where(l =>
                 !l.IsPrivate &&
                 (l.ListingStatus == ListingStatus.Verified || l.ListingStatus == ListingStatus.Transacting) &&
-                l.Event != null && l.Event.EventStartAt > now);
+                // FIX Lỗi 24 / BR-L04: Sàn đóng cửa trước giờ khai mạc 2 tiếng.
+                // Tránh UX xấu: buyer thấy vé nhưng bấm mua nhận 400 BusinessRuleViolationException.
+                l.Event != null && l.Event.EventStartAt.AddHours(-2) > now);
 
         if (request.EventId.HasValue && request.EventId.Value != Guid.Empty)
         {

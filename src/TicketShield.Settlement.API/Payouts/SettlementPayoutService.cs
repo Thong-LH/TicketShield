@@ -196,7 +196,7 @@ public class SettlementPayoutService
 
     private async Task<bool> DeliverReportIfReadyAsync(TransferOrder order, CancellationToken cancellationToken)
     {
-        if (order.ReportDeliveredAt != null || order.State is not (TransferState.Succeeded or TransferState.Failed))
+        if (order.ReportDeliveredAt != null || order.State is not (TransferState.Succeeded or TransferState.Failed or TransferState.Exhausted))
         {
             return false;
         }

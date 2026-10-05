@@ -60,9 +60,23 @@ Mỗi khi Agent có bất kỳ hành động nào thay đổi code, refactor, th
 - **Cấm đường tắt song song (No Parallel Fake Paths):** Khi đã có workflow xác thực với bên thứ ba (gRPC/OTP), KHÔNG ĐƯỢC tạo thêm endpoint CRUD "đi tắt" lưu trực tiếp vào DB để đối phó với ticket Jira hoặc làm xanh test.
 - **Cấm vỏ bọc phòng thủ khi Refactor (No Defensive Wrappers / Dead Aliases):** Khi đổi tên service/controller, phải refactor triệt để và xóa code cũ. Nghiêm cấm tạo class `[NonController][Obsolete]`, interface rỗng kế thừa vô nghĩa, hoặc đăng ký DI thừa thãi.
 - **Cấm nuốt lỗi phân tán (No Silent Error Catching):** Khi gọi service gRPC / External API, tuyệt đối không dùng `catch (Exception) {}` rỗng để tránh crash test. Lỗi phải được lan truyền để kích hoạt rollback trạng thái DB.
-- **Cấm Global Advisory Lock:** Khi dùng database advisory lock, TUYỆT ĐỐI KHÔNG dùng mã khóa cứng toàn cục (như `84722001`). Phải luôn băm theo ID tài nguyên (`ComputeLockKey(resourceId)`).
+- **Cấm Fallback cấp mã vé cũ khi BTC lỗi (Saga Compensation Law):** Khi lệnh gRPC `TransferOwnership` thất bại, bắt buộc kích hoạt Saga Compensation (hoàn vé về `Verified` và đưa vào hàng đợi hoàn tiền `RefundQueued`), tuyệt đối KHÔNG gán `OriginalTicketCode` của Seller cho Buyer.
+- **Cấm Purge/RemoveRange dữ liệu vận hành trong DatabaseSeeder:** Tuyệt đối KHÔNG gọi `RemoveRange` trên các bảng operational data (`EscrowTransactions`, `ResaleListings`, `OutboxMessages`, `Disputes`) khi khởi động server. Chỉ thêm (`Add`) nếu dữ liệu mẫu chưa tồn tại (`!AnyAsync()`).
+- **Cấm Infinite Sweeper Loop:** Background worker quét giải ngân bắt buộc phải lọc điều kiện tiền khả thi (`e.Seller.PayoutAccountNumber != null`) ngay trong câu query LINQ, không query quét lặp vô tận khi seller chưa có STK.
+- **Cấm bỏ quên vé con trong Combo (Bundle Law):** Mọi logic/query thao tác trên vé (hết hạn giữ chỗ, soát vé vào cổng, tra cứu trạng thái thanh toán, dev simulate) BẮT BUỘC phải kiểm tra và xử lý đồng bộ theo `BundleId`. Riêng giải ngân sớm khi soát vé cổng chỉ được kích hoạt khi TOÀN BỘ số vé trong gói đã được quét tại cửa.
+- **Cấm Global Advisory Lock & Bắt buộc Concurrency Control:**
+  - Tuyệt đối KHÔNG dùng mã khóa cứng toàn cục (như `84722001`). Phải luôn băm theo ID tài nguyên (`ComputeLockKey(resourceId)`).
+  - Mọi thao tác thay đổi trạng thái nhạy cảm (Hold, Release Hold) bắt buộc phải bọc trong Transaction Advisory Lock băm theo `ListingId`/`BundleId`, đọc fresh entity bên trong khối khóa.
+  - Background Worker chạy Multi-Pod bắt buộc dùng Non-blocking Advisory Lock (`pg_try_advisory_xact_lock`) để làm Leader Election, tránh duplicate processing.
+- **Bảo mật Perimeter & Webhook:**
+  - Chặn đứng `/api/v1/internal/**` tại Gateway; mọi Webhook bên thứ 3 bắt buộc xác thực Secret Key.
+  - Endpoint giả lập thử nghiệm (`simulate-payment`) bắt buộc bọc `env.IsDevelopment()`.
+  - Tuyệt đối KHÔNG nhúng Secret Key lên Frontend client bundle.
+- **Tuân thủ luật đóng sàn 2 tiếng BR-L04:** Query sàn Marketplace bắt buộc phải lọc `l.Event.EventStartAt.AddHours(-2) > now`.
+- **Đảm bảo tính trọn vẹn của State Machine (No Stuck In Releasing):** Khi payout thất bại (sai STK hoặc Timeout Exhausted), phải gửi callback báo về Core, chuyển payout sang `Failed`, khôi phục escrow về `Locked` (không kẹt vĩnh viễn ở `Releasing`), và cung cấp hàm phục hồi `TryResumeReleaseAsync`.
 - **Phân biệt rạch ròi HTTP 401 vs 403:**
   - Chưa đăng nhập / thiếu token -> HTTP 401 `UnauthorizedException`.
+  - Đã đăng nhập nhưng không có quyền trên tài nguyên của người khác -> HTTP 403 `ForbiddenAccessException`.
 - **Cấm gọi Service trực tiếp từ Controller để bypass MediatR:** Mọi nghiệp vụ đăng bán (đơn lẻ hay đa vé) BẮT BUỘC phải đóng gói qua MediatR Command & Handler. Tuyệt đối không được lấy lý do "code cũ gọi trực tiếp Service" để bao biện cho việc viết code mới bỏ qua MediatR.
 - **Cấm Loop-Commit & Patching trong giao dịch gói:** Nghiêm cấm chạy vòng lặp commit từng item lẻ rồi mới chạy lệnh UPDATE vá `bundle_id` sau. Toàn bộ N vé trong gói bắt buộc phải được bọc trong 1 Database Transaction nguyên tử duy nhất (ACID), chèn sẵn `bundle_id` ngay từ đầu, triệt tiêu 100% nguy cơ vé mồ côi.
 - **Cấm Slogan Clutter, Fake Trust Badges & Reassurance Boxes (Zero Visual Noise on UI):**
