@@ -27,4 +27,6 @@ public class ResaleListingDetailDto
     public Guid? BundleId { get; set; }
     public bool IsBundleAllOrNothing { get; set; }
     public int BundleTotalTickets { get; set; }
+    public string? PrivateAccessToken { get; set; }
+    public List<ResaleListingDetailDto>? BundleItems { get; set; }
 }

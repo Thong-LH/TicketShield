@@ -53,7 +53,8 @@ public static class ResaleListingExtensions
             CreatedAt = listing.CreatedAt,
             BundleId = listing.BundleId,
             IsBundleAllOrNothing = listing.IsBundleAllOrNothing,
-            BundleTotalTickets = listing.BundleTotalTickets
+            BundleTotalTickets = listing.BundleTotalTickets,
+            PrivateAccessToken = listing.PrivateAccessToken
         };
     }
 }

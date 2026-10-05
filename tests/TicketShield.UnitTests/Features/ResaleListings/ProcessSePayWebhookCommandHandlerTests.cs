@@ -400,14 +400,23 @@ public class ProcessSePayWebhookCommandHandlerTests
     [Fact]
     public void ComputeSettlementUnlockAt_UsesMinOf24hAndEventMinus2h()
     {
-        var now = new DateTimeOffset(2026, 9, 18, 8, 0, 0, TimeSpan.Zero);
-        var eventStart = now.AddDays(10);
-        var actual = EscrowTransaction.ComputeSettlementUnlockAt(now, eventStart);
-        Assert.Equal(now.AddHours(24), actual);
+        var original = EscrowTransaction.SettlementBufferDuration;
+        try
+        {
+            EscrowTransaction.SettlementBufferDuration = TimeSpan.FromHours(24);
+            var now = new DateTimeOffset(2026, 9, 18, 8, 0, 0, TimeSpan.Zero);
+            var eventStart = now.AddDays(10);
+            var actual = EscrowTransaction.ComputeSettlementUnlockAt(now, eventStart);
+            Assert.Equal(now.AddHours(24), actual);
 
-        var nearEvent = now.AddHours(5);
-        var near = EscrowTransaction.ComputeSettlementUnlockAt(now, nearEvent);
-        Assert.Equal(nearEvent.AddHours(-2), near);
+            var nearEvent = now.AddHours(5);
+            var near = EscrowTransaction.ComputeSettlementUnlockAt(now, nearEvent);
+            Assert.Equal(nearEvent.AddHours(-2), near);
+        }
+        finally
+        {
+            EscrowTransaction.SettlementBufferDuration = original;
+        }
     }
 
     [Fact]

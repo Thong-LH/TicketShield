@@ -7,4 +7,5 @@ public sealed record BulkPublishResult(
     Guid BundleId,
     bool AllOrNothing,
     int TotalListings,
-    List<BulkPublishItemResult> Listings);
+    List<BulkPublishItemResult> Listings,
+    string? PrivateAccessToken = null);

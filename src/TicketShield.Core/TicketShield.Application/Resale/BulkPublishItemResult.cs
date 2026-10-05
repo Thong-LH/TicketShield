@@ -6,4 +6,5 @@ namespace TicketShield.Application.Resale;
 public sealed record BulkPublishItemResult(
     Guid ListingId,
     string VerificationId,
-    string Status);
+    string Status,
+    string? PrivateAccessToken = null);

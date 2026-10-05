@@ -105,6 +105,7 @@ public class GetMyPurchasedTicketsQueryHandler : IRequestHandler<GetMyPurchasedT
             {
                 bundleListings = await _dbContext.ResaleListings
                     .AsNoTracking()
+                    .Include(l => l.Tier)
                     .Where(l => l.BundleId == bundleId)
                     .OrderBy(l => l.CreatedAt)
                     .ThenBy(l => l.Id)
@@ -121,7 +122,8 @@ public class GetMyPurchasedTicketsQueryHandler : IRequestHandler<GetMyPurchasedT
             for (var index = 0; index < bundleListings.Count; index++)
             {
                 var bl = bundleListings[index];
-                var itemSeat = !string.IsNullOrWhiteSpace(bl.SeatZone) ? bl.SeatZone : tierName;
+                var itemTier = bl.Tier?.TierName ?? tierName;
+                var itemSeat = !string.IsNullOrWhiteSpace(bl.SeatZone) ? bl.SeatZone : itemTier;
                 var itemCode = index < issuedCodes.Count ? issuedCodes[index] : string.Empty;
                 var itemQr = index < issuedQrCodes.Count ? issuedQrCodes[index] : itemCode;
 

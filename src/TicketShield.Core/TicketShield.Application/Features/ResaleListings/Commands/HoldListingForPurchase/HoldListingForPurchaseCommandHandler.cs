@@ -355,7 +355,11 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
 
                 if (listing.IsPrivate)
                 {
-                    if (string.IsNullOrWhiteSpace(request.PrivateAccessToken) || listing.PrivateAccessToken != request.PrivateAccessToken)
+                    var isTokenValid = !string.IsNullOrWhiteSpace(request.PrivateAccessToken) &&
+                                       (string.Equals(listing.PrivateAccessToken, request.PrivateAccessToken, StringComparison.OrdinalIgnoreCase) ||
+                                        bundleListings.Any(b => b.IsPrivate && string.Equals(b.PrivateAccessToken, request.PrivateAccessToken, StringComparison.OrdinalIgnoreCase)));
+
+                    if (!isTokenValid)
                     {
                         throw new ForbiddenAccessException("Mã truy cập vé riêng tư không hợp lệ hoặc bị thiếu.");
                     }

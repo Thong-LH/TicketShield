@@ -37,6 +37,26 @@ public class GetResaleListingByPrivateTokenQueryHandler : IRequestHandler<GetRes
             throw new NotFoundException("Liên kết bán riêng tư không hợp lệ hoặc đã bị hủy.");
         }
 
-        return ApiResponse<ResaleListingDetailDto>.SuccessResponse(listing.ToDetailDto(), "Lấy thông tin vé bán riêng tư thành công.");
+        var detailDto = listing.ToDetailDto();
+
+        if (listing.BundleId.HasValue)
+        {
+            var bundleListings = await _dbContext.ResaleListings
+                .AsNoTracking()
+                .Include(l => l.Event)
+                .Include(l => l.Tier)
+                .Include(l => l.Seller)
+                .Where(l => l.BundleId == listing.BundleId.Value)
+                .OrderBy(l => l.CreatedAt)
+                .ThenBy(l => l.Id)
+                .ToListAsync(cancellationToken);
+
+            if (bundleListings.Count > 1)
+            {
+                detailDto.BundleItems = bundleListings.Select(b => b.ToDetailDto()).ToList();
+            }
+        }
+
+        return ApiResponse<ResaleListingDetailDto>.SuccessResponse(detailDto, "Lấy thông tin vé bán riêng tư thành công.");
     }
 }

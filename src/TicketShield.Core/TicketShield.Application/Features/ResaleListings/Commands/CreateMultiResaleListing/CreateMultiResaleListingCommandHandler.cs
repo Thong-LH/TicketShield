@@ -115,7 +115,8 @@ public class CreateMultiResaleListingCommandHandler : IRequestHandler<CreateMult
                 publishedItems.Add(new BulkPublishItemResult(
                     publishResult.ListingId.Value,
                     item.VerificationId,
-                    publishResult.Status));
+                    publishResult.Status,
+                    publishResult.PrivateAccessToken));
             }
 
             // 5. Kiểm tra toàn bộ vé trong gói phải thuộc cùng một EventId
@@ -131,6 +132,22 @@ public class CreateMultiResaleListingCommandHandler : IRequestHandler<CreateMult
                 throw new ResaleWorkflowException("BUNDLE_ITEMS_MUST_BELONG_TO_SAME_EVENT", 400);
             }
 
+            // 6. Nếu là gói bán riêng tư (private bundle), đồng bộ chung 1 PrivateAccessToken cho toàn bộ vé trong gói
+            string? bundlePrivateToken = publishedItems.FirstOrDefault(p => !string.IsNullOrEmpty(p.PrivateAccessToken))?.PrivateAccessToken;
+            if (!string.IsNullOrEmpty(bundlePrivateToken))
+            {
+                var listingsInDb = await _dbContext.ResaleListings
+                    .Where(l => listingIds.Contains(l.Id))
+                    .ToListAsync(cancellationToken);
+
+                foreach (var l in listingsInDb)
+                {
+                    l.IsPrivate = true;
+                    l.PrivateAccessToken = bundlePrivateToken;
+                }
+                await _dbContext.SaveChangesAsync(cancellationToken);
+            }
+
             // Commit toàn bộ gói vé trong 1 transaction ACID duy nhất
             await tx.CommitAsync(cancellationToken);
 
@@ -138,7 +155,8 @@ public class CreateMultiResaleListingCommandHandler : IRequestHandler<CreateMult
                 bundleId,
                 request.Body.AllOrNothing,
                 request.Body.Items.Count,
-                publishedItems);
+                publishedItems,
+                bundlePrivateToken);
 
             return ApiResponse<BulkPublishResult>.SuccessResponse(result, "Đăng bán danh sách vé thành công.");
         }
