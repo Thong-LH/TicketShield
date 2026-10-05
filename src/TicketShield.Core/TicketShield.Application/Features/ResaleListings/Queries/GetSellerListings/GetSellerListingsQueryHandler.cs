@@ -70,7 +70,7 @@ public class GetSellerListingsQueryHandler : IRequestHandler<GetSellerListingsQu
                 IsPrivate = l.IsPrivate,
                 PrivateAccessToken = l.PrivateAccessToken,
                 ShareUrl = l.IsPrivate && !string.IsNullOrEmpty(l.PrivateAccessToken)
-                    ? $"https://ticketshield.vn/p/{l.PrivateAccessToken}"
+                    ? $"/p/{l.PrivateAccessToken}"
                     : null,
                 VerificationStatus = l.VerificationStatus.ToString(),
                 ListingStatus = l.ListingStatus.ToString(),
