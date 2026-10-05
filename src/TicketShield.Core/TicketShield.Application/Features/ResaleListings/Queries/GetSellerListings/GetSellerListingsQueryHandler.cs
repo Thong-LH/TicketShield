@@ -31,6 +31,7 @@ public class GetSellerListingsQueryHandler : IRequestHandler<GetSellerListingsQu
             .AsNoTracking()
             .Include(l => l.Event)
             .Include(l => l.Tier)
+            .Include(l => l.Seller)
             .Include(l => l.EscrowTransactions)
                 .ThenInclude(e => e.PayoutTransaction)
             .Where(l => l.SellerId == sellerId);
@@ -83,13 +84,15 @@ public class GetSellerListingsQueryHandler : IRequestHandler<GetSellerListingsQu
                 PayoutStatus = latestEscrow?.PayoutTransaction?.Status.ToString(),
                 PayoutProcessedAt = latestEscrow?.PayoutTransaction?.ProcessedAt,
                 PayoutCode = latestEscrow?.PayoutTransaction?.PayoutCode,
-                PayoutAccountName = latestEscrow?.PayoutTransaction?.RecipientAccountName,
-                PayoutBankCode = latestEscrow?.PayoutTransaction?.RecipientBankCode,
-                PayoutAccountNumber = latestEscrow?.PayoutTransaction?.RecipientAccountNumber,
+                PayoutAccountName = latestEscrow?.PayoutTransaction?.RecipientAccountName ?? l.Seller?.PayoutAccountName,
+                PayoutBankCode = latestEscrow?.PayoutTransaction?.RecipientBankCode ?? l.Seller?.PayoutBankCode,
+                PayoutAccountNumber = latestEscrow?.PayoutTransaction?.RecipientAccountNumber ?? l.Seller?.PayoutAccountNumber,
                 BankTransactionReference = latestEscrow?.BankTransactionReference,
                 PayoutBankInfo = latestEscrow?.PayoutTransaction != null
                     ? $"{latestEscrow.PayoutTransaction.RecipientBankCode} - {latestEscrow.PayoutTransaction.RecipientAccountNumber}"
-                    : null,
+                    : (!string.IsNullOrEmpty(l.Seller?.PayoutBankCode) && !string.IsNullOrEmpty(l.Seller?.PayoutAccountNumber)
+                        ? $"{l.Seller.PayoutBankCode} - {l.Seller.PayoutAccountNumber}"
+                        : null),
                 CreatedAt = l.CreatedAt,
                 BundleId = l.BundleId,
                 IsBundleAllOrNothing = l.IsBundleAllOrNothing,

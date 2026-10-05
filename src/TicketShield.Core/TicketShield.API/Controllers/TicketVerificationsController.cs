@@ -34,9 +34,9 @@ public class TicketVerificationsController(
     [HttpPost]
     public async Task<IActionResult> RequestOtp(
         [FromBody] RequestOtpBody body,
-        [FromHeader(Name = "Idempotency-Key")] string key,
+        [FromHeader(Name = "Idempotency-Key")] string? key,
         CancellationToken ct) =>
-        WorkflowResponse(await verificationService.Request(Seller, key, body.TicketCode, ct, body.OrganizerId));
+        WorkflowResponse(await verificationService.Request(Seller, key ?? Guid.NewGuid().ToString("N"), body.TicketCode, ct, body.OrganizerId));
 
     /// <summary>
     /// Gửi lại mã OTP xác thực
@@ -44,9 +44,9 @@ public class TicketVerificationsController(
     [HttpPost("{id}/resend")]
     public async Task<IActionResult> Resend(
         string id,
-        [FromHeader(Name = "Idempotency-Key")] string key,
+        [FromHeader(Name = "Idempotency-Key")] string? key,
         CancellationToken ct) =>
-        WorkflowResponse(await verificationService.Resend(Seller, id, key, ct));
+        WorkflowResponse(await verificationService.Resend(Seller, id, key ?? Guid.NewGuid().ToString("N"), ct));
 
     /// <summary>
     /// Xác nhận mã OTP và yêu cầu Nhà tổ chức Khóa vé (Lock)
@@ -55,9 +55,9 @@ public class TicketVerificationsController(
     public async Task<IActionResult> Confirm(
         string id,
         [FromBody] ConfirmOtpBody body,
-        [FromHeader(Name = "Idempotency-Key")] string key,
+        [FromHeader(Name = "Idempotency-Key")] string? key,
         CancellationToken ct) =>
-        WorkflowResponse(await verificationService.Confirm(Seller, id, key, body.Otp, ct));
+        WorkflowResponse(await verificationService.Confirm(Seller, id, key ?? Guid.NewGuid().ToString("N"), body.Otp, ct));
 
     /// <summary>
     /// Tra cứu trạng thái phiên xác thực vé
@@ -72,9 +72,9 @@ public class TicketVerificationsController(
     [HttpPost("{id}/close")]
     public async Task<IActionResult> Close(
         string id,
-        [FromHeader(Name = "Idempotency-Key")] string key,
+        [FromHeader(Name = "Idempotency-Key")] string? key,
         CancellationToken ct) =>
-        WorkflowResponse(await verificationService.Close(Seller, id, key, ct));
+        WorkflowResponse(await verificationService.Close(Seller, id, key ?? Guid.NewGuid().ToString("N"), ct));
 
     /// <summary>
     /// Hủy tin đăng bán và yêu cầu Nhà tổ chức Mở khóa vé (Release Lock)
@@ -83,8 +83,8 @@ public class TicketVerificationsController(
     [HttpPost("{id}/cancel-listing")]
     public async Task<IActionResult> Cancel(
         string id,
-        [FromHeader(Name = "Idempotency-Key")] string key,
+        [FromHeader(Name = "Idempotency-Key")] string? key,
         CancellationToken ct) =>
-        WorkflowResponse(await verificationService.Cancel(Seller, id, key, ct));
+        WorkflowResponse(await verificationService.Cancel(Seller, id, key ?? Guid.NewGuid().ToString("N"), ct));
 }
 

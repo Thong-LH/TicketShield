@@ -44,10 +44,11 @@ public class ResaleListingsController(
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status422UnprocessableEntity)]
     public async Task<IActionResult> Publish(
         [FromBody] PublishBody body,
-        [FromHeader(Name = "Idempotency-Key")] string key,
+        [FromHeader(Name = "Idempotency-Key")] string? key,
         CancellationToken ct)
     {
-        var command = new PublishResaleListingCommand(Seller, key, body);
+        var safeKey = !string.IsNullOrWhiteSpace(key) ? key : Guid.NewGuid().ToString("D");
+        var command = new PublishResaleListingCommand(Seller, safeKey, body);
         var result = await Mediator.Send(command, ct);
         return StatusCode(result.Data?.Status?.EndsWith("Pending", StringComparison.Ordinal) == true ? 202 : 200, result);
     }
