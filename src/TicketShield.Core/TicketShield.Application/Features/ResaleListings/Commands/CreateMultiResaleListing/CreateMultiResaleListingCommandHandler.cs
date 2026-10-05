@@ -118,6 +118,19 @@ public class CreateMultiResaleListingCommandHandler : IRequestHandler<CreateMult
                     publishResult.Status));
             }
 
+            // 5. Kiểm tra toàn bộ vé trong gói phải thuộc cùng một EventId
+            var listingIds = publishedItems.Select(p => p.ListingId).ToList();
+            var eventIds = await _dbContext.ResaleListings
+                .Where(l => listingIds.Contains(l.Id))
+                .Select(l => l.EventId)
+                .Distinct()
+                .ToListAsync(cancellationToken);
+
+            if (eventIds.Count > 1)
+            {
+                throw new ResaleWorkflowException("BUNDLE_ITEMS_MUST_BELONG_TO_SAME_EVENT", 400);
+            }
+
             // Commit toàn bộ gói vé trong 1 transaction ACID duy nhất
             await tx.CommitAsync(cancellationToken);
 
