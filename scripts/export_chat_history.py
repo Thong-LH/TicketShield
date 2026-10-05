@@ -389,6 +389,42 @@ PROJECT_SESSIONS = [
         "title": "Chuẩn Hóa Thanh Toán, Nút Mô Phỏng Dev Simulator & Tự Động Ghi Chép Hội Thoại",
         "type": "standard",
         "db": "2c58e3de-9902-4a47-b244-3105679d2ad6.db"
+    },
+    {
+        "id": "eb6dc9d8-e194-40bd-b6ba-3c4699217f5d",
+        "date": "2026-10-05",
+        "time": "2026-10-05 02:46",
+        "slug": "kien_truc_outbox_va_payout_service",
+        "title": "Kiến Trúc Outbox Pattern & Microservice Settlement Payout (MF-04)",
+        "type": "standard",
+        "db": "eb6dc9d8-e194-40bd-b6ba-3c4699217f5d.db"
+    },
+    {
+        "id": "ec8511bb-b151-4a3a-9965-4c5d48efa5e6",
+        "date": "2026-10-05",
+        "time": "2026-10-05 03:12",
+        "slug": "cam_nang_phan_bien_hoi_dong_tot_nghiep",
+        "title": "Xây Dựng Cẩm Nang Phản Biện & Q&A Bảo Vệ Đồ Án Tốt Nghiệp",
+        "type": "standard",
+        "db": "ec8511bb-b151-4a3a-9965-4c5d48efa5e6.db"
+    },
+    {
+        "id": "6fe2cb60-c6d4-429d-aeb2-c2926ee296f1",
+        "date": "2026-10-05",
+        "time": "2026-10-05 07:12",
+        "slug": "git_sync_va_kiem_toan_28_loi_he_thong",
+        "title": "Đồng Bộ Git Remote, Kiểm Toán 28 Lỗi Hệ Thống & Git Blame",
+        "type": "standard",
+        "db": "6fe2cb60-c6d4-429d-aeb2-c2926ee296f1.db"
+    },
+    {
+        "id": "36352e1b-5a3f-4ec1-a7de-cbc433cf5682",
+        "date": "2026-10-05",
+        "time": "2026-10-05 21:00",
+        "slug": "khac_phuc_18_loi_be_cam_nang_kien_truc_va_push_mf04",
+        "title": "Khắc Phục Toàn Diện 18 Lỗi Backend, Bộ Quy Tắc Chống Tái Diễn Lỗi & Push flow/MF_04",
+        "type": "standard",
+        "db": "36352e1b-5a3f-4ec1-a7de-cbc433cf5682.db"
     }
 ]
 
@@ -396,13 +432,6 @@ def run_export():
     conv_dir = r'C:\Users\USER\.gemini\antigravity-ide\conversations'
     output_dir = r'd:\Capstone\local_docs\chat_sessions'
     os.makedirs(output_dir, exist_ok=True)
-
-    # Clean existing session markdown files
-    for old_f in glob.glob(os.path.join(output_dir, "session_*.md")):
-        try:
-            os.remove(old_f)
-        except Exception:
-            pass
 
     print(f"Exporting {len(PROJECT_SESSIONS)} chronological sessions into {output_dir}...")
 

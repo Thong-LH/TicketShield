@@ -28,6 +28,11 @@ public class TicketVerificationsController(
         StatusCode(result.Status.EndsWith("Pending", StringComparison.Ordinal) ? 202 : 200,
             ApiResponse<VerificationResult>.SuccessResponse(result, result.Status));
 
+    private static string NormalizeKey(string? key) =>
+        (!string.IsNullOrWhiteSpace(key) && Guid.TryParseExact(key, "D", out var g) && g != Guid.Empty)
+            ? key
+            : Guid.NewGuid().ToString("D");
+
     /// <summary>
     /// Gửi yêu cầu xác thực vé: Nhà tổ chức gửi OTP qua email chủ vé
     /// </summary>
@@ -36,7 +41,7 @@ public class TicketVerificationsController(
         [FromBody] RequestOtpBody body,
         [FromHeader(Name = "Idempotency-Key")] string? key,
         CancellationToken ct) =>
-        WorkflowResponse(await verificationService.Request(Seller, key ?? Guid.NewGuid().ToString("N"), body.TicketCode, ct, body.OrganizerId));
+        WorkflowResponse(await verificationService.Request(Seller, NormalizeKey(key), body.TicketCode, ct, body.OrganizerId));
 
     /// <summary>
     /// Gửi lại mã OTP xác thực
@@ -46,7 +51,7 @@ public class TicketVerificationsController(
         string id,
         [FromHeader(Name = "Idempotency-Key")] string? key,
         CancellationToken ct) =>
-        WorkflowResponse(await verificationService.Resend(Seller, id, key ?? Guid.NewGuid().ToString("N"), ct));
+        WorkflowResponse(await verificationService.Resend(Seller, id, NormalizeKey(key), ct));
 
     /// <summary>
     /// Xác nhận mã OTP và yêu cầu Nhà tổ chức Khóa vé (Lock)
@@ -57,7 +62,7 @@ public class TicketVerificationsController(
         [FromBody] ConfirmOtpBody body,
         [FromHeader(Name = "Idempotency-Key")] string? key,
         CancellationToken ct) =>
-        WorkflowResponse(await verificationService.Confirm(Seller, id, key ?? Guid.NewGuid().ToString("N"), body.Otp, ct));
+        WorkflowResponse(await verificationService.Confirm(Seller, id, NormalizeKey(key), body.Otp, ct));
 
     /// <summary>
     /// Tra cứu trạng thái phiên xác thực vé
@@ -74,7 +79,6 @@ public class TicketVerificationsController(
         string id,
         [FromHeader(Name = "Idempotency-Key")] string? key,
         CancellationToken ct) =>
-        WorkflowResponse(await verificationService.Close(Seller, id, key ?? Guid.NewGuid().ToString("N"), ct));
-
+        WorkflowResponse(await verificationService.Close(Seller, id, NormalizeKey(key), ct));
 }
 

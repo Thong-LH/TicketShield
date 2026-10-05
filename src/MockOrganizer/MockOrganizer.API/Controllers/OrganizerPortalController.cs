@@ -59,7 +59,7 @@ public class OrganizerPortalController(
         var ticket = new MockTicket
         {
             Id = Guid.NewGuid(),
-            OrganizerId = request?.OrganizerId ?? Guid.Parse("b0000000-0000-0000-0000-000000000001"),
+            OrganizerId = request?.OrganizerId ?? Guid.Parse("e0000000-0000-0000-0000-000000000001"),
             TicketCode = code,
             EventName = string.IsNullOrWhiteSpace(request?.EventName) ? "Anh Trai Say Hi Concert 2026" : request.EventName,
             SeatZone = string.IsNullOrWhiteSpace(request?.SeatZone) ? randomZone : request.SeatZone,
