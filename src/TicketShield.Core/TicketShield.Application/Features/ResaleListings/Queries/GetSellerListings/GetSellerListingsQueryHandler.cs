@@ -75,10 +75,18 @@ public class GetSellerListingsQueryHandler : IRequestHandler<GetSellerListingsQu
                 ListingStatus = l.ListingStatus.ToString(),
                 EscrowStatus = latestEscrow?.Status.ToString(),
                 NetSellerPayout = latestEscrow?.NetSellerPayout,
+                SellerFee = latestEscrow?.SellerFee,
+                BuyerFee = latestEscrow?.BuyerFee,
+                TotalBuyerPaid = latestEscrow?.TotalBuyerPaid,
                 UnlockAt = latestEscrow?.UnlockAt,
                 InSettlementBuffer = latestEscrow?.InSettlementBuffer ?? false,
                 PayoutStatus = latestEscrow?.PayoutTransaction?.Status.ToString(),
                 PayoutProcessedAt = latestEscrow?.PayoutTransaction?.ProcessedAt,
+                PayoutCode = latestEscrow?.PayoutTransaction?.PayoutCode,
+                PayoutAccountName = latestEscrow?.PayoutTransaction?.RecipientAccountName,
+                PayoutBankCode = latestEscrow?.PayoutTransaction?.RecipientBankCode,
+                PayoutAccountNumber = latestEscrow?.PayoutTransaction?.RecipientAccountNumber,
+                BankTransactionReference = latestEscrow?.BankTransactionReference,
                 PayoutBankInfo = latestEscrow?.PayoutTransaction != null
                     ? $"{latestEscrow.PayoutTransaction.RecipientBankCode} - {latestEscrow.PayoutTransaction.RecipientAccountNumber}"
                     : null,

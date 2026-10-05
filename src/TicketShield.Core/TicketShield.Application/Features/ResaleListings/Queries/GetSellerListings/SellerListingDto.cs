@@ -29,11 +29,19 @@ public class SellerListingDto
 
     public string? EscrowStatus { get; set; }
     public decimal? NetSellerPayout { get; set; }
+    public decimal? SellerFee { get; set; }
+    public decimal? BuyerFee { get; set; }
+    public decimal? TotalBuyerPaid { get; set; }
     public DateTimeOffset? UnlockAt { get; set; }
     public bool InSettlementBuffer { get; set; }
     public string? PayoutStatus { get; set; }
     public DateTimeOffset? PayoutProcessedAt { get; set; }
     public string? PayoutBankInfo { get; set; }
+    public string? PayoutCode { get; set; }
+    public string? PayoutAccountName { get; set; }
+    public string? PayoutBankCode { get; set; }
+    public string? PayoutAccountNumber { get; set; }
+    public string? BankTransactionReference { get; set; }
 
     public DateTimeOffset CreatedAt { get; set; }
     public Guid? BundleId { get; set; }
