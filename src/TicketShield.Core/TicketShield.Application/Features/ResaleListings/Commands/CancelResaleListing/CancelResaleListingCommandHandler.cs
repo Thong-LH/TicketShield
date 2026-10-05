@@ -2,6 +2,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using TicketShield.Application.Common.Interfaces;
 using TicketShield.Application.Common.Models;
+using TicketShield.Domain.Entities;
 using TicketShield.Domain.Enums;
 using TicketShield.Domain.Exceptions;
 
@@ -52,18 +53,40 @@ public class CancelResaleListingCommandHandler : IRequestHandler<CancelResaleLis
                 $"Tin đăng bán vé hiện đang ở trạng thái '{listing.ListingStatus}'. Chỉ có thể hủy tin đăng khi vé chưa bị người mua đặt hoặc mua.");
         }
 
+        var listingsToCancel = new List<ResaleListing> { listing };
+        if (listing.BundleId.HasValue)
+        {
+            var bundleListings = await _dbContext.ResaleListings
+                .Where(l => l.BundleId == listing.BundleId.Value && l.SellerId == sellerId)
+                .ToListAsync(cancellationToken);
+
+            if (bundleListings.Any(l => l.ListingStatus != ListingStatus.Verified && l.ListingStatus != ListingStatus.Cancelled))
+            {
+                throw new BusinessRuleViolationException(
+                    "Một hoặc nhiều vé trong gói vé (combo) này đang được giao dịch hoặc đã bán. Không thể hủy gói vé.");
+            }
+
+            listingsToCancel = bundleListings.Where(l => l.ListingStatus == ListingStatus.Verified).ToList();
+        }
+
         // 5. Step 3 of Jira: Call MockOrganizer via verification service to unlock original ticket if gRPC session exists
         if (_verificationService != null)
         {
-            var idempotencyKey = listing.Id.ToString("D");
-            // CancelByListingId looks up the verificationId via listing index in core_resale_records.
-            // If no gRPC session exists (e.g. seeded data), CancelByListingId returns gracefully.
-            // If an active session exists and gRPC unlock fails, this throws and aborts cancellation.
-            await _verificationService.CancelByListingId(sellerId.ToString("D"), listing.Id, idempotencyKey, cancellationToken);
+            foreach (var item in listingsToCancel)
+            {
+                var idempotencyKey = item.Id.ToString("D");
+                // CancelByListingId looks up the verificationId via listing index in core_resale_records.
+                // If no gRPC session exists (e.g. seeded data), CancelByListingId returns gracefully.
+                // If an active session exists and gRPC unlock fails, this throws and aborts cancellation.
+                await _verificationService.CancelByListingId(sellerId.ToString("D"), item.Id, idempotencyKey, cancellationToken);
+            }
         }
 
         // 6. Step 2 of Jira: Change listing status to CANCELLED in DB and save
-        listing.ListingStatus = ListingStatus.Cancelled;
+        foreach (var item in listingsToCancel)
+        {
+            item.ListingStatus = ListingStatus.Cancelled;
+        }
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         var response = new CancelResaleListingResponse

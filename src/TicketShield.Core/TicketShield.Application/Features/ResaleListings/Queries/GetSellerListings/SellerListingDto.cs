@@ -36,4 +36,7 @@ public class SellerListingDto
     public string? PayoutBankInfo { get; set; }
 
     public DateTimeOffset CreatedAt { get; set; }
+    public Guid? BundleId { get; set; }
+    public bool IsBundleAllOrNothing { get; set; }
+    public int? BundleTotalTickets { get; set; }
 }

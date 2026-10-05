@@ -82,7 +82,10 @@ public class GetSellerListingsQueryHandler : IRequestHandler<GetSellerListingsQu
                 PayoutBankInfo = latestEscrow?.PayoutTransaction != null
                     ? $"{latestEscrow.PayoutTransaction.RecipientBankCode} - {latestEscrow.PayoutTransaction.RecipientAccountNumber}"
                     : null,
-                CreatedAt = l.CreatedAt
+                CreatedAt = l.CreatedAt,
+                BundleId = l.BundleId,
+                IsBundleAllOrNothing = l.IsBundleAllOrNothing,
+                BundleTotalTickets = l.BundleTotalTickets >= 2 ? l.BundleTotalTickets : null
             };
         }).ToList();
 

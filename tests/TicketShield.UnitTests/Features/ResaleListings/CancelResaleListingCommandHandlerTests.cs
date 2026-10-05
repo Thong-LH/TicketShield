@@ -255,4 +255,62 @@ public class CancelResaleListingCommandHandlerTests
         Assert.NotNull(dbListing);
         Assert.Equal(ListingStatus.Verified, dbListing.ListingStatus);
     }
+
+    [Fact]
+    public async Task Handle_WhenListingIsBundle_ShouldCancelAllSiblingsInBundle()
+    {
+        // Arrange
+        var (dbContext, seller1, _) = CreateInMemoryDbContext();
+        var testEvent = await dbContext.Events.FirstAsync();
+        var testTier = await dbContext.TicketTiers.FirstAsync();
+        var bundleId = Guid.NewGuid();
+
+        var listing1 = new ResaleListing
+        {
+            Id = Guid.NewGuid(),
+            EventId = testEvent.Id,
+            TierId = testTier.Id,
+            SellerId = seller1.Id,
+            OriginalTicketCode = "TCK-BUNDLE-001",
+            OriginalPrice = 1_000_000m,
+            ResalePrice = 900_000m,
+            ListingStatus = ListingStatus.Verified,
+            BundleId = bundleId,
+            BundleTotalTickets = 2,
+            IsBundleAllOrNothing = true
+        };
+        var listing2 = new ResaleListing
+        {
+            Id = Guid.NewGuid(),
+            EventId = testEvent.Id,
+            TierId = testTier.Id,
+            SellerId = seller1.Id,
+            OriginalTicketCode = "TCK-BUNDLE-002",
+            OriginalPrice = 1_000_000m,
+            ResalePrice = 900_000m,
+            ListingStatus = ListingStatus.Verified,
+            BundleId = bundleId,
+            BundleTotalTickets = 2,
+            IsBundleAllOrNothing = true
+        };
+        dbContext.ResaleListings.AddRange(listing1, listing2);
+        await dbContext.SaveChangesAsync();
+
+        var currentUserService = new MockCurrentUserService(seller1.Id);
+        var handler = new CancelResaleListingCommandHandler(dbContext, currentUserService, null);
+        var command = new CancelResaleListingCommand(listing1.Id);
+
+        // Act
+        var result = await handler.Handle(command, CancellationToken.None);
+
+        // Assert
+        Assert.True(result.Success);
+        var updatedListing1 = await dbContext.ResaleListings.FindAsync(listing1.Id);
+        var updatedListing2 = await dbContext.ResaleListings.FindAsync(listing2.Id);
+
+        Assert.NotNull(updatedListing1);
+        Assert.NotNull(updatedListing2);
+        Assert.Equal(ListingStatus.Cancelled, updatedListing1.ListingStatus);
+        Assert.Equal(ListingStatus.Cancelled, updatedListing2.ListingStatus);
+    }
 }
