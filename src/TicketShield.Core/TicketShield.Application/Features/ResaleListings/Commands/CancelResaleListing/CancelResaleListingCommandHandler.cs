@@ -93,6 +93,11 @@ public class CancelResaleListingCommandHandler : IRequestHandler<CancelResaleLis
         {
             ListingId = listing.Id,
             OriginalTicketCode = listing.OriginalTicketCode,
+            AllCancelledTicketCodes = listingsToCancel
+                .OrderBy(item => item.CreatedAt)
+                .ThenBy(item => item.Id)
+                .Select(item => item.OriginalTicketCode)
+                .ToList(),
             ListingStatus = listing.ListingStatus.ToString(),
             CancelledAt = DateTimeOffset.UtcNow
         };

@@ -111,6 +111,8 @@ public class CancelResaleListingCommandHandlerTests
         Assert.True(result.Success);
         Assert.NotNull(result.Data);
         Assert.Equal("Cancelled", result.Data.ListingStatus);
+        Assert.Equal("TCK-CANCEL-001", result.Data.OriginalTicketCode);
+        Assert.Equal(new[] { "TCK-CANCEL-001" }, result.Data.AllCancelledTicketCodes);
 
         var dbListing = await dbContext.ResaleListings.FindAsync(listing.Id);
         Assert.NotNull(dbListing);
@@ -277,7 +279,8 @@ public class CancelResaleListingCommandHandlerTests
             ListingStatus = ListingStatus.Verified,
             BundleId = bundleId,
             BundleTotalTickets = 2,
-            IsBundleAllOrNothing = true
+            IsBundleAllOrNothing = true,
+            CreatedAt = DateTimeOffset.Parse("2026-10-02T00:00:00Z")
         };
         var listing2 = new ResaleListing
         {
@@ -291,7 +294,8 @@ public class CancelResaleListingCommandHandlerTests
             ListingStatus = ListingStatus.Verified,
             BundleId = bundleId,
             BundleTotalTickets = 2,
-            IsBundleAllOrNothing = true
+            IsBundleAllOrNothing = true,
+            CreatedAt = DateTimeOffset.Parse("2026-10-01T00:00:00Z")
         };
         dbContext.ResaleListings.AddRange(listing1, listing2);
         await dbContext.SaveChangesAsync();
@@ -312,5 +316,188 @@ public class CancelResaleListingCommandHandlerTests
         Assert.NotNull(updatedListing2);
         Assert.Equal(ListingStatus.Cancelled, updatedListing1.ListingStatus);
         Assert.Equal(ListingStatus.Cancelled, updatedListing2.ListingStatus);
+        Assert.Equal("TCK-BUNDLE-001", result.Data!.OriginalTicketCode);
+        Assert.Equal(new[] { "TCK-BUNDLE-002", "TCK-BUNDLE-001" }, result.Data.AllCancelledTicketCodes);
+        Assert.Equal(2, result.Data.AllCancelledTicketCodes.Distinct().Count());
+    }
+
+    [Fact]
+    public async Task Handle_WhenBundleSiblingAlreadyCancelled_ShouldOmitThatCode()
+    {
+        var (dbContext, seller1, _) = CreateInMemoryDbContext();
+        var testEvent = await dbContext.Events.FirstAsync();
+        var testTier = await dbContext.TicketTiers.FirstAsync();
+        var bundleId = Guid.NewGuid();
+        var stillListed = new ResaleListing
+        {
+            Id = Guid.NewGuid(),
+            EventId = testEvent.Id,
+            TierId = testTier.Id,
+            SellerId = seller1.Id,
+            OriginalTicketCode = "TCK-BUNDLE-OPEN",
+            OriginalPrice = 1_000_000m,
+            ResalePrice = 900_000m,
+            ListingStatus = ListingStatus.Verified,
+            BundleId = bundleId,
+            BundleTotalTickets = 2,
+            CreatedAt = DateTimeOffset.Parse("2026-10-02T00:00:00Z")
+        };
+        var alreadyCancelled = new ResaleListing
+        {
+            Id = Guid.NewGuid(),
+            EventId = testEvent.Id,
+            TierId = testTier.Id,
+            SellerId = seller1.Id,
+            OriginalTicketCode = "TCK-BUNDLE-DONE",
+            OriginalPrice = 1_000_000m,
+            ResalePrice = 900_000m,
+            ListingStatus = ListingStatus.Cancelled,
+            BundleId = bundleId,
+            BundleTotalTickets = 2,
+            CreatedAt = DateTimeOffset.Parse("2026-10-01T00:00:00Z")
+        };
+        dbContext.ResaleListings.AddRange(stillListed, alreadyCancelled);
+        await dbContext.SaveChangesAsync();
+
+        var handler = new CancelResaleListingCommandHandler(dbContext, new MockCurrentUserService(seller1.Id), null);
+        var result = await handler.Handle(new CancelResaleListingCommand(stillListed.Id), CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.Equal("TCK-BUNDLE-OPEN", result.Data!.OriginalTicketCode);
+        Assert.Equal(new[] { "TCK-BUNDLE-OPEN" }, result.Data.AllCancelledTicketCodes);
+        Assert.Equal(ListingStatus.Cancelled, (await dbContext.ResaleListings.FindAsync(alreadyCancelled.Id))!.ListingStatus);
+    }
+
+    [Theory]
+    [InlineData(ListingStatus.Transacting)]
+    [InlineData(ListingStatus.Sold)]
+    public async Task Handle_WhenBundleSiblingIsBeingPurchasedOrSold_ShouldRejectAndSkipUnlock(ListingStatus siblingStatus)
+    {
+        var (dbContext, seller1, _) = CreateInMemoryDbContext();
+        var testEvent = await dbContext.Events.FirstAsync();
+        var testTier = await dbContext.TicketTiers.FirstAsync();
+        var bundleId = Guid.NewGuid();
+        var stillListed = new ResaleListing
+        {
+            Id = Guid.NewGuid(),
+            EventId = testEvent.Id,
+            TierId = testTier.Id,
+            SellerId = seller1.Id,
+            OriginalTicketCode = "TCK-BUNDLE-OPEN",
+            OriginalPrice = 1_000_000m,
+            ResalePrice = 900_000m,
+            ListingStatus = ListingStatus.Verified,
+            BundleId = bundleId,
+            BundleTotalTickets = 2
+        };
+        var blocked = new ResaleListing
+        {
+            Id = Guid.NewGuid(),
+            EventId = testEvent.Id,
+            TierId = testTier.Id,
+            SellerId = seller1.Id,
+            OriginalTicketCode = "TCK-BUNDLE-BLOCKED",
+            OriginalPrice = 1_000_000m,
+            ResalePrice = 900_000m,
+            ListingStatus = siblingStatus,
+            BundleId = bundleId,
+            BundleTotalTickets = 2
+        };
+        dbContext.ResaleListings.AddRange(stillListed, blocked);
+        await dbContext.SaveChangesAsync();
+
+        var unlocks = new CountingVerificationService();
+        var handler = new CancelResaleListingCommandHandler(dbContext, new MockCurrentUserService(seller1.Id), unlocks);
+
+        var ex = await Assert.ThrowsAsync<BusinessRuleViolationException>(
+            () => handler.Handle(new CancelResaleListingCommand(stillListed.Id), CancellationToken.None));
+
+        Assert.Contains("Không thể hủy gói vé", ex.Message);
+        Assert.Equal(0, unlocks.CancelCalls);
+        Assert.Equal(ListingStatus.Verified, (await dbContext.ResaleListings.FindAsync(stillListed.Id))!.ListingStatus);
+        Assert.Equal(siblingStatus, (await dbContext.ResaleListings.FindAsync(blocked.Id))!.ListingStatus);
+    }
+
+    [Fact]
+    public async Task Handle_WhenSecondBundleUnlockFails_ShouldLeaveBothVerified()
+    {
+        var (dbContext, seller1, _) = CreateInMemoryDbContext();
+        var testEvent = await dbContext.Events.FirstAsync();
+        var testTier = await dbContext.TicketTiers.FirstAsync();
+        var bundleId = Guid.NewGuid();
+        var first = new ResaleListing
+        {
+            Id = Guid.NewGuid(),
+            EventId = testEvent.Id,
+            TierId = testTier.Id,
+            SellerId = seller1.Id,
+            OriginalTicketCode = "TCK-BUNDLE-FAIL-1",
+            OriginalPrice = 1_000_000m,
+            ResalePrice = 900_000m,
+            ListingStatus = ListingStatus.Verified,
+            BundleId = bundleId,
+            BundleTotalTickets = 2
+        };
+        var second = new ResaleListing
+        {
+            Id = Guid.NewGuid(),
+            EventId = testEvent.Id,
+            TierId = testTier.Id,
+            SellerId = seller1.Id,
+            OriginalTicketCode = "TCK-BUNDLE-FAIL-2",
+            OriginalPrice = 1_000_000m,
+            ResalePrice = 900_000m,
+            ListingStatus = ListingStatus.Verified,
+            BundleId = bundleId,
+            BundleTotalTickets = 2
+        };
+        dbContext.ResaleListings.AddRange(first, second);
+        await dbContext.SaveChangesAsync();
+
+        var unlocks = new CountingVerificationService(failOnCallNumber: 2);
+        var handler = new CancelResaleListingCommandHandler(dbContext, new MockCurrentUserService(seller1.Id), unlocks);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => handler.Handle(new CancelResaleListingCommand(first.Id), CancellationToken.None));
+
+        Assert.Equal(2, unlocks.CancelCalls);
+        Assert.Equal(ListingStatus.Verified, (await dbContext.ResaleListings.FindAsync(first.Id))!.ListingStatus);
+        Assert.Equal(ListingStatus.Verified, (await dbContext.ResaleListings.FindAsync(second.Id))!.ListingStatus);
+    }
+
+    private sealed class CountingVerificationService : ITicketVerificationService
+    {
+        private readonly int _failOnCallNumber;
+
+        public CountingVerificationService(int failOnCallNumber = 0) => _failOnCallNumber = failOnCallNumber;
+
+        public int CancelCalls { get; private set; }
+
+        public Task CancelByListingId(string seller, Guid listingId, string key, CancellationToken ct)
+        {
+            CancelCalls++;
+            if (_failOnCallNumber > 0 && CancelCalls == _failOnCallNumber)
+            {
+                throw new InvalidOperationException("Failed to reach MockOrganizer gateway to unlock ticket.");
+            }
+
+            return Task.CompletedTask;
+        }
+
+        public Task<TicketShield.Application.Resale.VerificationResult> Request(string seller, string key, string ticket, CancellationToken ct) => throw new NotImplementedException();
+        public Task<TicketShield.Application.Resale.VerificationResult> Resend(string seller, string id, string key, CancellationToken ct) => throw new NotImplementedException();
+        public Task<TicketShield.Application.Resale.VerificationResult> Confirm(string seller, string id, string key, string otp, CancellationToken ct) => throw new NotImplementedException();
+        public Task<TicketShield.Application.Resale.VerificationResult> Get(string seller, string id, CancellationToken ct) => throw new NotImplementedException();
+        public Task<TicketShield.Application.Resale.VerificationResult> Close(string seller, string id, string key, CancellationToken ct) => throw new NotImplementedException();
+        public Task<TicketShield.Application.Resale.VerificationResult> Publish(string seller, string key, TicketShield.Application.Resale.PublishBody body, CancellationToken ct) => throw new NotImplementedException();
+        public Task<TicketShield.Application.Resale.VerificationResult> PublishBundleItem(
+            string seller, string key, TicketShield.Application.Resale.PublishBody body, Guid bundleId, int bundleTotalTickets, bool allOrNothing, CancellationToken ct) => throw new NotImplementedException();
+        public Task<TicketShield.Application.Resale.VerificationResult> Cancel(string seller, string id, string key, CancellationToken ct) => throw new NotImplementedException();
+        public Task<List<TicketShield.Application.Resale.ListingResult>> Marketplace(int page, int size, CancellationToken ct) => throw new NotImplementedException();
+        public Task RecoverPending(CancellationToken ct) => throw new NotImplementedException();
+        public Task<TicketShield.Contracts.Organizer.V1.TransferOwnershipResponse> TransferOwnership(
+            string seller, string verificationId, string lockId, ulong expectedLockGeneration, string buyerRef, string buyerEmail, string buyerName, string? buyerPhone, CancellationToken ct) => throw new NotImplementedException();
+        public Task<TicketShield.Contracts.Organizer.V1.TransferOwnershipResponse> TransferOwnershipByListingId(
+            Guid listingId, Guid buyerId, string buyerEmail, string buyerName, string? buyerPhone, CancellationToken ct) => throw new NotImplementedException();
     }
 }

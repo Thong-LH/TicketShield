@@ -4,6 +4,7 @@ public class CancelResaleListingResponse
 {
     public Guid ListingId { get; set; }
     public string OriginalTicketCode { get; set; } = string.Empty;
+    public List<string> AllCancelledTicketCodes { get; set; } = new();
     public string ListingStatus { get; set; } = string.Empty;
     public DateTimeOffset CancelledAt { get; set; }
 }
