@@ -89,7 +89,7 @@ public class GetMyPurchasedTicketsQueryHandler : IRequestHandler<GetMyPurchasedT
             {
                 EscrowStatus.Pending => "PENDING_PAYMENT",
                 EscrowStatus.Locked => "IN_ESCROW",
-                EscrowStatus.Releasing => "IN_ESCROW",
+                EscrowStatus.Releasing => "RELEASING",
                 EscrowStatus.Released => "VALID",
                 EscrowStatus.Disputed => "DISPUTED",
                 EscrowStatus.Refunded => "REFUNDED",

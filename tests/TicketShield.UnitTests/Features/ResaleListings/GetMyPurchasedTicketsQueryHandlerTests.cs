@@ -309,6 +309,27 @@ public class GetMyPurchasedTicketsQueryHandlerTests
     }
 
     [Fact]
+    public async Task Handle_WhenPayoutIsReleasing_ShouldExposeReleasingStatusNotInEscrow()
+    {
+        var (context, buyerId, buyerEmail) = CreateTestFixture();
+        var paid = context.EscrowTransactions.Single();
+        paid.Status = EscrowStatus.Releasing;
+        context.SaveChanges();
+
+        var currentUserService = new Mock<ICurrentUserService>();
+        currentUserService.Setup(u => u.UserId).Returns(buyerId);
+        currentUserService.Setup(u => u.Email).Returns(buyerEmail);
+
+        var handler = new GetMyPurchasedTicketsQueryHandler(context, currentUserService.Object);
+        var result = await handler.Handle(new GetMyPurchasedTicketsQuery(), CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.NotNull(result.Data);
+        Assert.Single(result.Data!);
+        Assert.Equal("RELEASING", result.Data![0].Status);
+    }
+
+    [Fact]
     public async Task Handle_WhenBundleComesFromRealListings_ShouldReturnOneItemPerListingWithoutFabricatedCodes()
     {
         var (context, buyerId, buyerEmail) = CreateTestFixture();
