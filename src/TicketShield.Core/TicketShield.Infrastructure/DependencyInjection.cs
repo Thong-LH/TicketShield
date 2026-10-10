@@ -36,6 +36,16 @@ public static class DependencyInjection
 
         services.AddScoped<IEscrowPayoutSettler, Services.EscrowPayoutSettler>();
         services.AddScoped<IPayoutReportApplier, Services.PayoutReportApplier>();
+        services.AddSingleton<IDisputeEvidenceFileStore>(_ =>
+        {
+            var path = configuration["DisputeEvidence:StoragePath"];
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                path = Path.Combine(AppContext.BaseDirectory, "dispute-evidence");
+            }
+
+            return new Services.DisputeEvidenceFileStore(path);
+        });
         services.AddHttpClient<ISettlementClient, Services.HttpSettlementClient>(client =>
         {
             var baseUrl = configuration["Settlement:BaseUrl"] ?? "http://localhost:5005";
