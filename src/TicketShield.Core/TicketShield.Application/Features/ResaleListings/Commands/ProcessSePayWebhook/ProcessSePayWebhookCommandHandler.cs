@@ -341,6 +341,7 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
         escrow.BankTransactionReference = bankTxRef;
         escrow.InSettlementBuffer = true;
         escrow.UnlockAt = EscrowTransaction.ComputeSettlementUnlockAt(now, eventStartAt);
+        escrow.TransferredAt = now;
         escrow.NewTicketCode = string.Join(",", issuedTickets.Select(t => t.NewCode));
         escrow.QrCodeData = string.Join(",", issuedTickets.Select(t => t.QrCodeData));
 

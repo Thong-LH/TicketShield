@@ -1,3 +1,4 @@
+using System.Text.Json;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using TicketShield.Application.Common.Interfaces;
@@ -71,6 +72,14 @@ public class CreateDisputeCommandHandler : IRequestHandler<CreateDisputeCommand,
         }
 
         _db.Disputes.Add(dispute);
+        _db.OutboxMessages.Add(new OutboxMessage
+        {
+            Id = Guid.NewGuid(),
+            EventType = nameof(DisputeHarvestRequested),
+            Payload = JsonSerializer.Serialize(new DisputeHarvestRequested { DisputeId = dispute.Id }),
+            CreatedAt = now,
+            UpdatedAt = now
+        });
         try
         {
             await _db.SaveChangesAsync(cancellationToken);

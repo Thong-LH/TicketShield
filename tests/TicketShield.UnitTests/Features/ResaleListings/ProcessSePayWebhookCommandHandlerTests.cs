@@ -804,4 +804,64 @@ public class ProcessSePayWebhookCommandHandlerTests
         Assert.Equal(ListingStatus.Verified, dbAnchor!.ListingStatus);
         Assert.Equal(ListingStatus.Verified, dbChild!.ListingStatus);
     }
+
+    [Fact]
+    public async Task Handle_WhenSaleCompletesNearEventStart_StoresTransferTimeApartFromUnlockTime()
+    {
+        var (context, listing, escrow) = CreateTestFixture();
+        var eventStart = DateTimeOffset.UtcNow.AddHours(1);
+        listing.Event.EventStartAt = eventStart;
+        await context.SaveChangesAsync();
+
+        var before = DateTimeOffset.UtcNow;
+        var handler = new ProcessSePayWebhookCommandHandler(context);
+        var result = await handler.Handle(new ProcessSePayWebhookCommand(new SePayWebhookRequest
+        {
+            Id = 10030,
+            TransferType = "in",
+            TransferAmount = 550_000m,
+            Content = "TS1A2B3C4D sang ten",
+            ReferenceCode = "FTTRANSFER1"
+        }), CancellationToken.None);
+        var after = DateTimeOffset.UtcNow;
+
+        Assert.True(result.Success);
+        var stored = await context.EscrowTransactions.FindAsync(escrow.Id);
+        Assert.NotNull(stored!.TransferredAt);
+        Assert.InRange(stored.TransferredAt.Value, before, after);
+        Assert.Equal(eventStart.AddHours(-2), stored.UnlockAt);
+        Assert.NotEqual(stored.UnlockAt, stored.TransferredAt);
+    }
+
+    [Fact]
+    public async Task Handle_WhenOwnershipTransferFails_LeavesTransferTimeEmpty()
+    {
+        var (context, listing, escrow) = CreateTestFixture();
+        var verification = new Mock<ITicketVerificationService>();
+        verification.Setup(v => v.TransferOwnershipByListingId(
+                listing.Id,
+                escrow.BuyerId,
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<string?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new TicketShield.Contracts.Organizer.V1.TransferOwnershipResponse
+            {
+                Outcome = TicketShield.Contracts.Organizer.V1.TransferOutcome.Unspecified
+            });
+
+        var handler = new ProcessSePayWebhookCommandHandler(context, null, null, null, verification.Object);
+        var result = await handler.Handle(new ProcessSePayWebhookCommand(new SePayWebhookRequest
+        {
+            Id = 10031,
+            TransferType = "in",
+            TransferAmount = 550_000m,
+            Content = "TS1A2B3C4D sang ten loi",
+            ReferenceCode = "FTTRANSFER2"
+        }), CancellationToken.None);
+
+        Assert.Equal(nameof(EscrowStatus.RefundQueued), result.Data!.EscrowStatus);
+        var stored = await context.EscrowTransactions.FindAsync(escrow.Id);
+        Assert.Null(stored!.TransferredAt);
+    }
 }

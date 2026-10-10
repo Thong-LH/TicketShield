@@ -37,18 +37,7 @@ public class EscrowSettlementCas : IEscrowSettlementCas
         }
 
         var now = DateTimeOffset.UtcNow;
-        var accountNumber = escrow.Seller.PayoutAccountNumber.Trim();
-        var payoutRequested = new PayoutRequestedEvent
-        {
-            EscrowId = escrow.Id,
-            SellerId = escrow.SellerId,
-            Amount = escrow.NetSellerPayout,
-            RetryCount = escrow.RetryCount,
-            IdempotencyKey = PayoutIdempotency.Key(escrow.Id, escrow.RetryCount),
-            BankCode = escrow.Seller.PayoutBankCode,
-            AccountNumber = accountNumber,
-            AccountName = escrow.Seller.PayoutAccountName
-        };
+        var payoutRequested = PayoutReleaseLetter.Create(escrow, escrow.Seller);
         _db.OutboxMessages.Add(new OutboxMessage
         {
             Id = Guid.NewGuid(),
@@ -66,19 +55,13 @@ public class EscrowSettlementCas : IEscrowSettlementCas
                 Id = Guid.NewGuid(),
                 EscrowId = escrow.Id,
                 SellerId = escrow.SellerId,
-                PayoutCode = $"PO-{escrow.Id.ToString("N")[..8].ToUpperInvariant()}",
+                PayoutCode = PayoutReleaseLetter.Code(escrow.Id),
                 CreatedAt = now
             };
             _db.PayoutTransactions.Add(payout);
         }
 
-        payout.RecipientBankCode = payoutRequested.BankCode;
-        payout.RecipientAccountNumber = accountNumber;
-        payout.RecipientAccountName = payoutRequested.AccountName;
-        payout.Amount = escrow.NetSellerPayout;
-        payout.Status = PayoutStatus.Processing;
-        payout.RetryCount = escrow.RetryCount;
-        payout.UpdatedAt = now;
+        PayoutReleaseLetter.Apply(payout, payoutRequested, now);
         await _db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return true;

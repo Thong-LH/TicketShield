@@ -44,7 +44,11 @@ public class CreateDisputeCommandHandlerTests
         Assert.Equal(dispute.CreatedAt, result.Data!.CreatedAt);
         Assert.Equal($"DP-{dispute.Id.ToString("N")[..8].ToUpperInvariant()}", dispute.DisputeCode);
         Assert.Equal(dispute.Id, result.Data.DisputeId);
-        Assert.Empty(await db.OutboxMessages.AsNoTracking().ToListAsync());
+        var outbox = await db.OutboxMessages.AsNoTracking().ToListAsync();
+        var harvest = Assert.Single(outbox);
+        Assert.Equal(nameof(DisputeHarvestRequested), harvest.EventType);
+        Assert.DoesNotContain(outbox, row => row.EventType == nameof(PayoutRequestedEvent));
+        Assert.Equal(dispute.Id, System.Text.Json.JsonSerializer.Deserialize<DisputeHarvestRequested>(harvest.Payload)!.DisputeId);
     }
 
     [Theory]

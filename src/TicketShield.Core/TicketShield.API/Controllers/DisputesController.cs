@@ -3,7 +3,9 @@ using Microsoft.AspNetCore.Mvc;
 using TicketShield.Application.Common.Models;
 using TicketShield.Application.Features.Disputes.Commands.AddDisputeEvidence;
 using TicketShield.Application.Features.Disputes.Commands.CreateDispute;
+using TicketShield.Application.Features.Disputes.Commands.ResolveDispute;
 using TicketShield.Application.Features.Disputes.Queries.GetDisputeEvidenceFile;
+using TicketShield.Application.Features.Disputes.Queries.GetDisputeRecommendation;
 
 namespace TicketShield.API.Controllers;
 
@@ -49,6 +51,33 @@ public class DisputesController : ApiControllerBase
             Content = content,
             ContentType = file?.ContentType
         }, cancellationToken);
+        return Ok(result);
+    }
+
+    [HttpPost("{id:guid}/resolution")]
+    [Authorize(Roles = "Admin,Cskh")]
+    [ProducesResponseType(typeof(ApiResponse<ResolveDisputeResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status422UnprocessableEntity)]
+    public async Task<IActionResult> Resolve(Guid id, [FromBody] ResolveDisputeCommand command, CancellationToken cancellationToken)
+    {
+        command.DisputeId = id;
+        var result = await Mediator.Send(command, cancellationToken);
+        return Ok(result);
+    }
+
+    [HttpGet("{id:guid}/recommendation")]
+    [Authorize(Roles = "Admin,Cskh")]
+    [ProducesResponseType(typeof(ApiResponse<DisputeRecommendationResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetRecommendation(Guid id, CancellationToken cancellationToken)
+    {
+        var result = await Mediator.Send(new GetDisputeRecommendationQuery { DisputeId = id }, cancellationToken);
         return Ok(result);
     }
 

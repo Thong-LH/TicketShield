@@ -192,6 +192,7 @@ public class TicketShieldDbContext : DbContext, ITicketShieldDbContext
             entity.Property(e => e.ReasonCode).HasConversion<string>();
             entity.Property(e => e.Status).HasConversion<string>();
             entity.Property(e => e.Resolution).HasConversion<string>();
+            entity.Property(e => e.Recommendation).HasMaxLength(32);
 
             entity.HasOne(e => e.Escrow)
                 .WithOne(es => es.Dispute)

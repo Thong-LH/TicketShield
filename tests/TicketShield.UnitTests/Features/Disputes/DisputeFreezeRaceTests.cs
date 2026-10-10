@@ -1,6 +1,7 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using TicketShield.Application.Common.Interfaces;
+using TicketShield.Application.Common.Models;
 using TicketShield.Application.Features.Disputes.Commands.CreateDispute;
 using TicketShield.Domain.Entities;
 using TicketShield.Domain.Enums;
@@ -239,7 +240,9 @@ public class DisputeFreezeRaceTests
         await using var db = Open(connectionString);
         var escrow = await db.EscrowTransactions.AsNoTracking().SingleAsync(row => row.Id == escrowId);
         var disputeCount = await db.Disputes.AsNoTracking().CountAsync(row => row.EscrowId == escrowId);
-        var payouts = await db.OutboxMessages.AsNoTracking().ToListAsync();
+        var payouts = await db.OutboxMessages.AsNoTracking()
+            .Where(row => row.EventType == nameof(PayoutRequestedEvent))
+            .ToListAsync();
         return new RaceRow(escrow.Status, escrow.InSettlementBuffer, disputeCount, payouts.Count, payouts.SingleOrDefault()?.EventType);
     }
 
