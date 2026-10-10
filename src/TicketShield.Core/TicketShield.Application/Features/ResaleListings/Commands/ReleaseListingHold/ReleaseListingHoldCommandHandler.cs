@@ -207,7 +207,7 @@ public class ReleaseListingHoldCommandHandler : IRequestHandler<ReleaseListingHo
 
     private static long ComputeLockKey(Guid listingId)
     {
-        var hash = SHA256.HashData(Encoding.UTF8.GetBytes("ts:hold:" + listingId));
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes("ts:hold:listing:" + listingId));
         return BitConverter.ToInt64(hash, 0);
     }
 

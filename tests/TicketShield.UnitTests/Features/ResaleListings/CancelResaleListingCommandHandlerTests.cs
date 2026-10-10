@@ -249,8 +249,9 @@ public class CancelResaleListingCommandHandlerTests
         var command = new CancelResaleListingCommand(listing.Id);
 
         // Act & Assert
-        await Assert.ThrowsAsync<InvalidOperationException>(
+        var ex = await Assert.ThrowsAsync<BusinessRuleViolationException>(
             () => handler.Handle(command, CancellationToken.None));
+        Assert.Contains("Không thể mở khóa trọn gói vé với Ban Tổ Chức (đã mở khóa 0/1 vé)", ex.Message);
 
         // Verify database listing status remains Verified (not Cancelled)
         var dbListing = await dbContext.ResaleListings.FindAsync(listing.Id);
@@ -457,8 +458,9 @@ public class CancelResaleListingCommandHandlerTests
         var unlocks = new CountingVerificationService(failOnCallNumber: 2);
         var handler = new CancelResaleListingCommandHandler(dbContext, new MockCurrentUserService(seller1.Id), unlocks);
 
-        await Assert.ThrowsAsync<InvalidOperationException>(
+        var ex = await Assert.ThrowsAsync<BusinessRuleViolationException>(
             () => handler.Handle(new CancelResaleListingCommand(first.Id), CancellationToken.None));
+        Assert.Contains("Không thể mở khóa trọn gói vé với Ban Tổ Chức (đã mở khóa 1/2 vé)", ex.Message);
 
         Assert.Equal(2, unlocks.CancelCalls);
         Assert.Equal(ListingStatus.Verified, (await dbContext.ResaleListings.FindAsync(first.Id))!.ListingStatus);
