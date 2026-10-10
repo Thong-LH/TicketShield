@@ -51,8 +51,15 @@ public static class DependencyInjection
             var baseUrl = configuration["Settlement:BaseUrl"] ?? "http://localhost:5005";
             client.BaseAddress = new Uri(baseUrl.TrimEnd('/') + "/");
         });
+        services.AddHttpClient<IGateAccessLogClient, Services.HttpGateAccessLogClient>(client =>
+        {
+            var baseUrl = configuration["Organizer:BaseUrl"] ?? "http://localhost:5001";
+            client.BaseAddress = new Uri(baseUrl.TrimEnd('/') + "/");
+        });
         services.AddSingleton<Workers.PayoutOutboxDispatcher>();
         services.AddHostedService(provider => provider.GetRequiredService<Workers.PayoutOutboxDispatcher>());
+        services.AddSingleton<Workers.DisputeHarvestWorker>();
+        services.AddHostedService(provider => provider.GetRequiredService<Workers.DisputeHarvestWorker>());
 
         services.AddHostedService<Workers.AutomaticSettlementWorker>();
         services.AddHostedService<Workers.StuckSettlementWorker>();

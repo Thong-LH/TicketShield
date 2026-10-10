@@ -34,7 +34,7 @@ public class OrganizerDbContext : DbContext
         modelBuilder.Entity<GateAccessLog>(entity =>
         {
             entity.HasKey(e => e.Id);
-            entity.HasIndex(e => e.TicketCode);
+            entity.HasIndex(e => new { e.TicketCode, e.ScannedAt });
         });
 
         ApplySnakeCaseNaming(modelBuilder);

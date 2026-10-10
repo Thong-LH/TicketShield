@@ -17,6 +17,7 @@ public class EscrowTransaction : BaseEntity
     public string? BankTransactionReference { get; set; }
     public EscrowStatus Status { get; set; } = EscrowStatus.Pending;
     public DateTimeOffset? UnlockAt { get; set; }
+    public DateTimeOffset? TransferredAt { get; set; }
     public DateTimeOffset? DisputeDeadline { get; set; }
     public string? RecipientName { get; set; }
     public string? RecipientEmail { get; set; }

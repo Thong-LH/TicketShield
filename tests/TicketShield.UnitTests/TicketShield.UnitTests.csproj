@@ -31,6 +31,7 @@
     <ProjectReference Include="..\..\src\TicketShield.Identity\TicketShield.Identity.Application\TicketShield.Identity.Application.csproj" />
     <ProjectReference Include="..\..\src\TicketShield.Identity\TicketShield.Identity.Infrastructure\TicketShield.Identity.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\TicketShield.Settlement.API\TicketShield.Settlement.API.csproj" />
+    <ProjectReference Include="..\..\src\MockOrganizer\MockOrganizer.API\MockOrganizer.API.csproj" />
   </ItemGroup>
 
   <ItemGroup>

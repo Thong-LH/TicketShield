@@ -14,6 +14,9 @@ public class Dispute : BaseEntity
     public DisputeResolution? Resolution { get; set; }
     public decimal RefundAmount { get; set; } = 0;
     public string? AdminNotes { get; set; }
+    public string? Recommendation { get; set; }
+    public DateTimeOffset? HarvestedAt { get; set; }
+    public string? GateLogSnapshot { get; set; }
     public Guid? ResolvedBy { get; set; }
     public DateTimeOffset? ResolvedAt { get; set; }
 
