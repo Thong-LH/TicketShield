@@ -340,7 +340,9 @@ public static class DatabaseSeeder
             new { Key = "ResaleFee_BuyerPercentage", Value = "0.05", Type = "Decimal", Desc = "Tỷ lệ phí người mua (5%)" },
             new { Key = "ResaleFee_SellerPercentage", Value = "0.03", Type = "Decimal", Desc = "Tỷ lệ phí người bán (3%)" },
             new { Key = "ResaleFee_MinBuyerFee", Value = "10000", Type = "Money", Desc = "Phí tối thiểu người mua (10,000 VNĐ)" },
-            new { Key = "ResaleFee_MinSellerFee", Value = "5000", Type = "Money", Desc = "Phí tối thiểu người bán (5,000 VNĐ)" }
+            new { Key = "ResaleFee_MinSellerFee", Value = "5000", Type = "Money", Desc = "Phí tối thiểu người bán (5,000 VNĐ)" },
+            new { Key = "EscrowBuffer_SettlementSeconds", Value = "86400", Type = "Integer", Desc = "Số giây đệm trước khi trả tiền người bán (24 giờ)" },
+            new { Key = "EscrowBuffer_CutoffSeconds", Value = "7200", Type = "Integer", Desc = "Số giây trước giờ diễn dùng làm mốc trả tiền (2 giờ)" }
         };
 
         foreach (var item in feeSettings)

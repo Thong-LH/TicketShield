@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Moq;
 using TicketShield.Application.Common.Interfaces;
 using TicketShield.Application.Common.Models;
+using TicketShield.Application.Features.Admin.EscrowBuffer.Models;
 using TicketShield.Application.Features.ResaleListings.Commands.ProcessSePayWebhook;
 using TicketShield.Domain.Entities;
 using TicketShield.Domain.Enums;
@@ -387,7 +388,11 @@ public class ProcessSePayWebhookCommandHandlerTests
         }), CancellationToken.None);
 
         var dbEscrow = await context.EscrowTransactions.FindAsync(escrow.Id);
-        var expected = EscrowTransaction.ComputeSettlementUnlockAt(before, listing.Event.EventStartAt);
+        var expected = EscrowTransaction.ComputeSettlementUnlockAt(
+            before,
+            listing.Event.EventStartAt,
+            TimeSpan.FromSeconds(86400),
+            TimeSpan.FromSeconds(7200));
         Assert.True(result.Success);
         Assert.Equal(EscrowStatus.Locked, dbEscrow!.Status);
         Assert.True(dbEscrow.InSettlementBuffer);
@@ -398,25 +403,18 @@ public class ProcessSePayWebhookCommandHandlerTests
     }
 
     [Fact]
-    public void ComputeSettlementUnlockAt_UsesMinOf24hAndEventMinus2h()
+    public void ComputeSettlementUnlockAt_UsesMinOfBufferAndEventCutoff()
     {
-        var original = EscrowTransaction.SettlementBufferDuration;
-        try
-        {
-            EscrowTransaction.SettlementBufferDuration = TimeSpan.FromHours(24);
-            var now = new DateTimeOffset(2026, 9, 18, 8, 0, 0, TimeSpan.Zero);
-            var eventStart = now.AddDays(10);
-            var actual = EscrowTransaction.ComputeSettlementUnlockAt(now, eventStart);
-            Assert.Equal(now.AddHours(24), actual);
+        var buffer = TimeSpan.FromHours(24);
+        var cutoff = TimeSpan.FromHours(2);
+        var now = new DateTimeOffset(2026, 9, 18, 8, 0, 0, TimeSpan.Zero);
+        var eventStart = now.AddDays(10);
+        var actual = EscrowTransaction.ComputeSettlementUnlockAt(now, eventStart, buffer, cutoff);
+        Assert.Equal(now.AddHours(24), actual);
 
-            var nearEvent = now.AddHours(5);
-            var near = EscrowTransaction.ComputeSettlementUnlockAt(now, nearEvent);
-            Assert.Equal(nearEvent.AddHours(-2), near);
-        }
-        finally
-        {
-            EscrowTransaction.SettlementBufferDuration = original;
-        }
+        var nearEvent = now.AddHours(5);
+        var near = EscrowTransaction.ComputeSettlementUnlockAt(now, nearEvent, buffer, cutoff);
+        Assert.Equal(nearEvent.AddHours(-2), near);
     }
 
     [Fact]
@@ -863,5 +861,30 @@ public class ProcessSePayWebhookCommandHandlerTests
         Assert.Equal(nameof(EscrowStatus.RefundQueued), result.Data!.EscrowStatus);
         var stored = await context.EscrowTransactions.FindAsync(escrow.Id);
         Assert.Null(stored!.TransferredAt);
+    }
+
+    [Fact]
+    public async Task Handle_ValidPaymentWebhook_UsesConfiguredBufferSeconds()
+    {
+        var (context, _, escrow) = CreateTestFixture();
+        var settings = new Mock<IEscrowBufferSettings>();
+        settings.Setup(s => s.GetAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new EscrowBufferConfig { BufferSeconds = 30, CutoffSeconds = 7200 });
+
+        var before = DateTimeOffset.UtcNow;
+        var handler = new ProcessSePayWebhookCommandHandler(context, bufferSettings: settings.Object);
+        var result = await handler.Handle(new ProcessSePayWebhookCommand(new SePayWebhookRequest
+        {
+            Id = 10032,
+            TransferType = "in",
+            TransferAmount = 550_000m,
+            Content = "TS1A2B3C4D demo buffer",
+            ReferenceCode = "FTBUFFER30"
+        }), CancellationToken.None);
+        var after = DateTimeOffset.UtcNow;
+
+        Assert.True(result.Success);
+        var stored = await context.EscrowTransactions.FindAsync(escrow.Id);
+        Assert.InRange(stored!.UnlockAt!.Value, before.AddSeconds(28), after.AddSeconds(32));
     }
 }

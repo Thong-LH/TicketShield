@@ -27,6 +27,7 @@ public static class DependencyInjection
         services.AddMemoryCache();
         services.AddScoped<ISystemSettingRepository, Persistence.Repositories.SystemSettingRepository>();
         services.AddScoped<IResaleFeeCalculator, Services.DynamicResaleFeeCalculator>();
+        services.AddScoped<IEscrowBufferSettings, Services.EscrowBufferSettings>();
 
         // VietQR Service (BE-CORE-3.1.2)
         services.AddSingleton<IVietQrService, Services.VietQrService>();

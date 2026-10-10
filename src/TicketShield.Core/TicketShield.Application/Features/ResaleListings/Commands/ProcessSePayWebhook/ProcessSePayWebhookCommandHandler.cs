@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using TicketShield.Application.Common.Interfaces;
 using TicketShield.Application.Common.Models;
+using TicketShield.Application.Features.Admin.EscrowBuffer.Models;
 using TicketShield.Domain.Entities;
 using TicketShield.Domain.Enums;
 using TicketShield.Domain.Exceptions;
@@ -19,6 +20,7 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
     private readonly IEmailService? _emailService;
     private readonly ILogger<ProcessSePayWebhookCommandHandler>? _logger;
     private readonly IPaymentRealtimeNotifier? _paymentNotifier;
+    private readonly IEscrowBufferSettings? _bufferSettings;
 
     public ProcessSePayWebhookCommandHandler(
         ITicketShieldDbContext dbContext,
@@ -26,7 +28,8 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
         IEmailService? emailService = null,
         ILogger<ProcessSePayWebhookCommandHandler>? logger = null,
         ITicketVerificationService? ticketVerificationService = null,
-        IPaymentRealtimeNotifier? paymentNotifier = null)
+        IPaymentRealtimeNotifier? paymentNotifier = null,
+        IEscrowBufferSettings? bufferSettings = null)
     {
         _dbContext = dbContext;
         _emailTemplates = emailTemplates;
@@ -34,6 +37,7 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
         _logger = logger;
         _ticketVerificationService = ticketVerificationService;
         _paymentNotifier = paymentNotifier;
+        _bufferSettings = bufferSettings;
     }
 
     public async Task<ApiResponse<ProcessSePayWebhookResponse>> Handle(ProcessSePayWebhookCommand request, CancellationToken cancellationToken)
@@ -340,7 +344,14 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
         escrow.Status = EscrowStatus.Locked;
         escrow.BankTransactionReference = bankTxRef;
         escrow.InSettlementBuffer = true;
-        escrow.UnlockAt = EscrowTransaction.ComputeSettlementUnlockAt(now, eventStartAt);
+        var clocks = _bufferSettings == null
+            ? new EscrowBufferConfig()
+            : await _bufferSettings.GetAsync(cancellationToken);
+        escrow.UnlockAt = EscrowTransaction.ComputeSettlementUnlockAt(
+            now,
+            eventStartAt,
+            TimeSpan.FromSeconds(clocks.BufferSeconds),
+            TimeSpan.FromSeconds(clocks.CutoffSeconds));
         escrow.TransferredAt = now;
         escrow.NewTicketCode = string.Join(",", issuedTickets.Select(t => t.NewCode));
         escrow.QrCodeData = string.Join(",", issuedTickets.Select(t => t.QrCodeData));

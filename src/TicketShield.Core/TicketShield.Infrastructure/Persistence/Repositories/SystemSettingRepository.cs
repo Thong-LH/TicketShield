@@ -1,6 +1,7 @@
 using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using TicketShield.Application.Common.Interfaces;
+using TicketShield.Application.Features.Admin.EscrowBuffer.Models;
 using TicketShield.Application.Features.Admin.FeeSettings.Models;
 using TicketShield.Domain.Entities;
 
@@ -14,6 +15,8 @@ public class SystemSettingRepository : ISystemSettingRepository
     public const string SellerPercentageKey = "ResaleFee_SellerPercentage";
     public const string MinBuyerFeeKey = "ResaleFee_MinBuyerFee";
     public const string MinSellerFeeKey = "ResaleFee_MinSellerFee";
+    public const string SettlementSecondsKey = "EscrowBuffer_SettlementSeconds";
+    public const string CutoffSecondsKey = "EscrowBuffer_CutoffSeconds";
 
     public SystemSettingRepository(ITicketShieldDbContext context)
     {
@@ -80,6 +83,65 @@ public class SystemSettingRepository : ISystemSettingRepository
                     SettingKey = item.Key,
                     SettingValue = item.Value,
                     DataType = item.DataType,
+                    Description = item.Description,
+                    UpdatedBy = updatedBy,
+                    UpdatedAt = DateTimeOffset.UtcNow
+                };
+                await _context.SystemSettings.AddAsync(setting, ct);
+            }
+            else
+            {
+                setting.SettingValue = item.Value;
+                setting.UpdatedBy = updatedBy;
+                setting.UpdatedAt = DateTimeOffset.UtcNow;
+            }
+        }
+
+        await _context.SaveChangesAsync(ct);
+    }
+
+    public async Task<EscrowBufferConfig> GetEscrowBufferConfigAsync(CancellationToken ct = default)
+    {
+        var settings = await _context.SystemSettings
+            .Where(s => s.SettingKey == SettlementSecondsKey || s.SettingKey == CutoffSecondsKey)
+            .ToDictionaryAsync(s => s.SettingKey, s => s.SettingValue, ct);
+
+        var config = new EscrowBufferConfig();
+        if (settings.TryGetValue(SettlementSecondsKey, out var bufferText) &&
+            int.TryParse(bufferText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var bufferSeconds))
+        {
+            config.BufferSeconds = bufferSeconds;
+        }
+
+        if (settings.TryGetValue(CutoffSecondsKey, out var cutoffText) &&
+            int.TryParse(cutoffText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var cutoffSeconds))
+        {
+            config.CutoffSeconds = cutoffSeconds;
+        }
+
+        return config;
+    }
+
+    public async Task UpdateEscrowBufferConfigAsync(EscrowBufferConfig config, Guid? updatedBy, CancellationToken ct = default)
+    {
+        var items = new (string Key, string Value, string Description)[]
+        {
+            (SettlementSecondsKey, config.BufferSeconds.ToString(CultureInfo.InvariantCulture), "Số giây đệm trước khi trả tiền người bán"),
+            (CutoffSecondsKey, config.CutoffSeconds.ToString(CultureInfo.InvariantCulture), "Số giây trước giờ diễn dùng làm mốc trả tiền")
+        };
+
+        foreach (var item in items)
+        {
+            var setting = await _context.SystemSettings
+                .FirstOrDefaultAsync(s => s.SettingKey == item.Key, ct);
+
+            if (setting == null)
+            {
+                setting = new SystemSetting
+                {
+                    SettingKey = item.Key,
+                    SettingValue = item.Value,
+                    DataType = "Integer",
                     Description = item.Description,
                     UpdatedBy = updatedBy,
                     UpdatedAt = DateTimeOffset.UtcNow
