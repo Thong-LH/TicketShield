@@ -47,9 +47,28 @@ public class ResolveDisputeCommandHandler : IRequestHandler<ResolveDisputeComman
         }
 
         var decision = request.Decision ?? throw new BusinessRuleViolationException("Quyết định không hợp lệ.");
-        if (decision == DisputeDecision.Reject && !PayoutAccountRules.IsPresent(dispute.Escrow.Seller?.PayoutAccountNumber))
+        if (decision == DisputeDecision.Reject)
         {
-            throw new BusinessRuleViolationException("Người bán chưa có tài khoản nhận tiền.");
+            if (dispute.Escrow.Seller == null)
+            {
+                var seller = await _db.ShadowUsers.FirstOrDefaultAsync(u => u.Id == dispute.Escrow.SellerId, cancellationToken);
+                if (seller == null)
+                {
+                    seller = new ShadowUser { Id = dispute.Escrow.SellerId };
+                    _db.ShadowUsers.Add(seller);
+                }
+                dispute.Escrow.Seller = seller;
+            }
+
+            if (!PayoutAccountRules.IsPresent(dispute.Escrow.Seller.PayoutAccountNumber))
+            {
+                await TrySyncSellerBankFromIdentityAsync(dispute.Escrow.Seller, cancellationToken);
+            }
+
+            if (!PayoutAccountRules.IsPresent(dispute.Escrow.Seller.PayoutAccountNumber))
+            {
+                throw new BusinessRuleViolationException("Người bán chưa có tài khoản nhận tiền.");
+            }
         }
 
         var now = DateTimeOffset.UtcNow;
@@ -135,5 +154,63 @@ public class ResolveDisputeCommandHandler : IRequestHandler<ResolveDisputeComman
         }
 
         PayoutReleaseLetter.Apply(payout, letter, now);
+    }
+
+    private async Task<bool> TrySyncSellerBankFromIdentityAsync(ShadowUser seller, CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (!_db.Database.IsRelational())
+            {
+                return false;
+            }
+
+            var dbConn = _db.Database.GetDbConnection();
+            var connStr = dbConn.ConnectionString;
+            if (string.IsNullOrWhiteSpace(connStr))
+            {
+                return false;
+            }
+
+            var identityConnStr = System.Text.RegularExpressions.Regex.Replace(
+                connStr,
+                @"Database=[^;]+",
+                "Database=identity_db",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+            if (Activator.CreateInstance(dbConn.GetType()) is not System.Data.Common.DbConnection conn)
+            {
+                return false;
+            }
+
+            await using (conn)
+            {
+                conn.ConnectionString = identityConnStr;
+                await conn.OpenAsync(cancellationToken);
+
+                await using var cmd = conn.CreateCommand();
+                cmd.CommandText = "SELECT \"BankCode\", \"BankAccountNumber\", \"AccountHolderName\" FROM user_bank_accounts WHERE \"UserId\" = @userId ORDER BY \"IsDefault\" DESC, \"CreatedAt\" DESC LIMIT 1;";
+                var p = cmd.CreateParameter();
+                p.ParameterName = "userId";
+                p.Value = seller.Id;
+                cmd.Parameters.Add(p);
+
+                await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+                if (await reader.ReadAsync(cancellationToken))
+                {
+                    seller.PayoutBankCode = reader.GetString(0);
+                    seller.PayoutAccountNumber = reader.GetString(1);
+                    seller.PayoutAccountName = reader.GetString(2);
+                    seller.UpdatedAt = DateTimeOffset.UtcNow;
+                    return true;
+                }
+            }
+        }
+        catch
+        {
+            // Fallback fails gracefully
+        }
+
+        return false;
     }
 }

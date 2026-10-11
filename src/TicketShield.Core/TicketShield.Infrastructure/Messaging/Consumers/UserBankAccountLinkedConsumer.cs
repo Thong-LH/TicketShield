@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using TicketShield.Application.Common.Interfaces;
 using TicketShield.Contracts.Events;
+using TicketShield.Domain.Entities;
 
 namespace TicketShield.Infrastructure.Messaging.Consumers;
 
@@ -27,10 +28,12 @@ public class UserBankAccountLinkedConsumer : IConsumer<IUserBankAccountLinkedEve
 
         if (seller == null)
         {
-            _logger.LogWarning(
-                "[EventBus] Không tìm thấy ShadowUser cho UserId: {UserId} để ghi số tài khoản nhận tiền",
-                message.UserId);
-            return;
+            seller = new ShadowUser
+            {
+                Id = message.UserId,
+                CreatedAt = DateTimeOffset.UtcNow
+            };
+            await _context.ShadowUsers.AddAsync(seller, context.CancellationToken);
         }
 
         seller.PayoutBankCode = message.BankCode;
