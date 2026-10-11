@@ -28,7 +28,10 @@ public class UpdateEventResaleMarkupCommandHandler : IRequestHandler<UpdateEvent
         {
             EventId = ev.Id,
             EventName = ev.Name,
-            MaxResaleMarkupPercentage = ev.MaxResaleMarkupPercentage
+            MaxResaleMarkupPercentage = ev.MaxResaleMarkupPercentage,
+            Venue = ev.Venue,
+            Category = ev.Category ?? "CONCERT",
+            EventStartAt = ev.EventStartAt
         }, "Cập nhật biên độ trần giá sự kiện thành công.");
     }
 }

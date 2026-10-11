@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using TicketShield.Application.Common.Models;
 using TicketShield.Application.Features.Admin.EventMarkup.Commands.UpdateEventResaleMarkup;
 using TicketShield.Application.Features.Admin.EventMarkup.Models;
+using TicketShield.Application.Features.Admin.EventMarkup.Queries.GetAllEventResaleMarkups;
 using TicketShield.Application.Features.Admin.EventMarkup.Queries.GetEventResaleMarkup;
 
 namespace TicketShield.API.Controllers.Admin;
@@ -11,6 +12,14 @@ namespace TicketShield.API.Controllers.Admin;
 [Route("api/v1/admin/events")]
 public class EventMarkupController : ApiControllerBase
 {
+    [HttpGet]
+    [ProducesResponseType(typeof(ApiResponse<List<EventResaleMarkupDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetAllEvents(CancellationToken ct)
+    {
+        var result = await Mediator.Send(new GetAllEventResaleMarkupsQuery(), ct);
+        return Ok(result);
+    }
+
     [HttpGet("{eventId:guid}/resale-markup")]
     [ProducesResponseType(typeof(ApiResponse<EventResaleMarkupDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetResaleMarkup(Guid eventId, CancellationToken ct)

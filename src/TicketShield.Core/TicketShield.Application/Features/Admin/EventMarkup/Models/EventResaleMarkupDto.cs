@@ -5,4 +5,7 @@ public class EventResaleMarkupDto
     public Guid EventId { get; set; }
     public string EventName { get; set; } = string.Empty;
     public decimal MaxResaleMarkupPercentage { get; set; }
+    public string Venue { get; set; } = string.Empty;
+    public string Category { get; set; } = string.Empty;
+    public DateTimeOffset? EventStartAt { get; set; }
 }
