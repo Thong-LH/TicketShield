@@ -183,7 +183,10 @@ public class DisputeFreezeRaceTests
         {
             Id = Guid.NewGuid(),
             Email = $"buyer-{suffix}@test.local",
-            FullName = "Buyer"
+            FullName = "Buyer",
+            PayoutBankCode = "VCB",
+            PayoutAccountNumber = "0938434103",
+            PayoutAccountName = "BUYER"
         };
         var concert = new Event
         {

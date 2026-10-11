@@ -18,6 +18,24 @@ namespace TicketShield.UnitTests.Features.Disputes;
 public class CreateDisputeCommandHandlerTests
 {
     [Fact]
+    public async Task Handle_WhenBuyerHasNoBankAccount_ThrowsBusinessRuleViolationException()
+    {
+        await using var db = CreateDb();
+        var seeded = await SeedEscrowAsync(db, EscrowStatus.Locked, inSettlementBuffer: true, buyerAccountNumber: "");
+        var handler = new CreateDisputeCommandHandler(db, new StubUser(seeded.BuyerId));
+
+        var ex = await Assert.ThrowsAsync<BusinessRuleViolationException>(() => handler.Handle(new CreateDisputeCommand
+        {
+            EscrowId = seeded.EscrowId,
+            Reason = "Vé không hợp lệ"
+        }, CancellationToken.None));
+
+        Assert.Equal("Bạn cần liên kết tài khoản ngân hàng trước khi gửi báo cáo sự cố để có thể nhận tiền hoàn.", ex.Message);
+        Assert.Equal(422, await StatusCodeOf(ex));
+        Assert.Empty(await db.Disputes.AsNoTracking().ToListAsync());
+    }
+
+    [Fact]
     public async Task Handle_WhenEscrowIsLocked_StoresOneOpenDisputeAndLeavesTheHoldFlag()
     {
         await using var db = CreateDb();
@@ -225,7 +243,8 @@ public class CreateDisputeCommandHandlerTests
     private static async Task<(Guid EscrowId, Guid BuyerId)> SeedEscrowAsync(
         TicketShieldDbContext db,
         EscrowStatus status,
-        bool inSettlementBuffer)
+        bool inSettlementBuffer,
+        string buyerAccountNumber = "123456789")
     {
         var suffix = Guid.NewGuid().ToString("N")[..8];
         var organizer = new Organizer
@@ -244,7 +263,9 @@ public class CreateDisputeCommandHandlerTests
         {
             Id = Guid.NewGuid(),
             Email = $"buyer-{suffix}@test.local",
-            FullName = "Buyer"
+            FullName = "Buyer",
+            PayoutAccountNumber = buyerAccountNumber,
+            PayoutBankCode = "VCB"
         };
         var concert = new Event
         {

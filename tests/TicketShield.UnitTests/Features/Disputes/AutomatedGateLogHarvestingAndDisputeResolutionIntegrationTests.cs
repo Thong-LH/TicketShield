@@ -684,7 +684,8 @@ public class AutomatedGateLogHarvestingAndDisputeResolutionIntegrationTests : ID
         DateTimeOffset transferredAt,
         decimal totalBuyerPaid,
         decimal netSellerPayout,
-        string sellerPayoutAccountNumber = "0123456789")
+        string sellerPayoutAccountNumber = "0123456789",
+        string buyerPayoutAccountNumber = "0987654321")
     {
         var suffix = Guid.NewGuid().ToString("N")[..8];
         var staffId = Guid.NewGuid();
@@ -708,7 +709,10 @@ public class AutomatedGateLogHarvestingAndDisputeResolutionIntegrationTests : ID
         {
             Id = buyerId,
             Email = $"buyer-{suffix}@ticketshield.local",
-            FullName = "Nguyễn Văn Buyer"
+            FullName = "Nguyễn Văn Buyer",
+            PayoutBankCode = "MB",
+            PayoutAccountNumber = buyerPayoutAccountNumber,
+            PayoutAccountName = "NGUYEN VAN BUYER"
         };
 
         var seller = new ShadowUser
