@@ -83,3 +83,6 @@ scripts/*jira*
 # Docker / Volumes
 postgres_data/
 
+# Local Development Scripts
+reset-db.bat
+

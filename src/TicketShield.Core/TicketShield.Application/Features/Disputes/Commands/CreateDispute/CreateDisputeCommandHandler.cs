@@ -80,6 +80,7 @@ public class CreateDisputeCommandHandler : IRequestHandler<CreateDisputeCommand,
             .ExecuteUpdateAsync(
                 setters => setters
                     .SetProperty(row => row.Status, EscrowStatus.Disputed)
+                    .SetProperty(row => row.InSettlementBuffer, false)
                     .SetProperty(row => row.UpdatedAt, now),
                 cancellationToken);
 

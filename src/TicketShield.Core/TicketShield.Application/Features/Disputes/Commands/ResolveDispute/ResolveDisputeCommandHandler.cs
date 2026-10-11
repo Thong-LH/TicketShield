@@ -108,6 +108,7 @@ public class ResolveDisputeCommandHandler : IRequestHandler<ResolveDisputeComman
             .ExecuteUpdateAsync(
                 setters => setters
                     .SetProperty(row => row.Status, nextEscrowStatus)
+                    .SetProperty(row => row.InSettlementBuffer, false)
                     .SetProperty(row => row.UpdatedAt, now),
                 cancellationToken);
         if (updated != 1)

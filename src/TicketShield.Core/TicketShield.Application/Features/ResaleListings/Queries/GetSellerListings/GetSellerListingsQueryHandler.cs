@@ -80,7 +80,7 @@ public class GetSellerListingsQueryHandler : IRequestHandler<GetSellerListingsQu
                 BuyerFee = latestEscrow?.BuyerFee,
                 TotalBuyerPaid = latestEscrow?.TotalBuyerPaid,
                 UnlockAt = latestEscrow?.UnlockAt,
-                InSettlementBuffer = latestEscrow?.InSettlementBuffer ?? false,
+                InSettlementBuffer = latestEscrow != null && latestEscrow.Status == Domain.Enums.EscrowStatus.Locked && latestEscrow.InSettlementBuffer,
                 PayoutStatus = latestEscrow?.PayoutTransaction?.Status.ToString(),
                 PayoutProcessedAt = latestEscrow?.PayoutTransaction?.ProcessedAt,
                 PayoutCode = latestEscrow?.PayoutTransaction?.PayoutCode,
