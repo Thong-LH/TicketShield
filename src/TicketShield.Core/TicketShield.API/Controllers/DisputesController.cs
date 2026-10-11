@@ -6,6 +6,7 @@ using TicketShield.Application.Features.Disputes.Commands.CreateDispute;
 using TicketShield.Application.Features.Disputes.Commands.ResolveDispute;
 using TicketShield.Application.Features.Disputes.Queries.GetDisputeEvidenceFile;
 using TicketShield.Application.Features.Disputes.Queries.GetDisputeRecommendation;
+using TicketShield.Application.Features.Disputes.Queries.GetDisputes;
 
 namespace TicketShield.API.Controllers;
 
@@ -13,6 +14,17 @@ namespace TicketShield.API.Controllers;
 [Route("api/v1/disputes")]
 public class DisputesController : ApiControllerBase
 {
+    [HttpGet]
+    [Authorize(Roles = "Admin,Cskh,Moderator")]
+    [ProducesResponseType(typeof(ApiResponse<DisputesOverviewDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> GetList([FromQuery] string? status, [FromQuery] string? searchKeyword, CancellationToken cancellationToken)
+    {
+        var result = await Mediator.Send(new GetDisputesQuery { Status = status, SearchKeyword = searchKeyword }, cancellationToken);
+        return Ok(result);
+    }
+
     [HttpPost]
     [ProducesResponseType(typeof(ApiResponse<CreateDisputeResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
@@ -55,7 +67,7 @@ public class DisputesController : ApiControllerBase
     }
 
     [HttpPost("{id:guid}/resolution")]
-    [Authorize(Roles = "Admin,Cskh")]
+    [Authorize(Roles = "Admin,Cskh,Moderator")]
     [ProducesResponseType(typeof(ApiResponse<ResolveDisputeResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status401Unauthorized)]
@@ -70,7 +82,7 @@ public class DisputesController : ApiControllerBase
     }
 
     [HttpGet("{id:guid}/recommendation")]
-    [Authorize(Roles = "Admin,Cskh")]
+    [Authorize(Roles = "Admin,Cskh,Moderator")]
     [ProducesResponseType(typeof(ApiResponse<DisputeRecommendationResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status403Forbidden)]
@@ -96,3 +108,4 @@ public class DisputesController : ApiControllerBase
         return File(file.Content, file.ContentType);
     }
 }
+
