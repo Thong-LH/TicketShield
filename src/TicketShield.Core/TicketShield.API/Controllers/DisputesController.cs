@@ -55,7 +55,7 @@ public class DisputesController : ApiControllerBase
     }
 
     [HttpPost("{id:guid}/resolution")]
-    [Authorize(Roles = "Admin,Cskh")]
+    [Authorize(Roles = "Admin,Moderator")]
     [ProducesResponseType(typeof(ApiResponse<ResolveDisputeResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status401Unauthorized)]
@@ -70,7 +70,7 @@ public class DisputesController : ApiControllerBase
     }
 
     [HttpGet("{id:guid}/recommendation")]
-    [Authorize(Roles = "Admin,Cskh")]
+    [Authorize(Roles = "Admin,Moderator")]
     [ProducesResponseType(typeof(ApiResponse<DisputeRecommendationResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status403Forbidden)]

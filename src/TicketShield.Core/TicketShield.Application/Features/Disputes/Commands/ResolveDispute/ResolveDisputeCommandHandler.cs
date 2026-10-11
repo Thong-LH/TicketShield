@@ -27,7 +27,7 @@ public class ResolveDisputeCommandHandler : IRequestHandler<ResolveDisputeComman
             throw new UnauthorizedException("Bạn phải đăng nhập để xử lý khiếu nại.");
         }
 
-        if (_currentUser.Role is not ("Admin" or "Cskh"))
+        if (_currentUser.Role is not ("Admin" or "Moderator"))
         {
             throw new ForbiddenAccessException("Bạn không có quyền xử lý khiếu nại này.");
         }

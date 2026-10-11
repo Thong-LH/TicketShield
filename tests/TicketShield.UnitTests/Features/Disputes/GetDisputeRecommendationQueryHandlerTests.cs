@@ -74,11 +74,11 @@ public class GetDisputeRecommendationQueryHandlerTests
     }
 
     [Fact]
-    public async Task Handle_WhenCskhReadsAnEmptyLabel_ReturnsNoRecommendation()
+    public async Task Handle_WhenModeratorReadsAnEmptyLabel_ReturnsNoRecommendation()
     {
         await using var db = CreateDb();
         var seeded = await SeedAsync(db, recommendation: null);
-        var handler = new GetDisputeRecommendationQueryHandler(db, new StubUser(Guid.NewGuid(), "Cskh", true));
+        var handler = new GetDisputeRecommendationQueryHandler(db, new StubUser(Guid.NewGuid(), "Moderator", true));
 
         var result = await handler.Handle(
             new GetDisputeRecommendationQuery { DisputeId = seeded.DisputeId },

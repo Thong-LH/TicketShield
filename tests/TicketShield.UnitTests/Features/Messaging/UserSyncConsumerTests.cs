@@ -22,6 +22,33 @@ public class UserSyncConsumerTests
     }
 
     [Fact]
+    public async Task Consume_WhenModerator_StoresStaffRole()
+    {
+        Assert.Equal(0, (int)UserRole.User);
+        Assert.Equal(1, (int)UserRole.Admin);
+        Assert.Equal(2, (int)UserRole.Moderator);
+        Assert.Equal(3, (int)UserRole.Organizer);
+
+        using var db = CreateInMemoryDbContext();
+        var consumer = new UserCreatedConsumer(db, NullLogger<UserCreatedConsumer>.Instance);
+        var userId = Guid.NewGuid();
+        var contextMock = new Mock<ConsumeContext<IUserCreatedEvent>>();
+        contextMock.Setup(c => c.Message).Returns(new UserCreatedEvent(
+            UserId: userId,
+            Email: "moderator@ticketshield.vn",
+            FullName: "Moderator",
+            PhoneNumber: "0900000004",
+            Role: "Moderator",
+            CreatedAt: DateTimeOffset.UtcNow));
+        contextMock.Setup(c => c.CancellationToken).Returns(CancellationToken.None);
+
+        await consumer.Consume(contextMock.Object);
+
+        var shadowUser = await db.ShadowUsers.SingleAsync(u => u.Id == userId);
+        Assert.Equal(UserRole.Moderator, shadowUser.Role);
+    }
+
+    [Fact]
     public async Task Consume_UserCreatedEvent_WhenUserDoesNotExist_ShouldInsertShadowUser()
     {
         // Arrange

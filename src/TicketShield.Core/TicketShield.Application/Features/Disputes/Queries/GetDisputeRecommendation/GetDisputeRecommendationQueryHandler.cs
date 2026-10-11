@@ -31,7 +31,7 @@ public class GetDisputeRecommendationQueryHandler : IRequestHandler<GetDisputeRe
             throw new UnauthorizedException("Bạn phải đăng nhập để xem hồ sơ khiếu nại.");
         }
 
-        if (_currentUser.Role is not ("Admin" or "Cskh"))
+        if (_currentUser.Role is not ("Admin" or "Moderator"))
         {
             throw new ForbiddenAccessException("Bạn không có quyền xem hồ sơ khiếu nại này.");
         }

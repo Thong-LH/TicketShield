@@ -10,6 +10,11 @@ public static class IdentityDatabaseSeeder
     {
         // Tự động tạo bảng & cấu trúc nếu chưa có
         await context.Database.EnsureCreatedAsync();
+        if (context.Database.IsRelational())
+        {
+            await context.Database.ExecuteSqlRawAsync(
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS trust_score integer NOT NULL DEFAULT 100;");
+        }
 
         var defaultPasswordHash = BCrypt.Net.BCrypt.HashPassword("123456");
 

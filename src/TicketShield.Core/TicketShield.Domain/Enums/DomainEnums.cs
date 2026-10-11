@@ -63,7 +63,7 @@ public enum UserRole
 {
     User,
     Admin,
-    Cskh,
+    Moderator,
     Organizer
 }
 
