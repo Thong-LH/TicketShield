@@ -20,6 +20,30 @@ namespace TicketShield.UnitTests.Features.Disputes;
 public class ResolveDisputeCommandHandlerTests
 {
     [Fact]
+    public async Task Handle_WhenModeratorApproves_RecordsFullRefundAndWritesNoPayout()
+    {
+        await using var db = CreateDb();
+        var seeded = await SeedAsync(db, recommendation: DisputeRecommendation.RecommendRejectFraud);
+        var handler = new ResolveDisputeCommandHandler(db, new StubUser(seeded.AdminId, "Moderator", true));
+
+        var result = await handler.Handle(Command(seeded.DisputeId, DisputeDecision.Approve, "  Vé lỗi thật  "), CancellationToken.None);
+
+        db.ChangeTracker.Clear();
+        var dispute = await db.Disputes.AsNoTracking().SingleAsync();
+        var escrow = await db.EscrowTransactions.AsNoTracking().SingleAsync();
+        Assert.Equal(DisputeStatus.Resolved, dispute.Status);
+        Assert.Equal(DisputeResolution.RefundBuyer, dispute.Resolution);
+        Assert.Equal(550_000m, dispute.RefundAmount);
+        Assert.Equal("Vé lỗi thật", dispute.AdminNotes);
+        Assert.Equal(seeded.AdminId, dispute.ResolvedBy);
+        Assert.NotNull(dispute.ResolvedAt);
+        Assert.Equal(EscrowStatus.Refunded, escrow.Status);
+        Assert.Equal(nameof(DisputeStatus.Resolved), result.Data!.DisputeStatus);
+        Assert.Equal(nameof(EscrowStatus.Refunded), result.Data.EscrowStatus);
+        Assert.Empty(await db.OutboxMessages.AsNoTracking().ToListAsync());
+    }
+
+    [Fact]
     public async Task Handle_WhenAdminApproves_RecordsFullRefundAndWritesNoPayout()
     {
         await using var db = CreateDb();

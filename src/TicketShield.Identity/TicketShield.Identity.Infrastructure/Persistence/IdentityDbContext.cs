@@ -40,6 +40,7 @@ public class IdentityDbContext : DbContext, IIdentityDbContext
             entity.Property(e => e.PasswordResetOtp).HasMaxLength(20);
             entity.Property(e => e.Role).HasConversion<string>().HasMaxLength(50);
             entity.Property(e => e.IsActive).HasDefaultValue(true);
+            entity.Property(e => e.TrustScore).HasColumnName("trust_score").HasDefaultValue(100);
         });
 
         // UserBankAccount

@@ -15,6 +15,7 @@ public class User : BaseEntity
     public DateTimeOffset? PasswordResetOtpExpiresAt { get; set; }
     public UserRole Role { get; set; } = UserRole.User;
     public bool IsActive { get; set; } = true;
+    public int TrustScore { get; set; } = 100;
 
     // Navigation properties
     public ICollection<UserBankAccount> BankAccounts { get; set; } = new List<UserBankAccount>();
