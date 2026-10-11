@@ -11,15 +11,29 @@ public class AdminUserDto
     public string Role { get; set; } = string.Empty;
     public bool IsActive { get; set; }
     public int TrustScore { get; set; }
+    public string? BankCode { get; set; }
+    public string? BankAccountNumber { get; set; }
+    public string? AccountHolderName { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public bool IsKycVerified { get; set; }
 
-    public static AdminUserDto FromUser(User user) => new()
+    public static AdminUserDto FromUser(User user)
     {
-        Id = user.Id,
-        Email = user.Email,
-        FullName = user.FullName,
-        PhoneNumber = user.PhoneNumber,
-        Role = user.Role.ToString(),
-        IsActive = user.IsActive,
-        TrustScore = user.TrustScore
-    };
+        var bank = user.BankAccounts?.FirstOrDefault(b => b.IsDefault) ?? user.BankAccounts?.FirstOrDefault();
+        return new AdminUserDto
+        {
+            Id = user.Id,
+            Email = user.Email,
+            FullName = user.FullName,
+            PhoneNumber = user.PhoneNumber,
+            Role = user.Role.ToString(),
+            IsActive = user.IsActive,
+            TrustScore = user.TrustScore,
+            BankCode = bank?.BankCode,
+            BankAccountNumber = bank?.BankAccountNumber,
+            AccountHolderName = bank?.AccountHolderName,
+            CreatedAt = user.CreatedAt,
+            IsKycVerified = !string.IsNullOrWhiteSpace(user.IdCardNumber)
+        };
+    }
 }

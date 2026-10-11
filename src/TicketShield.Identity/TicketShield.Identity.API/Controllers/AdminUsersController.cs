@@ -4,6 +4,7 @@ using TicketShield.Identity.Application.Common.Models;
 using TicketShield.Identity.Application.Features.AdminUsers.Commands.SuspendUser;
 using TicketShield.Identity.Application.Features.AdminUsers.Models;
 using TicketShield.Identity.Application.Features.AdminUsers.Queries.GetAdminUser;
+using TicketShield.Identity.Application.Features.AdminUsers.Queries.GetAdminUsersList;
 
 namespace TicketShield.Identity.API.Controllers;
 
@@ -11,6 +12,13 @@ namespace TicketShield.Identity.API.Controllers;
 [Route("api/v1/admin/users")]
 public class AdminUsersController : ApiControllerBase
 {
+    [HttpGet]
+    [ProducesResponseType(typeof(ApiResponse<List<AdminUserDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetAll(CancellationToken cancellationToken)
+    {
+        var result = await Mediator.Send(new GetAdminUsersListQuery(), cancellationToken);
+        return Ok(result);
+    }
     [HttpGet("{id:guid}")]
     [ProducesResponseType(typeof(ApiResponse<AdminUserDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status401Unauthorized)]
