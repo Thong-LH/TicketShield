@@ -16,6 +16,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- Table 1: mock_tickets
 CREATE TABLE IF NOT EXISTS mock_tickets (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    organizer_id UUID NOT NULL DEFAULT 'e0000000-0000-0000-0000-000000000001',
     ticket_code VARCHAR(50) UNIQUE NOT NULL,
     event_name VARCHAR(255) NOT NULL,
     seat_zone VARCHAR(100) NOT NULL,
