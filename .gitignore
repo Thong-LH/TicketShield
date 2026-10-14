@@ -4,6 +4,7 @@
 .context/
 .agents/
 local_docs/
+AI_DOCS/
 
 # Documents & Guides
 docs/*

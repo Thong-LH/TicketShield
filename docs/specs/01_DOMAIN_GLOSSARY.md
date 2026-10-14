@@ -53,14 +53,17 @@ Tài liệu định nghĩa chuẩn xác các thuật ngữ chuyên ngành (Domai
 
 ---
 
-### 1.4. Khiếu Nại & Tranh Chấp Thủ Công (Manual Dispute & Reconciliation)
+### 1.4. Khiếu Nại, Đối Soát & Phân Xử Tranh Chấp (Dispute & Automated Recommendation)
 
 | Thuật ngữ | Định nghĩa nghiệp vụ |
 | :--- | :--- |
-| **Dispute (Khiếu nại / Tranh chấp)** | Báo cáo sự cố do Buyer gửi thủ công trên app khi bị từ chối vào cổng, kèm ảnh chụp máy quét lỗi hoặc biên bản viết tay của nhân viên soát vé. |
-| **Gate Access Logs (Nhật ký vào cổng của BTC)** | Dữ liệu lưu trữ độc lập thuộc quyền sở hữu của Ban tổ chức/Địa điểm (không thuộc TicketShield). TicketShield chỉ được cấp quyền tra cứu (Read-Only) để làm căn cứ đối soát. |
-| **Dispute Freezing (Đóng băng ký quỹ)** | Cơ chế tự động đóng băng lệnh Escrow sang trạng thái `DISPUTED` ngay khi nhận khiếu nại, đình chỉ giải ngân tự động T+24h để chờ con người vào cuộc. |
-| **Manual Dispute Resolution (Phán quyết thủ công)** | Quá trình Admin/CSKH của TicketShield thẩm định chứng từ, đối soát log từ BTC và bấm nút ra quyết định: Hoàn tiền cho Buyer hoặc Giải ngân cho Seller. |
+| **Dispute (Khiếu nại / Tranh chấp)** | Báo cáo sự cố do Buyer gửi trên app khi gặp trục trặc kỹ thuật tại cổng soát vé sự kiện (ví dụ: máy quét không nhận diện mã vé mới, lỗi firmware cổng) hoặc vé bị quét trước thời điểm chuyển giao. **Lưu ý:** Không tồn tại vé giả từ Seller vì vé mới được BTC cấp trực tiếp 100% qua gRPC. |
+| **Gate Access Logs (Nhật ký vào cổng của BTC)** | Dữ liệu quét cổng lưu trữ độc lập thuộc quyền sở hữu của Ban tổ chức / Địa điểm. TicketShield tra cứu Read-Only qua API/gRPC (`gate_access_logs`) làm căn cứ đối soát tuyệt đối. |
+| **Dispute Harvest Worker** | Background worker tự động thu thập nhật ký soát vé từ BTC ngay khi có Dispute, lưu snapshot bằng chứng bất biến (`gate_log_snapshot`) vào database. |
+| **Automated Dispute Recommendation** | Động cơ phân tích bằng chứng tự động đối soát mốc thời gian sang tên (`transferred_at`) với nhật ký quét cổng: đề xuất `RECOMMEND_REFUND` (lỗi cổng / vé bị quét trước) hoặc `RECOMMEND_REJECT_FRAUD` (Buyer đã vào cổng bình thường). |
+| **Friendly Fraud (Gian lận khiếu nại)** | Hành vi Buyer đã quét mã QR vào xem sự kiện thành công nhưng cố tình mở Dispute báo lỗi tại cổng để chiếm đoạt tiền hoàn từ Quỹ Ký quỹ Escrow. |
+| **Dispute Freezing (Đóng băng ký quỹ)** | Cơ chế tự động đóng băng lệnh Escrow sang trạng thái `DISPUTED` ngay khi nhận khiếu nại, đình chỉ tức thì luồng giải ngân T+24h để chờ đối soát. |
+| **Admin Dispute Resolution (Phán quyết của Admin)** | Quản trị viên / CSKH kiểm tra bằng chứng, tham khảo đề xuất tự động từ hệ thống và nhật ký cổng BTC để bấm nút phán quyết dứt điểm: Hoàn tiền (`RefundBuyer`) hoặc Giải ngân (`ReleaseSeller`). |
 
 ---
 
@@ -68,9 +71,10 @@ Tài liệu định nghĩa chuẩn xác các thuật ngữ chuyên ngành (Domai
 
 | Tác nhân (Actor) | Mô tả vai trò | Trách nhiệm chính trong hệ thống |
 | :--- | :--- | :--- |
-| **Buyer (Người mua)** | Người dùng tìm mua vé sự kiện trên nền tảng | - Tìm kiếm vé resale hợp lệ.<br>- Trải qua bước kiểm tra hành vi Bot AI.<br>- Thanh toán đơn hàng qua Dynamic VietQR.<br>- Nhận mã vé mới chính chủ từ BTC.<br>- Khiếu nại (Dispute) nếu gặp lỗi tại cổng sự kiện. |
-| **Seller / Reseller (Người bán lại)** | Người sở hữu vé gốc muốn sang nhượng lại | - Đăng ký thông tin vé và Email/SĐT gốc.<br>- Xác thực OTP do BTC gửi về hòm thư chính chủ.<br>- Đặt giá bán (bắt buộc $\le$ Giá gốc).<br>- Nhận tiền ký quỹ sau thời gian đệm T+24h an toàn. |
-| **Event Organizer (Ban tổ chức sự kiện)** | Đơn vị chủ quản phát hành vé (thông qua MockOrganizer.API) | - Cung cấp API xác thực mã vé và chủ sở hữu ban đầu.<br>- Gửi mã OTP xác thực chính chủ qua Email.<br>- Hủy mã vé cũ và phát hành mã vé mới khi có thanh toán thành công.<br>- Ghi nhận và cung cấp nhật ký soát vé (`gate_access_logs`). |
-| **TicketShield System (Core Engine)** | Lõi xử lý giao dịch và bảo vệ thị trường | - Quản lý vòng đời tin đăng bán vé (Listing).<br>- Khóa tiền ký quỹ (Escrow) theo quy tắc ACID.<br>- Điều phối chuyển giao vé với Organizer.<br>- Background Worker tự động giải ngân sau T+24h không có khiếu nại. |
-| **AI Bot Engine** | Hệ thống con trí tuệ nhân tạo (FastAPI) | - Thu thập dữ liệu sinh trắc học hành vi client-side.<br>- Tính toán điểm rủi ro `bot_risk_score` (0.0 đến 1.0).<br>- Phân loại 3 mức Allow / Throttle / Block trong thời gian < 100ms. |
-| **Admin (Quản trị viên nền tảng)** | Người kiểm soát và xử lý tranh chấp | - Tra cứu nhật ký đối soát vào cổng (`gate_access_logs`).<br>- Quyết định kết quả phân xử Dispute.<br>- Kích hoạt lệnh Hoàn tiền (Refund) hoặc Giải ngân (Release). |
+| **Buyer (Người mua)** | Người dùng tìm mua vé sự kiện trên nền tảng | - Tìm kiếm vé resale hợp lệ trên Marketplace hoặc qua Private Link.<br>- Trải qua bước kiểm tra sinh trắc học hành vi Bot AI.<br>- Thanh toán đơn hàng qua Dynamic VietQR.<br>- Nhận mã vé mới chính chủ 100% cấp trực tiếp từ BTC.<br>- Khiếu nại (Dispute) nếu gặp lỗi kỹ thuật tại cổng sự kiện. |
+| **Seller / Reseller (Người bán lại)** | Người sở hữu vé gốc muốn sang nhượng lại | - Chỉ cần nhập Mã vé gốc (`ticket_code`) và chọn Ban tổ chức.<br>- Xác thực OTP do BTC gửi về email chính chủ đã đăng ký vé gốc.<br>- Hệ thống tự động điền toàn bộ thông tin vé từ BTC (không thể khai man thông tin).<br>- Thiết lập giá bán lại (bắt buộc <= Giá trần quy định) và chế độ Public/Private.<br>- Nhận tiền ký quỹ giải ngân tự động sau thời gian đệm T+24h an toàn hoặc khi vé đã quét vào cổng. |
+| **Event Organizer (Ban tổ chức sự kiện)** | Đơn vị chủ quản phát hành vé (thông qua MockOrganizer.API) | - Cung cấp API/gRPC xác thực mã vé và thông tin chủ vé gốc.<br>- Gửi mã OTP xác thực chính chủ qua Email.<br>- Thực hiện khóa vé gốc (`LOCKED_FOR_RESALE`) khi xác thực thành công.<br>- Hủy mã vé cũ và phát hành mã vé hoàn toàn mới cho Buyer khi thanh toán thành công.<br>- Ghi nhận và cung cấp nhật ký soát vé (`gate_access_logs`). |
+| **TicketShield System (Core Engine)** | Lõi xử lý giao dịch và bảo vệ thị trường | - Quản lý vòng đời tin đăng bán vé (Listing) và gói vé (Bundle).<br>- Khóa tiền ký quỹ (Escrow) theo quy tắc ACID.<br>- Điều phối chuyển giao vé với Organizer qua gRPC Saga.<br>- Background Worker tự động giải ngân sau T+24h hoặc khi quét cổng thành công.<br>- Background Worker tự động thu thập log cổng và đưa ra khuyến nghị xử lý Dispute. |
+| **AI & Recommendation Engine** | Hệ thống con trí tuệ nhân tạo (FastAPI & Core Analytics) | - Vòng 1 (Primary / Checkout): Thu thập telemetry client, tính điểm rủi ro `risk_score` (0.0 đến 1.0), phân loại Allow / Throttle / Block.<br>- Vòng 2 (Dispute & Evidence): Phân tích tương quan nhật ký quét cổng và phát hiện dấu hiệu bất thường / gian lận khiếu nại (Friendly Fraud). |
+| **Admin (Quản trị viên nền tảng)** | Người kiểm soát và xử lý tranh chấp | - Tra cứu bằng chứng và snapshot nhật ký soát vé cổng BTC.<br>- Xem khuyến nghị phân tích tự động từ hệ thống.<br>- Bấm nút đưa ra phán quyết cuối cùng: Hoàn tiền (Refund) hoặc Giải ngân (Release). |
+

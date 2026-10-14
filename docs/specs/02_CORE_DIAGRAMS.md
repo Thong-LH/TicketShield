@@ -91,40 +91,42 @@ sequenceDiagram
     actor Seller as Người bán (Reseller)
     actor Buyer as Người mua (Buyer)
     participant CoreAPI as Core API (Controllers)
-    participant CoreCQRS as Core Application (CQRS / Domain)
+    participant CoreCQRS as Core Application (CQRS / MediatR)
     participant MockOrg as MockOrganizer.API (:5001 gRPC)
     participant Escrow as Quỹ ký quỹ (Escrow DB)
     participant STM as Settlement Service (STM)
 
     Note over Seller,MockOrg: BƯỚC 1: XÁC THỰC gRPC & KHÓA VÉ BAN TỔ CHỨC (MF-02)
-    Seller->>CoreAPI: POST /api/v1/ticket-verifications (Mã vé gốc)
-    CoreAPI->>MockOrg: gRPC RequestTicketOtp(ticket_code)
-    MockOrg-->>Seller: Gửi mã OTP 6 số qua Email chính chủ (SMTP)
-    Seller->>CoreAPI: POST /api/v1/ticket-verifications/{id}/confirm (Nhập OTP)
-    CoreAPI->>MockOrg: gRPC ConfirmTicketOtp(session_id, otp)
-    MockOrg-->>CoreAPI: OTP hợp lệ -> Khóa vé gốc: LOCKED_FOR_RESALE
+    Seller->>CoreAPI: POST /api/v1/ticket-verifications (ticketCode, organizerId)
+    CoreAPI->>MockOrg: gRPC RequestTicketOtp(TicketReference)
+    MockOrg-->>Seller: Gửi mã OTP 6 số qua Email chính chủ có sẵn từ BTC
+    Seller->>CoreAPI: POST /api/v1/ticket-verifications/{id}/confirm (otp)
+    CoreAPI->>MockOrg: gRPC ConfirmOtpAndLock(challengeId, otp)
+    MockOrg-->>CoreAPI: Trả VerificationReceipt (giá gốc, hạng vé, khán đài) & Khóa vé: LOCKED_FOR_RESALE
     
-    Note over Seller,CoreCQRS: BƯỚC 2: THIẾT LẬP GIÁ TRẦN & ĐĂNG TIN (MF-02)
-    Seller->>CoreAPI: POST /api/v1/resale-listings (ResalePrice <= OriginalPrice * (1 + Delta), is_private)
-    CoreAPI->>CoreCQRS: CreateResaleListingCommand (Kiểm tra trần giá có biên độ BR-G01)
-    alt is_private == true
-        CoreCQRS->>CoreCQRS: Sinh private_access_token (32 hex chars)
-        CoreCQRS-->>Seller: Trả link bí mật: ticketshield.vn/p2p/listing/{id}?token=... (Phí ưu đãi)
-    else is_private == false
+    Note over Seller,CoreCQRS: BƯỚC 2: THIẾT LẬP GIÁ TRẦN & ĐĂNG BÁN QUA MEDIATR (MF-02 & BUNDLE)
+    Seller->>CoreAPI: POST /api/v1/resale-listings (verificationId, resalePrice <= PriceCeiling, isPrivate)
+    Note over CoreAPI,CoreCQRS: Seller không tự nhập thông tin vé. Thông tin được lấy từ Receipt BTC.
+    CoreAPI->>CoreCQRS: PublishResaleListingCommand / CreateMultiResaleListingCommand
+    alt isPrivate == true
+        CoreCQRS->>CoreCQRS: Sinh privateAccessToken (32 hex chars)
+        CoreCQRS-->>Seller: Trả link bán kín: ticketshield.vn/p2p/listing/{id}?token=...
+    else isPrivate == false
         CoreCQRS-->>Seller: Niêm yết vé công khai lên Marketplace
     end
 
-    Note over Buyer,Escrow: BƯỚC 3: MUA VÉ, SANG TÊN & KHÓA HAI ĐẦU (MF-03)
-    Buyer->>CoreAPI: Mua vé & Thanh toán VietQR (Price + BuyerFee)
-    Buyer->>CoreAPI: Webhook xác nhận thanh toán thành công
-    CoreAPI->>MockOrg: gRPC TransferOwnership(Hủy vé cũ, cấp mã vé mới cho Buyer)
-    MockOrg-->>CoreAPI: Cấp vé mới chính chủ thành công
-    CoreAPI->>CoreAPI: Listing -> SOLD. Khóa tạm giữ vé Buyer: in_settlement_buffer = true
-    CoreAPI->>Escrow: Tạo Escrow (Status: LOCKED, release_at = now + 24h, Index: status, release_at)
+    Note over Buyer,Escrow: BƯỚC 3: GIỮ CHỖ 10P, THANH TOÁN & SANG TÊN GIAO DỊCH (MF-03)
+    Buyer->>CoreAPI: POST /api/v1/resale-listings/{id}/hold (Khóa 10p, sinh VietQR động)
+    Buyer->>CoreAPI: Quét thanh toán VietQR -> SePay Webhook
+    CoreAPI->>CoreCQRS: ProcessSePayWebhookCommand (Atomic Lock)
+    CoreCQRS->>MockOrg: gRPC TransferOwnership(Hủy vé cũ của Seller, cấp mã vé mới cho Buyer)
+    MockOrg-->>CoreCQRS: Cấp vé mới 100% chính chủ thành công
+    CoreCQRS->>CoreCQRS: Listing -> SOLD. Vé Buyer: IN_SETTLEMENT_BUFFER = true
+    CoreCQRS->>Escrow: Tạo Escrow (Status: LOCKED, release_at = now + 24h)
 
     Note over CoreAPI,Seller: BƯỚC 4: GIẢI NGÂN ĐIỀU KIỆN KÉP & CHỐT CAS NGUYÊN TỬ (MF-04)
     alt Kịch bản A: Sự kiện còn xa (> 24h) -> Hết 24h không khiếu nại
-        CoreAPI->>CoreAPI: Core Sweeper quét định kỳ release_at <= now() (Index Scan)
+        CoreAPI->>CoreAPI: AutomaticSettlementWorker quét định kỳ release_at <= now()
     else Kịch bản B: Cận giờ G (<= 24h) -> Quét cổng vào sự kiện thành công (USED)
         MockOrg->>CoreAPI: Webhook/Event quét cổng thành công (ticket_status = USED)
     end
@@ -135,56 +137,56 @@ sequenceDiagram
         STM->>Seller: Thực thi chuyển khoản NAPAS 247 về UserBankAccount của Seller
         STM-->>CoreAPI: Event PayoutCompleted(payout_id, bank_ref)
         CoreAPI->>Escrow: Cập nhật Escrow -> RELEASED
-        CoreAPI->>CoreAPI: Gỡ cờ tạm giữ vé Buyer (in_settlement_buffer = false) -> Mở quyền bán lại nếu bận đột xuất
+        CoreAPI->>CoreAPI: Gỡ cờ tạm giữ vé Buyer (IN_SETTLEMENT_BUFFER = false)
     else CAS thất bại (0 row) - Buyer đã khiếu nại trước đó
         CoreAPI->>CoreAPI: Giữ nguyên Escrow ở trạng thái DISPUTED, đóng băng tiền chuyển sang MF-05
     end
 ```
 
-
-
 ---
 
-## Sơ đồ 4: Luồng Xử Lý Khiếu Nại & Đối Soát Thủ Công (Manual Dispute Management Flow)
+## Sơ đồ 4: Luồng Đối Soát Tranh Chấp & Thu Thập Log Cổng Tự Động (Dispute & Evidence Harvest Flow)
 
-Xử lý sự cố khi Buyer gặp trục trặc tại cửa soát vé sự kiện. Quá trình này **100% do Admin/CSKH xử lý thủ công (Manual Review)**, TicketShield là trung gian không can thiệp vào hệ thống soát vé của Ban tổ chức:
+Quy trình xử lý sự cố tại cổng sự kiện: Hệ thống tự động thu thập nhật ký soát vé từ Ban tổ chức qua `DisputeHarvestWorker` và đưa ra khuyến nghị phân xử khách quan hỗ trợ Admin:
 
 ```mermaid
 sequenceDiagram
     autonumber
     actor Buyer as Người mua (Buyer)
-    actor Admin as Quản trị viên TicketShield (Admin / CSKH)
+    actor Admin as Quản trị viên (Admin / CSKH)
     participant Core as TicketShield.Core (:5000)
     participant Escrow as Quỹ ký quỹ (Escrow DB)
-    participant MockOrg as MockOrganizer.API (:5001 - Read Only)
+    participant Worker as DisputeHarvestWorker (Background)
+    participant MockOrg as MockOrganizer.API (:5001 Gate Logs)
 
-    Note over Buyer,Core: BƯỚC 1: BUYER GẶP LỖI TẠI CỔNG & TẠO REPORT THỦ CÔNG
-    Buyer->>Core: Tạo Dispute thủ công trên App (Lý do + Bằng chứng)
+    Note over Buyer,Core: BƯỚC 1: BUYER BÁO LỖI TẠI CỔNG & TẠO DISPUTE
+    Buyer->>Core: POST /api/v1/disputes (escrowId, reason, reasonCode)
     Core->>Escrow: Atomic CAS: UPDATE escrow_transactions SET status = 'Disputed' WHERE id = @id AND status = 'Locked'
-    alt CAS thành công (1 row) - Két chưa giải ngân
-        Core->>Escrow: Tạo bản ghi Dispute (Status: Open, SLA: 72h)
-        Core-->>Buyer: Thông báo: Ký quỹ đã đóng băng tức thì, Admin xử lý trong SLA 72h
+    alt CAS thành công (1 row) - Đóng băng ký quỹ ngay lập tức
+        Core->>Core: Lưu bản ghi Dispute (Status: Open) & Ghi Outbox Message DisputeHarvestRequested
+        Core-->>Buyer: Thông báo: Ký quỹ đã đóng băng tức thì, bảo vệ tiền 100%
     else CAS thất bại (0 row) - Tiền đã Releasing/Released
-        Core-->>Buyer: Từ chối khiếu nại: Thời hạn khiếu nại đã kết thúc, tiền đang được giải ngân
+        Core-->>Buyer: Từ chối khiếu nại: Thời hạn khiếu nại đã kết thúc, tiền đã giải ngân
     end
 
-    Note over Admin,MockOrg: BƯỚC 2: ADMIN ĐIỀU TRA & ĐỐI SOÁT THỦ CÔNG (MANUAL INVESTIGATION)
-    Admin->>Core: Mở giao diện Admin xem báo cáo và ảnh bằng chứng viết tay của Buyer
-    Admin->>MockOrg: Tra cứu mã vé trên API đối soát Read-Only của BTC (GET /api/v1/gate/access-logs)
-    MockOrg-->>Admin: Trả về lịch sử quét vé của BTC (thời gian quét thực tế tại cổng)
+    Note over Worker,MockOrg: BƯỚC 2: TỰ ĐỘNG THU THẬP NHẬT KÝ CỔNG & KHUYẾN NGHỊ PHÂN XỬ
+    Worker->>Core: Đọc Outbox Message DisputeHarvestRequested
+    Worker->>MockOrg: GET /api/v1/gate/access-logs?ticketCode={newTicketCode}
+    MockOrg-->>Worker: Trả về danh sách GateScans (ScannedAt, ScanResult, GateName)
+    Worker->>Core: Chụp snapshot nhật ký (GateLogSnapshot) bất biến vào Dispute
+    Worker->>Core: Chạy DisputeRecommendation.Decide(TransferredAt, GateScans)
+    Note over Worker: - Scan SUCCESS >= TransferredAt -> RECOMMEND_REJECT_FRAUD<br/>- Scan < TransferredAt hoặc INVALID_TICKET -> RECOMMEND_REFUND
 
-    Note over Admin,Core: BƯỚC 3: ADMIN RA QUYẾT ĐỊNH THỦ CÔNG TRONG SLA 72H
-    alt Bằng chứng hợp lệ (Vé bị lỗi hệ thống hoặc bị quét trước khi Buyer nhận vé)
-        Admin->>Core: Bấm thủ công: [CHẤP THUẬN HOÀN TIỀN] + Nhập ghi chú AdminNote
+    Note over Admin,Core: BƯỚC 3: ADMIN THẨM ĐỊNH & RA PHÁN QUYẾT TRONG SLA 72H
+    Admin->>Core: Xem chi tiết Dispute: Ảnh bằng chứng + Snapshot log cổng + Khuyến nghị tự động
+    alt Đề xuất RECOMMEND_REFUND (Lỗi kỹ thuật BTC / Mã vé không hợp lệ)
+        Admin->>Core: POST /api/v1/disputes/{id}/resolution (Resolution: RefundBuyer, AdminNote)
         Core->>Escrow: Cập nhật Escrow -> REFUNDED
-        Core-->>Buyer: Hoàn 100% tiền lại cho Buyer
-        Core->>Core: Đánh dấu vi phạm cảnh cáo / khóa quyền bán của Seller
-    else Bằng chứng gian lận (BTC xác nhận Buyer đã quét vé vào xem sự kiện bình thường)
-        Admin->>Core: Bấm thủ công: [BÁC BỎ TRANH CHẤP] + Nhập lý do từ chối
-        Core->>Escrow: Cập nhật Escrow -> Releasing
-        Core->>Escrow: Ghi Outbox Message PayoutRequestedCommand
-        Core->>STM: Dispatch Payout Command chuyển tiền ngay lập tức cho Seller
-        Core-->>Buyer: Gửi thông báo từ chối hoàn tiền & phạt khóa tài khoản theo BR-D07
+        Core-->>Buyer: Hoàn 100% tiền lại cho Buyer từ Quỹ Ký quỹ
+    else Đề xuất RECOMMEND_REJECT_FRAUD (Buyer gian dối đã vào cổng xem bình thường)
+        Admin->>Core: POST /api/v1/disputes/{id}/resolution (Resolution: ReleaseSeller, AdminNote)
+        Core->>Escrow: Cập nhật Escrow -> Releasing -> Kích hoạt Payout giải ngân cho Seller
+        Core-->>Buyer: Từ chối hoàn tiền & áp dụng chế tài Friendly Fraud theo BR-D07
     end
 ```
 
@@ -202,33 +204,39 @@ flowchart TB
     end
 
     subgraph CoreService ["TicketShield.Core (.NET 8 Web API :5000)"]
-        API_GW["API Gateway / Controllers"]
-        subgraph CleanArch ["Clean Architecture"]
-            AppCQRS["Application (CQRS / MediatR / FluentValidation)"]
-            DomainLogic["Domain (Entities / Value Objects / Global Business Laws)"]
-            InfraPersist["Infrastructure (EF Core Fluent API / Polly Retry)"]
+        API_GW["API Gateway (YARP) / Controllers"]
+        subgraph CleanArch ["Clean Architecture & CQRS"]
+            AppCQRS["Application (MediatR Commands/Queries / FluentValidation)"]
+            DomainLogic["Domain (Entities / Value Objects / Price Ceiling Laws)"]
+            InfraPersist["Infrastructure (EF Core / Advisory Locks / Polly)"]
         end
-        BgWorker["Background Worker (Escrow T+24h Settlement)"]
+        subgraph Workers ["Background Workers"]
+            AutoSettleWorker["AutomaticSettlementWorker (T+24h & Gate Entry)"]
+            HoldWorker["ExpiredHoldReleaseWorker (10m Hold Release)"]
+            DisputeWorker["DisputeHarvestWorker (Gate Log Snapshot & Recommendation)"]
+            StuckWorker["StuckSettlementWorker (Payout Recovery)"]
+        end
     end
 
     subgraph AIService ["AIEngine Service (Python FastAPI :8000)"]
-        FastAPI_App["FastAPI Server"]
+        FastAPI_App["FastAPI Server (:8000)"]
         ML_Model["ML Inference Engine (Random Forest / XGBoost)"]
     end
 
-    subgraph MockOrganizerService ["MockOrganizer.API (.NET 8 Web API :5001)"]
-        OrgControllers["Organizer Partner API"]
+    subgraph MockOrganizerService ["MockOrganizer.API (.NET 8 Web API :5001 / :5002)"]
+        OrgGrpc["gRPC OrganizerResaleService (organizer_resale.proto)"]
+        OrgControllers["Organizer Gate API (gate_access_logs)"]
         TicketLifecycleMgr["Ticket Issue / Cancel / Transfer Engine"]
-        GateSimulator["Gate Access & Barcode Scanner Simulator"]
+        GateSimulator["Gate Access & Scanner Simulator"]
     end
 
     subgraph DataStorage ["Lớp Dữ Liệu & Hạ Tầng (PostgreSQL Cluster)"]
-        CoreDB[("ticketshield_db<br/>- resale_listings<br/>- escrow_transactions<br/>- payout_transactions<br/>- user_bank_accounts<br/>- disputes")]
-        OrgDB[("organizer_db<br/>- mock_tickets<br/>- mock_otps<br/>- gate_access_logs")]
+        CoreDB[("ticketshield_db<br/>- resale_listings<br/>- core_resale_records (bundles)<br/>- escrow_transactions<br/>- disputes<br/>- outbox_messages")]
+        OrgDB[("organizer_db<br/>- mock_tickets<br/>- organizer_resale_records<br/>- gate_access_logs")]
     end
 
     subgraph ExternalIntegrations ["Dịch Vụ Tích Hợp Ngoại Vi"]
-        VietQR["Cổng Thanh Toán VietQR / NAPAS 247"]
+        VietQR["Cổng Thanh Toán VietQR / SePay Webhook"]
         SMTP["Hệ Thống Gửi Email OTP (SMTP Server)"]
     end
 
@@ -242,16 +250,17 @@ flowchart TB
     AppCQRS --> DomainLogic
     AppCQRS --> InfraPersist
     InfraPersist -->|Npgsql / EF Core| CoreDB
-    BgWorker -->|Scan Locked Escrows & Payouts| CoreDB
+    Workers --> CoreDB
 
-    InfraPersist -->|gRPC Contract (organizer_resale.proto)| OrgControllers
-    OrgControllers --> TicketLifecycleMgr
+    InfraPersist -->|gRPC (:5002)| OrgGrpc
+    DisputeWorker -->|HTTP GET /gate/access-logs| OrgControllers
+    OrgGrpc --> TicketLifecycleMgr
+    OrgControllers --> GateSimulator
     TicketLifecycleMgr -->|Npgsql| OrgDB
     GateSimulator -->|Log Scans| OrgDB
 
-
-    InfraPersist -->|Generate Dynamic QR| VietQR
-    OrgControllers -->|Send OTP Code| SMTP
+    InfraPersist -->|Generate Dynamic VietQR| VietQR
+    OrgGrpc -->|Send OTP Code| SMTP
 ```
 
 ---
@@ -303,8 +312,8 @@ flowchart TB
     end
 
     subgraph LaneAdmin ["5. Quản trị viên đối soát (Admin Review)"]
-        A_Audit["Tiếp nhận khiếu nại & Tra cứu GET /api/v1/gate/access-logs"]
-        A_Verdict{"Kết quả đối soát nhật ký?"}
+        A_Audit["Xem khiếu nại, snapshot log cổng & khuyến nghị tự động (DisputeHarvestWorker)"]
+        A_Verdict{"Phán quyết của Admin (theo đề xuất)?"}
         A_Approve["Duyệt Hoàn tiền (Lỗi BTC / Vé bị chiếm dụng trước)"]
         A_Reject["Bác bỏ khiếu nại (Buyer gian dối đã vào cổng)"]
     end
