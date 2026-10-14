@@ -237,6 +237,63 @@ public static class OrganizerDatabaseSeeder
         ticket11.OwnerName = "Nguyen Van Seller";
         ticket11.Status = "CANCELLED";
 
+        await SeedTicketTiersAsync(context);
         await context.SaveChangesAsync();
+    }
+
+    private static async Task SeedTicketTiersAsync(OrganizerDbContext context)
+    {
+        // Deterministic Guid prefix: c0000000-... (chỉ Add nếu chưa tồn tại)
+        var tiers = new[]
+        {
+            // ── VieON: Anh Trai Say Hi Concert 2026 ──────────────────────
+            new { Id = Guid.Parse("c0000000-0000-0000-0000-000000000001"),
+                  EventId = "atsh-2026",
+                  TierName = "VIP Zone A", Price = 2_500_000m,
+                  Total = 100, Available = 47 },
+
+            new { Id = Guid.Parse("c0000000-0000-0000-0000-000000000002"),
+                  EventId = "atsh-2026",
+                  TierName = "GA Standing", Price = 1_200_000m,
+                  Total = 500, Available = 312 },
+
+            // ── SpaceSpeakers: Mixtape Hanoi 2026 ────────────────────────
+            new { Id = Guid.Parse("c0000000-0000-0000-0000-000000000003"),
+                  EventId = "mixtape-hanoi-2026",
+                  TierName = "VIP Lounge A", Price = 3_500_000m,
+                  Total = 80, Available = 30 },
+
+            new { Id = Guid.Parse("c0000000-0000-0000-0000-000000000004"),
+                  EventId = "mixtape-hanoi-2026",
+                  TierName = "GA Floor Zone", Price = 800_000m,
+                  Total = 400, Available = 250 },
+
+            // ── Live Nation VN: Westlife Vietnam Tour 2026 ───────────────
+            new { Id = Guid.Parse("c0000000-0000-0000-0000-000000000005"),
+                  EventId = "westlife-vn-2026",
+                  TierName = "VIP Platinum", Price = 5_000_000m,
+                  Total = 60, Available = 18 },
+
+            new { Id = Guid.Parse("c0000000-0000-0000-0000-000000000006"),
+                  EventId = "westlife-vn-2026",
+                  TierName = "GA Standing", Price = 1_500_000m,
+                  Total = 300, Available = 189 },
+        };
+
+        foreach (var t in tiers)
+        {
+            if (!await context.TicketTiers.AnyAsync(x => x.Id == t.Id))
+            {
+                await context.TicketTiers.AddAsync(new TicketTier
+                {
+                    Id                = t.Id,
+                    EventId           = t.EventId,
+                    TierName          = t.TierName,
+                    Price             = t.Price,
+                    TotalQuantity     = t.Total,
+                    AvailableQuantity = t.Available,
+                });
+            }
+        }
     }
 }

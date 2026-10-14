@@ -178,6 +178,49 @@ namespace MockOrganizer.API.Data.Migrations
 
                     b.ToTable("mock_tickets");
                 });
+
+            modelBuilder.Entity("MockOrganizer.API.Entities.TicketTier", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<int>("AvailableQuantity")
+                        .HasColumnType("integer")
+                        .HasColumnName("available_quantity");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("EventId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("event_id");
+
+                    b.Property<decimal>("Price")
+                        .HasPrecision(15, 2)
+                        .HasColumnType("numeric(15,2)")
+                        .HasColumnName("price");
+
+                    b.Property<string>("TierName")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("tier_name");
+
+                    b.Property<int>("TotalQuantity")
+                        .HasColumnType("integer")
+                        .HasColumnName("total_quantity");
+
+                    b.HasKey("Id")
+                        .HasName("pk_ticket_tiers");
+
+                    b.HasIndex("EventId")
+                        .HasDatabaseName("ix_ticket_tiers_event_id");
+
+                    b.ToTable("ticket_tiers");
+                });
 #pragma warning restore 612, 618
         }
     }
