@@ -14,6 +14,7 @@ public class OrganizerDbContext : DbContext
     public DbSet<MockOtp> MockOtps => Set<MockOtp>();
     public DbSet<GateAccessLog> GateAccessLogs => Set<GateAccessLog>();
     public DbSet<TicketTier> TicketTiers => Set<TicketTier>();
+    public DbSet<MockOrder> MockOrders => Set<MockOrder>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -43,6 +44,15 @@ public class OrganizerDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.HasIndex(e => e.EventId);
             entity.Property(e => e.Price).HasPrecision(15, 2);
+            entity.UseXminAsConcurrencyToken();              // Npgsql optimistic concurrency
+        });
+
+        modelBuilder.Entity<MockOrder>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.TierId);
+            entity.Property(e => e.UnitPrice).HasPrecision(15, 2);
+            entity.Property(e => e.TotalAmount).HasPrecision(15, 2);
         });
 
         ApplySnakeCaseNaming(modelBuilder);

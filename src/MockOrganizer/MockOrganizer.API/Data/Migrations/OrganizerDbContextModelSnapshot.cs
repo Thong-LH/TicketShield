@@ -65,6 +65,63 @@ namespace MockOrganizer.API.Data.Migrations
                     b.ToTable("gate_access_logs");
                 });
 
+            modelBuilder.Entity("MockOrganizer.API.Entities.MockOrder", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("BuyerEmail")
+                        .HasColumnType("text")
+                        .HasColumnName("buyer_email");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("EventId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("event_id");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("integer")
+                        .HasColumnName("quantity");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("status");
+
+                    b.Property<Guid>("TierId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tier_id");
+
+                    b.Property<string>("TierName")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("tier_name");
+
+                    b.Property<decimal>("TotalAmount")
+                        .HasPrecision(15, 2)
+                        .HasColumnType("numeric(15,2)")
+                        .HasColumnName("total_amount");
+
+                    b.Property<decimal>("UnitPrice")
+                        .HasPrecision(15, 2)
+                        .HasColumnType("numeric(15,2)")
+                        .HasColumnName("unit_price");
+
+                    b.HasKey("Id")
+                        .HasName("pk_mock_orders");
+
+                    b.HasIndex("TierId")
+                        .HasDatabaseName("ix_mock_orders_tier_id");
+
+                    b.ToTable("mock_orders");
+                });
+
             modelBuilder.Entity("MockOrganizer.API.Entities.MockOtp", b =>
                 {
                     b.Property<Guid>("Id")
@@ -212,6 +269,12 @@ namespace MockOrganizer.API.Data.Migrations
                     b.Property<int>("TotalQuantity")
                         .HasColumnType("integer")
                         .HasColumnName("total_quantity");
+
+                    b.Property<uint>("xmin")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
 
                     b.HasKey("Id")
                         .HasName("pk_ticket_tiers");
