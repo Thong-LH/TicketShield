@@ -44,6 +44,12 @@ public class TicketShieldDbContext : DbContext, ITicketShieldDbContext
         {
             entity.HasKey(e => e.Id);
             entity.HasIndex(e => e.OfficialEmail).IsUnique();
+            entity.Property(e => e.Name).HasMaxLength(255).IsRequired();
+            entity.Property(e => e.OfficialEmail).HasMaxLength(255).IsRequired();
+            entity.Property(e => e.TaxCode).HasMaxLength(50);
+            entity.Property(e => e.ContactPerson).HasMaxLength(255);
+            entity.Property(e => e.ConnectionStatus).HasMaxLength(50);
+            entity.Property(e => e.Status).HasMaxLength(50);
         });
 
         // Event
@@ -51,6 +57,10 @@ public class TicketShieldDbContext : DbContext, ITicketShieldDbContext
         {
             entity.HasKey(e => e.Id);
             entity.Property(e => e.MaxResaleMarkupPercentage).HasPrecision(5, 2);
+            entity.Property(e => e.ExternalEventId).HasMaxLength(100);
+            entity.HasIndex(e => new { e.OrganizerId, e.ExternalEventId })
+                .IsUnique()
+                .HasFilter("external_event_id IS NOT NULL");
             entity.HasOne(e => e.Organizer)
                 .WithMany(o => o.Events)
                 .HasForeignKey(e => e.OrganizerId)

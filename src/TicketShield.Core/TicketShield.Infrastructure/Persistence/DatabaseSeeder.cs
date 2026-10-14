@@ -70,7 +70,40 @@ public static class DatabaseSeeder
         organizer.OfficialEmail = "contact@vieon.vn";
         organizer.ContactPhone = "19001234";
         organizer.ApiKeyHash = "mock_api_key_hash_123456";
+        organizer.WebhookUrl = "http://localhost:5001/api/v1/webhook";
+        organizer.ApiBaseUrl = "http://localhost:5001";
+        organizer.GrpcEndpoint = "http://localhost:5004";
+        organizer.TaxCode = "0312345678";
+        organizer.ContactPerson = "Nguyễn Văn Đại Diện";
+        organizer.LastPingAt = DateTimeOffset.UtcNow;
+        organizer.LastPingLatencyMs = 12;
+        organizer.LastCatalogSyncedAt = DateTimeOffset.UtcNow;
+        organizer.ConnectionStatus = "CONNECTED";
         organizer.Status = "ACTIVE";
+
+        // Organizer 2 (Yêu cầu Review 5: Giả lập 2 nhà tổ chức để kiểm tra QR)
+        var organizer2Id = Guid.Parse("e0000000-0000-0000-0000-000000000002");
+        var organizer2 = await context.Organizers.FirstOrDefaultAsync(o => o.Id == organizer2Id);
+        if (organizer2 == null)
+        {
+            organizer2 = new Organizer { Id = organizer2Id };
+            await context.Organizers.AddAsync(organizer2);
+        }
+        organizer2.Name = "Ticketbox Vietnam";
+        organizer2.OfficialEmail = "partner@ticketbox.vn";
+        organizer2.ContactPhone = "19006408";
+        organizer2.TaxCode = "0398765432";
+        organizer2.ContactPerson = "Trần Thị Đối Tác";
+        organizer2.ApiKeyHash = "mock_api_key_hash_ticketbox_2026";
+        organizer2.WebhookUrl = "http://localhost:5001/api/v1/webhook";
+        organizer2.ApiBaseUrl = "http://localhost:5001";
+        organizer2.GrpcEndpoint = "http://localhost:5004";
+        organizer2.WebhookSecretKey = "whsec_mock_organizer_ticketbox_2026";
+        organizer2.LastPingAt = DateTimeOffset.UtcNow;
+        organizer2.LastPingLatencyMs = 18;
+        organizer2.LastCatalogSyncedAt = DateTimeOffset.UtcNow;
+        organizer2.ConnectionStatus = "CONNECTED";
+        organizer2.Status = "ACTIVE";
 
         // Event 1: Anh Trai Say Hi
         var ev = await context.Events.FirstOrDefaultAsync(e => e.Id == eventId);
@@ -80,6 +113,7 @@ public static class DatabaseSeeder
             await context.Events.AddAsync(ev);
         }
         ev.OrganizerId = organizerId;
+        ev.ExternalEventId = "atsh-2026";
         ev.Name = "Anh Trai Say Hi Concert 2026";
         ev.Artist = "Anh Trai Say Hi All-Stars";
         ev.Category = "CONCERT";

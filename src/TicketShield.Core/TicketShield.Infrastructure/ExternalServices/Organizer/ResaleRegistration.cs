@@ -33,7 +33,8 @@ public static class ResaleRegistration
         services.TryAddSingleton(TimeProvider.System);
         services.AddGrpcClient<OrganizerResaleService.OrganizerResaleServiceClient>(c => c.Address = uri);
 
-        // Đăng ký External Gateway
+        // Đăng ký Dynamic Gateway Resolver & External Gateway
+        services.AddScoped<IOrganizerGatewayResolver, OrganizerGatewayResolver>();
         services.AddScoped<IOrganizerGateway, OrganizerGateway>();
         services.AddScoped<OrganizerGateway>();
 

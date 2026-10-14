@@ -9,15 +9,18 @@ namespace TicketShield.Infrastructure.ExternalServices.Organizer;
 /// </summary>
 public sealed class OrganizerGateway : IOrganizerGateway
 {
-    private readonly OrganizerResaleService.OrganizerResaleServiceClient _client;
+    private readonly OrganizerResaleService.OrganizerResaleServiceClient _defaultClient;
     private readonly OrganizerConnectionOptions _options;
+    private readonly IOrganizerGatewayResolver _resolver;
 
     public OrganizerGateway(
-        OrganizerResaleService.OrganizerResaleServiceClient client,
-        OrganizerConnectionOptions options)
+        OrganizerResaleService.OrganizerResaleServiceClient defaultClient,
+        OrganizerConnectionOptions options,
+        IOrganizerGatewayResolver resolver)
     {
-        _client = client;
+        _defaultClient = defaultClient;
         _options = options;
+        _resolver = resolver;
     }
 
     private CallOptions CreateCallOptions(CancellationToken ct)
@@ -32,55 +35,57 @@ public sealed class OrganizerGateway : IOrganizerGateway
 
     public async Task<ChallengeView> Request(RequestTicketOtpRequest request, CancellationToken ct)
     {
-        using var call = _client.RequestTicketOtpAsync(request, CreateCallOptions(ct));
+        var orgId = Guid.TryParse(request.Ticket?.OrganizerId, out var id) ? id : (Guid?)null;
+        var client = await _resolver.ResolveClientAsync(orgId, ct);
+        using var call = client.RequestTicketOtpAsync(request, CreateCallOptions(ct));
         return await call.ResponseAsync;
     }
 
     public async Task<ChallengeView> Resend(ResendTicketOtpRequest request, CancellationToken ct)
     {
-        using var call = _client.ResendTicketOtpAsync(request, CreateCallOptions(ct));
+        using var call = _defaultClient.ResendTicketOtpAsync(request, CreateCallOptions(ct));
         return await call.ResponseAsync;
     }
 
     public async Task<VerificationReceipt> Confirm(ConfirmOtpAndLockRequest request, CancellationToken ct)
     {
-        using var call = _client.ConfirmOtpAndLockAsync(request, CreateCallOptions(ct));
+        using var call = _defaultClient.ConfirmOtpAndLockAsync(request, CreateCallOptions(ct));
         return await call.ResponseAsync;
     }
 
     public async Task<OperationView> Operation(GetOperationRequest request, CancellationToken ct)
     {
-        using var call = _client.GetOperationAsync(request, CreateCallOptions(ct));
+        using var call = _defaultClient.GetOperationAsync(request, CreateCallOptions(ct));
         return await call.ResponseAsync;
     }
 
     public async Task<VerificationView> Verification(GetVerificationRequest request, CancellationToken ct)
     {
-        using var call = _client.GetVerificationAsync(request, CreateCallOptions(ct));
+        using var call = _defaultClient.GetVerificationAsync(request, CreateCallOptions(ct));
         return await call.ResponseAsync;
     }
 
     public async Task<ResaleLockView> Lock(GetResaleLockRequest request, CancellationToken ct)
     {
-        using var call = _client.GetResaleLockAsync(request, CreateCallOptions(ct));
+        using var call = _defaultClient.GetResaleLockAsync(request, CreateCallOptions(ct));
         return await call.ResponseAsync;
     }
 
     public async Task<VerificationView> Close(CloseVerificationRequest request, CancellationToken ct)
     {
-        using var call = _client.CloseVerificationAsync(request, CreateCallOptions(ct));
+        using var call = _defaultClient.CloseVerificationAsync(request, CreateCallOptions(ct));
         return await call.ResponseAsync;
     }
 
     public async Task<ReleaseResaleLockResponse> Release(ReleaseResaleLockRequest request, CancellationToken ct)
     {
-        using var call = _client.ReleaseResaleLockAsync(request, CreateCallOptions(ct));
+        using var call = _defaultClient.ReleaseResaleLockAsync(request, CreateCallOptions(ct));
         return await call.ResponseAsync;
     }
 
     public async Task<TransferOwnershipResponse> TransferOwnership(TransferOwnershipRequest request, CancellationToken ct)
     {
-        using var call = _client.TransferOwnershipAsync(request, CreateCallOptions(ct));
+        using var call = _defaultClient.TransferOwnershipAsync(request, CreateCallOptions(ct));
         return await call.ResponseAsync;
     }
 }

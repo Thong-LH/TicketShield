@@ -417,6 +417,11 @@ namespace TicketShield.Infrastructure.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("event_start_at");
 
+                    b.Property<string>("ExternalEventId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("external_event_id");
+
                     b.Property<decimal>("MaxResaleMarkupPercentage")
                         .HasPrecision(5, 2)
                         .HasColumnType("numeric(5,2)")
@@ -452,8 +457,10 @@ namespace TicketShield.Infrastructure.Persistence.Migrations
                     b.HasKey("Id")
                         .HasName("pk_events");
 
-                    b.HasIndex("OrganizerId")
-                        .HasDatabaseName("ix_events_organizer_id");
+                    b.HasIndex("OrganizerId", "ExternalEventId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_events_organizer_id_external_event_id")
+                        .HasFilter("external_event_id IS NOT NULL");
 
                     b.ToTable("events");
                 });
@@ -465,10 +472,25 @@ namespace TicketShield.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<string>("ApiBaseUrl")
+                        .HasColumnType("text")
+                        .HasColumnName("api_base_url");
+
                     b.Property<string>("ApiKeyHash")
                         .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("api_key_hash");
+
+                    b.Property<string>("ConnectionStatus")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("connection_status");
+
+                    b.Property<string>("ContactPerson")
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("contact_person");
 
                     b.Property<string>("ContactPhone")
                         .HasColumnType("text")
@@ -478,24 +500,52 @@ namespace TicketShield.Infrastructure.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
 
+                    b.Property<string>("GrpcEndpoint")
+                        .HasColumnType("text")
+                        .HasColumnName("grpc_endpoint");
+
+                    b.Property<DateTimeOffset?>("LastCatalogSyncedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_catalog_synced_at");
+
+                    b.Property<DateTimeOffset?>("LastPingAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_ping_at");
+
+                    b.Property<long?>("LastPingLatencyMs")
+                        .HasColumnType("bigint")
+                        .HasColumnName("last_ping_latency_ms");
+
                     b.Property<string>("Name")
                         .IsRequired()
-                        .HasColumnType("text")
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
                         .HasColumnName("name");
 
                     b.Property<string>("OfficialEmail")
                         .IsRequired()
-                        .HasColumnType("text")
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
                         .HasColumnName("official_email");
 
                     b.Property<string>("Status")
                         .IsRequired()
-                        .HasColumnType("text")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
                         .HasColumnName("status");
+
+                    b.Property<string>("TaxCode")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("tax_code");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("updated_at");
+
+                    b.Property<string>("WebhookSecretKey")
+                        .HasColumnType("text")
+                        .HasColumnName("webhook_secret_key");
 
                     b.Property<string>("WebhookUrl")
                         .HasColumnType("text")

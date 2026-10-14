@@ -16,6 +16,7 @@ public class Event : BaseEntity
     public DateTimeOffset EventEndAt { get; set; }
     public DateTimeOffset ResaleDeadline { get; set; }
     public string Status { get; set; } = "UPCOMING";
+    public string? ExternalEventId { get; set; }
 
     /// <summary>
     /// Extra percent above face value that a resale may charge (0 = old 100% ceiling). Admin-owned.

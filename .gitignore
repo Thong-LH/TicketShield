@@ -24,6 +24,7 @@ scripts/*.exe
 FA26SE261_Student_Research_Checklist.md
 TicketShield - Antigravity Agent Context (Core & KI) V2.md
 ACTIVITY_LOG.md
+AGENTS.md
 
 # Build artifacts (.NET)
 **/bin/
