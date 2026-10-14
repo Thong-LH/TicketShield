@@ -9,7 +9,7 @@ Tài liệu dự án TicketShield AI được chuẩn hóa và phân loại theo
 * **[02_CORE_DIAGRAMS.md](file:///d:/Capstone/docs/specs/02_CORE_DIAGRAMS.md):** 5 Sơ đồ Mental Model (State Machine vòng đời vé, Luồng bot AI, Luồng ký quỹ P2P, Xử lý Dispute thủ công, Kiến trúc hệ thống).
 * **[03_BUSINESS_RULES.md](file:///d:/Capstone/docs/specs/03_BUSINESS_RULES.md):** Toàn bộ quy tắc nghiệp vụ bất biến (Trần giá BR-G01, Khóa vé gRPC BR-G02, Giải ngân T+24h BR-G03, Toàn vẹn ACID BR-G04, Decoupling BR-E05, Payout Idempotency BR-E06).
 * **[04_API_SPECIFICATIONS.md](file:///d:/Capstone/docs/specs/04_API_SPECIFICATIONS.md):** Đặc tả các REST API endpoints chuẩn hóa.
-* **[05_AI_BOT_DETECTION_RESEARCH.md](file:///d:/Capstone/docs/specs/05_AI_BOT_DETECTION_RESEARCH.md):** Nghiên cứu và thuật toán phân loại hành vi Bot (Telemetry, Features, ML Inference).
+* **[08_ANTI_BOT_FEATURE_SPECIFICATION.md](file:///d:/Capstone/docs/specs/08_ANTI_BOT_FEATURE_SPECIFICATION.md):** Hợp đồng đặc tả kỹ thuật 6 đặc trưng Anti-Bot chuẩn v1.0 (Timing, Velocity, Device).
 * **[06_SECURITY_AND_COMPLIANCE.md](file:///d:/Capstone/docs/specs/06_SECURITY_AND_COMPLIANCE.md):** Quy chuẩn an toàn bảo mật, chống giả mạo token và lưu vết kiểm toán.
 
 ---
