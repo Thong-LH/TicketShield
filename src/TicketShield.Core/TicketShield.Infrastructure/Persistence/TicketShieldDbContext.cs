@@ -302,18 +302,18 @@ public class TicketShieldDbContext : DbContext, ITicketShieldDbContext
 
     public async Task<IDbContextTransactionProxy?> BeginAdvisoryLockTransactionAsync(long lockKey, CancellationToken cancellationToken = default)
     {
-        if (Database.IsRelational())
+        if (Database.IsRelational() && Database.ProviderName?.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) == true)
         {
             var tx = await Database.BeginTransactionAsync(cancellationToken);
             await Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock({lockKey})", cancellationToken);
             return new DbContextTransactionProxy(tx);
         }
-        return null;
+        return new DbContextTransactionProxy(null);
     }
 
     public async Task<IDbContextTransactionProxy?> TryBeginAdvisoryLockTransactionAsync(long lockKey, CancellationToken cancellationToken = default)
     {
-        if (Database.IsRelational())
+        if (Database.IsRelational() && Database.ProviderName?.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) == true)
         {
             var tx = await Database.BeginTransactionAsync(cancellationToken);
             var conn = Database.GetDbConnection();

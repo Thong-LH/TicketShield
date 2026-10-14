@@ -112,6 +112,24 @@ public class ResolveDisputeCommandHandlerTests
     }
 
     [Fact]
+    public async Task Handle_WhenBuyerHasNoAccount_LeavesTheDisputeOpen()
+    {
+        await using var db = CreateDb();
+        var seeded = await SeedAsync(db, buyerAccountNumber: "  ");
+        var handler = new ResolveDisputeCommandHandler(db, new StubUser(seeded.AdminId, "Admin", true));
+
+        var ex = await Assert.ThrowsAsync<BusinessRuleViolationException>(() =>
+            handler.Handle(Command(seeded.DisputeId, DisputeDecision.Approve, "Đồng ý hoàn"), CancellationToken.None));
+
+        Assert.Equal("Người mua chưa liên kết tài khoản ngân hàng để nhận tiền hoàn.", ex.Message);
+        db.ChangeTracker.Clear();
+        Assert.Equal(422, await StatusCodeOf(ex));
+        Assert.Equal(DisputeStatus.Open, (await db.Disputes.AsNoTracking().SingleAsync()).Status);
+        Assert.Equal(EscrowStatus.Disputed, (await db.EscrowTransactions.AsNoTracking().SingleAsync()).Status);
+        Assert.Empty(await db.OutboxMessages.AsNoTracking().ToListAsync());
+    }
+
+    [Fact]
     public async Task Handle_WhenDisputeIsAlreadyResolved_LeavesTheStoredDecision()
     {
         await using var db = CreateDb();
@@ -216,7 +234,8 @@ public class ResolveDisputeCommandHandlerTests
         string? recommendation = null,
         string accountNumber = "",
         DisputeStatus disputeStatus = DisputeStatus.Open,
-        EscrowStatus escrowStatus = EscrowStatus.Disputed)
+        EscrowStatus escrowStatus = EscrowStatus.Disputed,
+        string buyerAccountNumber = "987654321")
     {
         var suffix = Guid.NewGuid().ToString("N")[..8];
         var admin = new ShadowUser
@@ -230,7 +249,10 @@ public class ResolveDisputeCommandHandlerTests
         {
             Id = Guid.NewGuid(),
             Email = $"buyer-{suffix}@test.local",
-            FullName = "Buyer"
+            FullName = "Buyer",
+            PayoutBankCode = "VCB",
+            PayoutAccountNumber = buyerAccountNumber,
+            PayoutAccountName = "BUYER"
         };
         var seller = new ShadowUser
         {

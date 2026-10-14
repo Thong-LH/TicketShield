@@ -1,6 +1,7 @@
 using System.Text.Json;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using TicketShield.Application.Common.Helpers;
 using TicketShield.Application.Common.Interfaces;
 using TicketShield.Application.Common.Models;
 using TicketShield.Domain.Entities;
@@ -41,6 +42,23 @@ public class CreateDisputeCommandHandler : IRequestHandler<CreateDisputeCommand,
             throw new ForbiddenAccessException("Bạn không có quyền gửi khiếu nại cho giao dịch này.");
         }
 
+        var buyer = await _db.ShadowUsers.FirstOrDefaultAsync(u => u.Id == buyerId, cancellationToken);
+        if (buyer == null)
+        {
+            buyer = new ShadowUser { Id = buyerId };
+            _db.ShadowUsers.Add(buyer);
+        }
+
+        if (!PayoutAccountRules.IsPresent(buyer.PayoutAccountNumber))
+        {
+            await IdentityBankSyncHelper.TrySyncUserBankFromIdentityAsync(_db, buyer, cancellationToken);
+        }
+
+        if (!PayoutAccountRules.IsPresent(buyer.PayoutAccountNumber))
+        {
+            throw new BusinessRuleViolationException("Bạn cần liên kết tài khoản ngân hàng trước khi gửi báo cáo sự cố để có thể nhận tiền hoàn.");
+        }
+
         var now = DateTimeOffset.UtcNow;
         var disputeId = Guid.NewGuid();
         var dispute = new Dispute
@@ -62,6 +80,7 @@ public class CreateDisputeCommandHandler : IRequestHandler<CreateDisputeCommand,
             .ExecuteUpdateAsync(
                 setters => setters
                     .SetProperty(row => row.Status, EscrowStatus.Disputed)
+                    .SetProperty(row => row.InSettlementBuffer, false)
                     .SetProperty(row => row.UpdatedAt, now),
                 cancellationToken);
 

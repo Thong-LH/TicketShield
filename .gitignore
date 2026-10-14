@@ -4,6 +4,7 @@
 .context/
 .agents/
 local_docs/
+AI_DOCS/
 
 # Documents & Guides
 docs/*
@@ -82,4 +83,7 @@ scripts/*jira*
 
 # Docker / Volumes
 postgres_data/
+
+# Local Development Scripts
+reset-db.bat
 
