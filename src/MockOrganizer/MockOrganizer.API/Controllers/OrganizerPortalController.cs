@@ -65,8 +65,8 @@ public class OrganizerPortalController(
             SeatZone = string.IsNullOrWhiteSpace(request?.SeatZone) ? randomZone : request.SeatZone,
             OriginalPrice = request?.OriginalPrice > 0 ? request.OriginalPrice : (code.Contains("VIP") ? 2500000 : 1200000),
             OwnerEmail = string.IsNullOrWhiteSpace(request?.OwnerEmail) ? "linhtranlatao2004@gmail.com" : request.OwnerEmail,
-            OwnerPhone = "0901234567",
-            OwnerName = "Nguyen Van Seller",
+            OwnerPhone = string.IsNullOrWhiteSpace(request?.OwnerPhone) ? "0901234567" : request.OwnerPhone,
+            OwnerName = string.IsNullOrWhiteSpace(request?.OwnerName) ? "Nguyen Van Seller" : request.OwnerName,
             Status = "VALID",
             CreatedAt = DateTimeOffset.UtcNow,
             UpdatedAt = DateTimeOffset.UtcNow
@@ -78,8 +78,8 @@ public class OrganizerPortalController(
         // Ensure ticket mapping is available
         options.TicketMappings[ticket.TicketCode] = new TicketMapping
         {
-            EventId = "concert-2026",
-            TierId = code.Contains("VIP") ? "vip-zone-a" : "ga-zone"
+            EventId = !string.IsNullOrWhiteSpace(request?.EventId) ? request.EventId : "concert-2026",
+            TierId = !string.IsNullOrWhiteSpace(request?.TierId) ? request.TierId : (code.Contains("VIP") ? "vip-zone-a" : "ga-zone")
         };
 
         return Ok(ticket);
@@ -145,5 +145,9 @@ public class GenerateTicketRequest
     public string? SeatZone { get; set; }
     public decimal OriginalPrice { get; set; }
     public string? OwnerEmail { get; set; }
+    public string? OwnerPhone { get; set; }
+    public string? OwnerName { get; set; }
     public Guid? OrganizerId { get; set; }
+    public string? EventId { get; set; }
+    public string? TierId { get; set; }
 }
