@@ -6,6 +6,7 @@ using TicketShield.Application.Features.Disputes.Commands.CreateDispute;
 using TicketShield.Application.Features.Disputes.Commands.ResolveDispute;
 using TicketShield.Application.Features.Disputes.Queries.GetDisputeEvidenceFile;
 using TicketShield.Application.Features.Disputes.Queries.GetDisputeRecommendation;
+using TicketShield.Application.Features.Disputes.Queries.GetMyDisputeProgress;
 using TicketShield.Application.Features.Disputes.Queries.GetDisputes;
 
 namespace TicketShield.API.Controllers;
@@ -90,6 +91,17 @@ public class DisputesController : ApiControllerBase
     public async Task<IActionResult> GetRecommendation(Guid id, CancellationToken cancellationToken)
     {
         var result = await Mediator.Send(new GetDisputeRecommendationQuery { DisputeId = id }, cancellationToken);
+        return Ok(result);
+    }
+
+    [HttpGet("my-disputes/{id:guid}")]
+    [ProducesResponseType(typeof(ApiResponse<MyDisputeProgressDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetMyDisputeProgress(Guid id, CancellationToken cancellationToken)
+    {
+        var result = await Mediator.Send(new GetMyDisputeProgressQuery { DisputeId = id }, cancellationToken);
         return Ok(result);
     }
 

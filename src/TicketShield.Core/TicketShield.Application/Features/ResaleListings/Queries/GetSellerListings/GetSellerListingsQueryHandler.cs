@@ -34,6 +34,8 @@ public class GetSellerListingsQueryHandler : IRequestHandler<GetSellerListingsQu
             .Include(l => l.Seller)
             .Include(l => l.EscrowTransactions)
                 .ThenInclude(e => e.PayoutTransaction)
+            .Include(l => l.EscrowTransactions)
+                .ThenInclude(e => e.Dispute)
             .Where(l => l.SellerId == sellerId);
 
         if (request.Status.HasValue)
@@ -88,6 +90,7 @@ public class GetSellerListingsQueryHandler : IRequestHandler<GetSellerListingsQu
                 PayoutBankCode = latestEscrow?.PayoutTransaction?.RecipientBankCode ?? l.Seller?.PayoutBankCode,
                 PayoutAccountNumber = latestEscrow?.PayoutTransaction?.RecipientAccountNumber ?? l.Seller?.PayoutAccountNumber,
                 BankTransactionReference = latestEscrow?.BankTransactionReference,
+                DisputeId = latestEscrow?.Dispute?.Id,
                 PayoutBankInfo = latestEscrow?.PayoutTransaction != null
                     ? $"{latestEscrow.PayoutTransaction.RecipientBankCode} - {latestEscrow.PayoutTransaction.RecipientAccountNumber}"
                     : (!string.IsNullOrEmpty(l.Seller?.PayoutBankCode) && !string.IsNullOrEmpty(l.Seller?.PayoutAccountNumber)

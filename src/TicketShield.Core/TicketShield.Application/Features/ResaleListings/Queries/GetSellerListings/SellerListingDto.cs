@@ -42,6 +42,7 @@ public class SellerListingDto
     public string? PayoutBankCode { get; set; }
     public string? PayoutAccountNumber { get; set; }
     public string? BankTransactionReference { get; set; }
+    public Guid? DisputeId { get; set; }
 
     public DateTimeOffset CreatedAt { get; set; }
     public Guid? BundleId { get; set; }

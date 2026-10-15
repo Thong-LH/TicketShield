@@ -37,6 +37,7 @@ public class GetMyPurchasedTicketsQueryHandler : IRequestHandler<GetMyPurchasedT
             .Include(e => e.Listing)
                 .ThenInclude(l => l.Tier)
             .Include(e => e.Buyer)
+            .Include(e => e.Dispute)
             .AsQueryable();
 
         if (buyerId != Guid.Empty && !string.IsNullOrWhiteSpace(buyerEmail))
@@ -59,6 +60,8 @@ public class GetMyPurchasedTicketsQueryHandler : IRequestHandler<GetMyPurchasedT
             e.Status == EscrowStatus.Locked ||
             e.Status == EscrowStatus.Releasing ||
             e.Status == EscrowStatus.Disputed ||
+            // Hoàn tiền nhờ khiếu nại vẫn hiện để người mua xem được kết quả.
+            (e.Status == EscrowStatus.Refunded && e.Dispute != null) ||
             (e.Status == EscrowStatus.Released &&
              (!string.IsNullOrEmpty(e.BankTransactionReference) ||
               !string.IsNullOrEmpty(e.NewTicketCode))));
@@ -76,8 +79,10 @@ public class GetMyPurchasedTicketsQueryHandler : IRequestHandler<GetMyPurchasedT
             var eventStart = e.Listing?.Event?.EventStartAt ?? e.CreatedAt.AddDays(30);
             var tierName = e.Listing?.Tier?.TierName ?? "Standard Pass";
             var rawSeatZone = !string.IsNullOrWhiteSpace(e.Listing?.SeatZone) ? e.Listing.SeatZone : tierName;
-            var passCode = e.NewTicketCode?.Trim() ?? string.Empty;
-            var qrPayload = !string.IsNullOrWhiteSpace(e.QrCodeData)
+            // Đã hoàn tiền thì vé không còn là của người mua: không trả mã vé và QR.
+            var refunded = e.Status == EscrowStatus.Refunded;
+            var passCode = refunded ? string.Empty : e.NewTicketCode?.Trim() ?? string.Empty;
+            var qrPayload = !refunded && !string.IsNullOrWhiteSpace(e.QrCodeData)
                 ? e.QrCodeData.Trim()
                 : passCode;
 
@@ -113,8 +118,8 @@ public class GetMyPurchasedTicketsQueryHandler : IRequestHandler<GetMyPurchasedT
             }
 
             // Mã vé được cấp theo đúng thứ tự listing đã sang tên ở SePay webhook.
-            var issuedCodes = SplitIssuedCodes(e.NewTicketCode);
-            var issuedQrCodes = SplitIssuedCodes(e.QrCodeData);
+            var issuedCodes = refunded ? new List<string>() : SplitIssuedCodes(e.NewTicketCode);
+            var issuedQrCodes = refunded ? new List<string>() : SplitIssuedCodes(e.QrCodeData);
 
             var effectiveBundleTotal = bundleListings.Count >= 2 ? bundleListings.Count : 1;
             var bundleItems = new List<PurchasedTicketItemDto>();
@@ -165,6 +170,8 @@ public class GetMyPurchasedTicketsQueryHandler : IRequestHandler<GetMyPurchasedT
                 QrCodeData = primaryQrPayload,
                 QrCodeImageUrl = BuildQrImageUrl(primaryQrPayload),
                 PurchasedAt = e.CreatedAt,
+                // Người nhận vé theo email thấy trạng thái nhưng không có mã để mở tiến độ.
+                DisputeId = buyerId != Guid.Empty && e.BuyerId == buyerId ? e.Dispute?.Id : null,
                 BundleId = bundleId,
                 BundleTotalTickets = effectiveBundleTotal >= 2 ? effectiveBundleTotal : null,
                 BundleItems = bundleItems

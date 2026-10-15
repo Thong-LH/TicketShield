@@ -21,6 +21,9 @@ public class PurchasedTicketDto
     public string QrCodeImageUrl { get; set; } = string.Empty;
     public DateTimeOffset PurchasedAt { get; set; }
 
+    // Chỉ có giá trị khi người xem là người trả tiền và giao dịch có khiếu nại.
+    public Guid? DisputeId { get; set; }
+
     public Guid? BundleId { get; set; }
     public int? BundleTotalTickets { get; set; }
     public List<PurchasedTicketItemDto> BundleItems { get; set; } = new();

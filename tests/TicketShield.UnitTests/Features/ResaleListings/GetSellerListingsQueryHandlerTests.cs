@@ -227,4 +227,81 @@ public class GetSellerListingsQueryHandlerTests
         var ex = await Assert.ThrowsAsync<UnauthorizedException>(() => handler.Handle(query, CancellationToken.None));
         Assert.Contains("đăng nhập", ex.Message);
     }
+
+    [Fact]
+    public async Task Handle_WhenTicketIsResoldAfterDispute_ShouldKeepDisputeIdOnOriginalListingOnly()
+    {
+        // Arrange: seller1 bán cho seller2, seller2 khiếu nại, rồi seller2 đăng bán lại vé đó.
+        var (dbContext, seller1, seller2) = CreateInMemoryDbContext();
+        var testEvent = await dbContext.Events.FirstAsync();
+        var testTier = await dbContext.TicketTiers.FirstAsync();
+
+        var originalListing = new ResaleListing
+        {
+            Id = Guid.NewGuid(),
+            EventId = testEvent.Id,
+            TierId = testTier.Id,
+            SellerId = seller1.Id,
+            OriginalTicketCode = "TCK-ORIGINAL-001",
+            ResalePrice = 1_800_000m,
+            ListingStatus = ListingStatus.Sold,
+            CreatedAt = DateTimeOffset.UtcNow.AddDays(-3)
+        };
+        var expiredHold = new EscrowTransaction
+        {
+            Id = Guid.NewGuid(),
+            ListingId = originalListing.Id,
+            BuyerId = Guid.NewGuid(),
+            SellerId = seller1.Id,
+            Status = EscrowStatus.Expired,
+            CreatedAt = DateTimeOffset.UtcNow.AddDays(-3)
+        };
+        var disputedSale = new EscrowTransaction
+        {
+            Id = Guid.NewGuid(),
+            ListingId = originalListing.Id,
+            BuyerId = seller2.Id,
+            SellerId = seller1.Id,
+            Status = EscrowStatus.Releasing,
+            CreatedAt = DateTimeOffset.UtcNow.AddDays(-2)
+        };
+        var dispute = new Dispute
+        {
+            Id = Guid.NewGuid(),
+            EscrowId = disputedSale.Id,
+            BuyerId = seller2.Id,
+            DisputeCode = "DP-RESALE",
+            Status = DisputeStatus.Rejected,
+            Resolution = DisputeResolution.ReleaseSeller
+        };
+        var resaleListing = new ResaleListing
+        {
+            Id = Guid.NewGuid(),
+            EventId = testEvent.Id,
+            TierId = testTier.Id,
+            SellerId = seller2.Id,
+            OriginalTicketCode = "TCK-REISSUED-002",
+            ResalePrice = 1_900_000m,
+            ListingStatus = ListingStatus.Verified,
+            CreatedAt = DateTimeOffset.UtcNow.AddDays(-1)
+        };
+        dbContext.ResaleListings.AddRange(originalListing, resaleListing);
+        dbContext.EscrowTransactions.AddRange(expiredHold, disputedSale);
+        dbContext.Disputes.Add(dispute);
+        await dbContext.SaveChangesAsync();
+
+        // Act
+        var seller1Result = await new GetSellerListingsQueryHandler(dbContext, new MockCurrentUserService(seller1.Id))
+            .Handle(new GetSellerListingsQuery(), CancellationToken.None);
+        var seller2Result = await new GetSellerListingsQueryHandler(dbContext, new MockCurrentUserService(seller2.Id))
+            .Handle(new GetSellerListingsQuery(), CancellationToken.None);
+
+        // Assert
+        var original = Assert.Single(seller1Result.Data!);
+        Assert.Equal(dispute.Id, original.DisputeId);
+        Assert.Equal(nameof(EscrowStatus.Releasing), original.EscrowStatus);
+
+        var resale = Assert.Single(seller2Result.Data!);
+        Assert.Null(resale.DisputeId);
+    }
 }

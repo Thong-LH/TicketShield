@@ -412,5 +412,100 @@ public class GetMyPurchasedTicketsQueryHandlerTests
         Assert.DoesNotContain("-T3", ticket.TicketPassCode);
         Assert.DoesNotContain(",", ticket.TicketPassCode);
     }
+
+    [Fact]
+    public async Task Handle_WhenSaleHasNoDispute_ShouldReturnEmptyDisputeId()
+    {
+        var (context, buyerId, buyerEmail) = CreateTestFixture();
+
+        var handler = new GetMyPurchasedTicketsQueryHandler(context, CurrentUser(buyerId, buyerEmail));
+        var result = await handler.Handle(new GetMyPurchasedTicketsQuery(), CancellationToken.None);
+
+        var ticket = Assert.Single(result.Data!);
+        Assert.Null(ticket.DisputeId);
+    }
+
+    [Theory]
+    [InlineData(DisputeStatus.Open, EscrowStatus.Disputed)]
+    [InlineData(DisputeStatus.Rejected, EscrowStatus.Releasing)]
+    public async Task Handle_WhenBuyerFiledDispute_ShouldReturnSameDisputeIdBeforeAndAfterDecision(
+        DisputeStatus disputeStatus,
+        EscrowStatus escrowStatus)
+    {
+        var (context, buyerId, buyerEmail) = CreateTestFixture();
+        var disputeId = AddDispute(context, buyerId, disputeStatus, escrowStatus);
+
+        var handler = new GetMyPurchasedTicketsQueryHandler(context, CurrentUser(buyerId, buyerEmail));
+        var result = await handler.Handle(new GetMyPurchasedTicketsQuery(), CancellationToken.None);
+
+        var ticket = Assert.Single(result.Data!);
+        Assert.Equal(disputeId, ticket.DisputeId);
+    }
+
+    [Fact]
+    public async Task Handle_WhenRecipientSeesDisputedSale_ShouldHideDisputeId()
+    {
+        var (context, buyerId, _) = CreateTestFixture();
+        var paid = context.EscrowTransactions.Single();
+        paid.RecipientEmail = "friend@test.com";
+        context.SaveChanges();
+        AddDispute(context, buyerId, DisputeStatus.Open, EscrowStatus.Disputed);
+
+        var friendId = Guid.NewGuid();
+        var handler = new GetMyPurchasedTicketsQueryHandler(context, CurrentUser(friendId, "friend@test.com"));
+        var result = await handler.Handle(new GetMyPurchasedTicketsQuery(), CancellationToken.None);
+
+        var ticket = Assert.Single(result.Data!);
+        Assert.Equal("DISPUTED", ticket.Status);
+        Assert.Null(ticket.DisputeId);
+    }
+
+    [Fact]
+    public async Task Handle_WhenRefundedThroughDispute_ShouldShowRowWithoutTicketCodeOrQr()
+    {
+        var (context, buyerId, buyerEmail) = CreateTestFixture();
+        var disputeId = AddDispute(context, buyerId, DisputeStatus.Resolved, EscrowStatus.Refunded);
+
+        var handler = new GetMyPurchasedTicketsQueryHandler(context, CurrentUser(buyerId, buyerEmail));
+        var result = await handler.Handle(new GetMyPurchasedTicketsQuery(), CancellationToken.None);
+
+        var ticket = Assert.Single(result.Data!);
+        Assert.Equal("REFUNDED", ticket.Status);
+        Assert.Equal(disputeId, ticket.DisputeId);
+        Assert.Empty(ticket.TicketPassCode);
+        Assert.Empty(ticket.QrCodeData);
+        Assert.Empty(ticket.QrCodeImageUrl);
+        Assert.All(ticket.BundleItems, item =>
+        {
+            Assert.Empty(item.TicketCode);
+            Assert.Empty(item.QrCodeData);
+            Assert.Empty(item.QrCodeImageUrl);
+        });
+    }
+
+    private static Guid AddDispute(TicketShieldDbContext context, Guid buyerId, DisputeStatus disputeStatus, EscrowStatus escrowStatus)
+    {
+        var paid = context.EscrowTransactions.Single();
+        paid.Status = escrowStatus;
+        var dispute = new Dispute
+        {
+            Id = Guid.NewGuid(),
+            EscrowId = paid.Id,
+            BuyerId = buyerId,
+            DisputeCode = "DP-LIST",
+            Status = disputeStatus
+        };
+        context.Disputes.Add(dispute);
+        context.SaveChanges();
+        return dispute.Id;
+    }
+
+    private static ICurrentUserService CurrentUser(Guid userId, string email)
+    {
+        var currentUserService = new Mock<ICurrentUserService>();
+        currentUserService.Setup(u => u.UserId).Returns(userId);
+        currentUserService.Setup(u => u.Email).Returns(email);
+        return currentUserService.Object;
+    }
 }
 
