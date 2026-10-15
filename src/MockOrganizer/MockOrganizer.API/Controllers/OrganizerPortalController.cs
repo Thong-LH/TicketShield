@@ -78,8 +78,8 @@ public class OrganizerPortalController(
         // Ensure ticket mapping is available
         options.TicketMappings[ticket.TicketCode] = new TicketMapping
         {
-            EventId = "concert-2026",
-            TierId = code.Contains("VIP") ? "vip-zone-a" : "ga-zone"
+            EventId = !string.IsNullOrWhiteSpace(request?.EventId) ? request.EventId : "concert-2026",
+            TierId = !string.IsNullOrWhiteSpace(request?.TierId) ? request.TierId : (code.Contains("VIP") ? "vip-zone-a" : "ga-zone")
         };
 
         return Ok(ticket);
@@ -148,4 +148,6 @@ public class GenerateTicketRequest
     public string? OwnerPhone { get; set; }
     public string? OwnerName { get; set; }
     public Guid? OrganizerId { get; set; }
+    public string? EventId { get; set; }
+    public string? TierId { get; set; }
 }
