@@ -86,6 +86,8 @@ public sealed class ResaleFixture : IAsyncLifetime
         });
         mockBuilder.Services.AddSingleton<TimeProvider>(Clock);
         mockBuilder.Services.AddDbContext<OrganizerDbContext>(o => o.UseNpgsql(Database.MockConnection));
+        mockBuilder.Services.AddSingleton<MockOrganizer.API.Services.ISessionTokenService, MockOrganizer.API.Services.SessionTokenService>();
+        mockBuilder.Services.AddScoped<MockOrganizer.API.Services.IServerTransactionTelemetryService, MockOrganizer.API.Services.ServerTransactionTelemetryService>();
         mockBuilder.Services.AddControllers().AddApplicationPart(typeof(MockOrganizer.API.Controllers.MockTicketsController).Assembly);
         mockBuilder.Services.AddOrganizerResale(mockBuilder.Configuration);
         Mock = mockBuilder.Build();
