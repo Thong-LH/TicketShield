@@ -2,19 +2,48 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using MockOrganizer.API.Data;
 using MockOrganizer.API.Entities;
+using MockOrganizer.API.Models;
+using MockOrganizer.API.Services;
 
 namespace MockOrganizer.API.Controllers;
 
 [ApiController]
 [Route("api/organizer/orders")]
-public class OrdersController(OrganizerDbContext db, ILogger<OrdersController> logger)
+public class OrdersController(
+    OrganizerDbContext db,
+    IServerTransactionTelemetryService telemetryService,
+    ISessionTokenService sessionTokenService,
+    ILogger<OrdersController> logger,
+    TimeProvider? clock = null)
     : ControllerBase
 {
     private const int MaxRetries = 3;
+    private readonly TimeProvider _clock = clock ?? TimeProvider.System;
+
+    /// <summary>
+    /// GET /api/organizer/orders/session?tierId={tierId}
+    /// Cấp phát session token chứa timestamp server phục vụ đo time_to_checkout (BE-PIPE-8.2.1).
+    /// </summary>
+    [HttpGet("session")]
+    public IActionResult CreateSession([FromQuery] Guid tierId)
+    {
+        if (tierId == Guid.Empty)
+            return BadRequest(new { message = "TierId must not be empty." });
+
+        var now = _clock.GetUtcNow();
+        var token = sessionTokenService.GenerateSessionToken(tierId, now);
+        return Ok(new SessionTokenResponse(
+            SessionToken: token,
+            TierId: tierId,
+            IssuedAtUtc: now,
+            ExpiresInSeconds: 7200
+        ));
+    }
 
     /// <summary>
     /// POST /api/organizer/orders/checkout
     /// Lock trừ tồn kho nguyên tử và tạo đơn hàng sơ cấp.
+    /// Đo đạc time_to_checkout và concurrent_hold (BE-PIPE-8.2.1).
     /// </summary>
     [HttpPost("checkout")]
     public async Task<IActionResult> Checkout(
@@ -22,6 +51,12 @@ public class OrdersController(OrganizerDbContext db, ILogger<OrdersController> l
     {
         if (request.Quantity <= 0)
             return BadRequest(new { message = "Quantity must be greater than 0." });
+
+        // BE-PIPE-8.2.1: Đo đạc time_to_checkout và tra cứu concurrent_hold từ DB
+        var telemetry = await telemetryService.MeasureAsync(request.SessionToken, request.BuyerEmail, ct);
+        logger.LogInformation(
+            "Checkout telemetry measured: TimeToCheckout={TimeToCheckout}s, ConcurrentHold={Hold}, Latency={Duration}ms, ValidSession={IsValid}",
+            telemetry.TimeToCheckoutSeconds, telemetry.ConcurrentHoldCount, telemetry.ExecutionDurationMs, telemetry.IsSessionValid);
 
         for (var attempt = 1; attempt <= MaxRetries; attempt++)
         {
@@ -77,6 +112,13 @@ public class OrdersController(OrganizerDbContext db, ILogger<OrdersController> l
                     totalAmount        = order.TotalAmount,
                     status             = order.Status,
                     remainingAvailable = tier.AvailableQuantity,
+                    telemetry          = new
+                    {
+                        timeToCheckoutSeconds = telemetry.TimeToCheckoutSeconds,
+                        concurrentHoldCount   = telemetry.ConcurrentHoldCount,
+                        executionDurationMs   = telemetry.ExecutionDurationMs,
+                        isSessionValid        = telemetry.IsSessionValid
+                    }
                 });
             }
             catch (DbUpdateConcurrencyException ex)
@@ -113,4 +155,5 @@ public class CheckoutRequest
     public Guid TierId { get; set; }
     public int Quantity { get; set; }
     public string? BuyerEmail { get; set; }
+    public string? SessionToken { get; set; }
 }

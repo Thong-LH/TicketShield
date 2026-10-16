@@ -35,6 +35,9 @@ builder.Services.Configure<AntiBotScoringOptions>(
     builder.Configuration.GetSection(AntiBotScoringOptions.SectionName));
 builder.Services.AddSingleton<IAntiBotScoringService, AntiBotScoringService>();
 
+builder.Services.AddSingleton<MockOrganizer.API.Services.ISessionTokenService, MockOrganizer.API.Services.SessionTokenService>();
+builder.Services.AddScoped<MockOrganizer.API.Services.IServerTransactionTelemetryService, MockOrganizer.API.Services.ServerTransactionTelemetryService>();
+
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
     ?? "Host=localhost;Port=5432;Database=organizer_db;Username=postgres;Password=12345";
 

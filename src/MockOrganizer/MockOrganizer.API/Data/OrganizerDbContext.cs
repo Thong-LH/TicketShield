@@ -51,9 +51,25 @@ public class OrganizerDbContext : DbContext
         {
             entity.HasKey(e => e.Id);
             entity.HasIndex(e => e.TierId);
+            entity.HasIndex(e => new { e.BuyerEmail, e.Status, e.CreatedAt });
             entity.Property(e => e.UnitPrice).HasPrecision(15, 2);
             entity.Property(e => e.TotalAmount).HasPrecision(15, 2);
         });
+
+        if (Database.ProviderName == "Microsoft.EntityFrameworkCore.Sqlite")
+        {
+            foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+            {
+                var properties = entityType.ClrType.GetProperties()
+                    .Where(p => p.PropertyType == typeof(DateTimeOffset) || p.PropertyType == typeof(DateTimeOffset?));
+                foreach (var property in properties)
+                {
+                    modelBuilder.Entity(entityType.Name)
+                        .Property(property.Name)
+                        .HasConversion(new Microsoft.EntityFrameworkCore.Storage.ValueConversion.DateTimeOffsetToBinaryConverter());
+                }
+            }
+        }
 
         ApplySnakeCaseNaming(modelBuilder);
     }
