@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using MockOrganizer.API.Data;
 using MockOrganizer.API.Resale;
+using MockOrganizer.API.AntiBotScoring;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -28,6 +29,11 @@ builder.Services.AddCors(options =>
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+
+// US-8.3 (SCRUM-257): Cấu hình và nạp Singleton Anti-Bot ONNX Runtime
+builder.Services.Configure<AntiBotScoringOptions>(
+    builder.Configuration.GetSection(AntiBotScoringOptions.SectionName));
+builder.Services.AddSingleton<IAntiBotScoringService, AntiBotScoringService>();
 
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
     ?? "Host=localhost;Port=5432;Database=organizer_db;Username=postgres;Password=12345";
