@@ -13,6 +13,7 @@ public class OrdersController(
     OrganizerDbContext db,
     IServerTransactionTelemetryService telemetryService,
     ISessionTokenService sessionTokenService,
+    IPipelineHoldTracker holdTracker,
     ILogger<OrdersController> logger,
     TimeProvider? clock = null)
     : ControllerBase
@@ -100,6 +101,19 @@ public class OrdersController(
                 // 5. SaveChanges — EF kiểm tra xmin, ném DbUpdateConcurrencyException nếu race
                 await db.SaveChangesAsync(ct);
                 await tx.CommitAsync(ct);
+
+                // 6. Cập nhật số vé đang giữ đồng thời vào cache pipeline (key hold:{buyerEmail}, TTL 10 phút)
+                if (!string.IsNullOrWhiteSpace(order.BuyerEmail))
+                {
+                    try
+                    {
+                        await holdTracker.IncrementHoldCountAsync(order.BuyerEmail, order.Quantity, TimeSpan.FromMinutes(10), ct);
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogWarning(ex, "Failed to increment hold count in pipeline cache for {Email}.", order.BuyerEmail);
+                    }
+                }
 
                 return Ok(new
                 {

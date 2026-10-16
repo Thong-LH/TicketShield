@@ -36,6 +36,7 @@ builder.Services.Configure<AntiBotScoringOptions>(
 builder.Services.AddSingleton<IAntiBotScoringService, AntiBotScoringService>();
 
 builder.Services.AddSingleton<MockOrganizer.API.Services.ISessionTokenService, MockOrganizer.API.Services.SessionTokenService>();
+builder.Services.AddSingleton<MockOrganizer.API.Services.IPipelineHoldTracker, MockOrganizer.API.Services.InMemoryPipelineHoldTracker>();
 builder.Services.AddScoped<MockOrganizer.API.Services.IServerTransactionTelemetryService, MockOrganizer.API.Services.ServerTransactionTelemetryService>();
 
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")

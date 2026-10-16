@@ -1,18 +1,15 @@
 using System.Diagnostics;
-using Microsoft.EntityFrameworkCore;
-using MockOrganizer.API.Data;
 using MockOrganizer.API.Models;
 
 namespace MockOrganizer.API.Services;
 
 public class ServerTransactionTelemetryService(
-    OrganizerDbContext db,
+    IPipelineHoldTracker holdTracker,
     ISessionTokenService sessionTokenService,
     TimeProvider? clock = null,
     ILogger<ServerTransactionTelemetryService>? logger = null)
     : IServerTransactionTelemetryService
 {
-    private static readonly TimeSpan DefaultHoldWindow = TimeSpan.FromMinutes(10);
     private readonly TimeProvider _clock = clock ?? TimeProvider.System;
 
     public async Task<ServerTransactionTelemetryResult> MeasureAsync(
@@ -39,24 +36,18 @@ public class ServerTransactionTelemetryService(
             timeToCheckout = -1.0;
         }
 
-        // 2. Tra cứu số vé đang giữ đồng thời (concurrent_hold) trong DB
+        // 2. Tra cứu số vé đang giữ đồng thời (concurrent_hold) từ Pipeline Cache (key hold:{buyerEmail})
         var concurrentHold = 0;
         if (!string.IsNullOrWhiteSpace(buyerEmail))
         {
             try
             {
-                var cutoff = now - DefaultHoldWindow;
-                concurrentHold = await db.MockOrders
-                    .AsNoTracking()
-                    .Where(o => o.BuyerEmail == buyerEmail
-                             && o.Status == "PENDING"
-                             && o.CreatedAt >= cutoff)
-                    .SumAsync(o => (int?)o.Quantity, ct) ?? 0;
+                concurrentHold = await holdTracker.GetHoldCountAsync(buyerEmail, ct);
             }
             catch (Exception ex)
             {
-                // Cơ chế Fail-Open: Không làm gián đoạn luồng mua nếu DB tra cứu hold lỗi
-                logger?.LogWarning(ex, "Failed to query concurrent hold for {Email}. Defaulting to 0.", buyerEmail);
+                // Cơ chế Fail-Open: Không làm gián đoạn luồng mua nếu cache lỗi
+                logger?.LogWarning(ex, "Failed to query concurrent hold from pipeline cache for {Email}. Defaulting to 0.", buyerEmail);
                 concurrentHold = 0;
             }
         }
