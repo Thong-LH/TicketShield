@@ -112,11 +112,11 @@ public class AntiBotInProcessBenchmarkTests
         // Test 1: Human User -> Phải Allow (< 0.35)
         var human = new BotRiskVector
         {
-            ActionIntervalStdDev = 190.0f,
-            IsWebDriver = 0.0f,
-            DeviceHashEntropy = 0.85f,
             TimeToCheckout = 12.5f,
+            ActionIntervalStdDev = 190.0f,
             BurstRate10s = 1.0f,
+            ConcurrentHold = 0.0f,
+            IsWebDriver = 0.0f,
             DeviceAccountOverlap = 0.02f
         };
         var resHuman = service.Evaluate(human);
@@ -126,11 +126,11 @@ public class AntiBotInProcessBenchmarkTests
         // Test 2: Obvious Bot -> Phải Block (>= 0.75)
         var bot = new BotRiskVector
         {
-            ActionIntervalStdDev = 10.0f,
-            IsWebDriver = 1.0f,
-            DeviceHashEntropy = 0.15f,
             TimeToCheckout = 0.8f,
+            ActionIntervalStdDev = 10.0f,
             BurstRate10s = 15.0f,
+            ConcurrentHold = 8.0f,
+            IsWebDriver = 1.0f,
             DeviceAccountOverlap = 0.95f
         };
         var resBot = service.Evaluate(bot);
@@ -140,11 +140,11 @@ public class AntiBotInProcessBenchmarkTests
         // Test 3: Grey Zone / Phe vé -> Phải Challenge (0.35 <= Score < 0.75)
         var grey = new BotRiskVector
         {
-            ActionIntervalStdDev = 60.0f,
-            IsWebDriver = 0.0f,
-            DeviceHashEntropy = 0.50f,
             TimeToCheckout = 4.0f,
+            ActionIntervalStdDev = 55.0f,
             BurstRate10s = 4.0f,
+            ConcurrentHold = 3.0f,
+            IsWebDriver = 0.0f,
             DeviceAccountOverlap = 0.50f
         };
         var resGrey = service.Evaluate(grey);

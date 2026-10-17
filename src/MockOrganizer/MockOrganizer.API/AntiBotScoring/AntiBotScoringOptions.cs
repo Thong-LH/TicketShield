@@ -32,4 +32,9 @@ public class AntiBotScoringOptions
     /// Ngưỡng xác suất chặn giao dịch bot ngay lập tức (mặc định >= 0.75).
     /// </summary>
     public float BlockThreshold { get; set; } = 0.75f;
+
+    /// <summary>
+    /// Thời hạn SLA timeout của Guard trước khi kích hoạt Fail-Open (mặc định 20ms).
+    /// </summary>
+    public int GuardTimeoutMs { get; set; } = 20;
 }

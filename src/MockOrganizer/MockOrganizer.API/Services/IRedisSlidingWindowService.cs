@@ -45,4 +45,20 @@ public interface IRedisSlidingWindowService
         string? deviceFingerprint,
         string? account,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Lấy số lượng vé đang được giữ đồng thời (concurrent_hold) của tài khoản/email (Server Redis - không query DB).
+    /// Trả về 0 nếu không có hoặc buyerEmail null/empty.
+    /// </summary>
+    Task<int> GetConcurrentHoldAsync(string? buyerEmail, CancellationToken ct = default);
+
+    /// <summary>
+    /// Ghi nhận/tăng số lượng vé đang giữ vào Redis với TTL (mặc định 10 phút) khi checkout thành công.
+    /// </summary>
+    Task RecordHoldAsync(string? buyerEmail, int quantity, TimeSpan? holdWindow = null, CancellationToken ct = default);
+
+    /// <summary>
+    /// Giải phóng số lượng vé đang giữ khi đơn hàng bị hủy hoặc hoàn tất thanh toán.
+    /// </summary>
+    Task ReleaseHoldAsync(string? buyerEmail, int quantity, CancellationToken ct = default);
 }

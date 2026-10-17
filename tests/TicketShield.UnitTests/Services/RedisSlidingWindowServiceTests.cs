@@ -288,4 +288,66 @@ public sealed class RedisSlidingWindowServiceTests
         Assert.True(mean < 1.5, $"Mean latency {mean}ms exceeded SLA 1.5ms");
         Assert.True(p99 < 5.0, $"P99 latency {p99}ms exceeded threshold");
     }
+
+    // =========================================================================
+    // 4. concurrent_hold Tests (Server Redis Hold Tracking)
+    // =========================================================================
+
+    [Fact]
+    public async Task GetConcurrentHold_WhenNoHoldRecorded_ReturnsZero()
+    {
+        var count = await _service.GetConcurrentHoldAsync("buyer@ticketshield.vn");
+        Assert.Equal(0, count);
+    }
+
+    [Fact]
+    public async Task RecordHold_WhenRecorded_ReturnsCorrectQuantity()
+    {
+        const string email = "buyer1@ticketshield.vn";
+        await _service.RecordHoldAsync(email, 2);
+
+        var count = await _service.GetConcurrentHoldAsync(email);
+        Assert.Equal(2, count);
+    }
+
+    [Fact]
+    public async Task RecordHold_WhenMultipleCalls_AccumulatesQuantity()
+    {
+        const string email = "buyer2@ticketshield.vn";
+        await _service.RecordHoldAsync(email, 2);
+        await _service.RecordHoldAsync(email, 3);
+
+        var count = await _service.GetConcurrentHoldAsync(email);
+        Assert.Equal(5, count);
+    }
+
+    [Fact]
+    public async Task GetConcurrentHold_WhenHoldExpires_ReturnsZero()
+    {
+        const string email = "buyer3@ticketshield.vn";
+        await _service.RecordHoldAsync(email, 4, TimeSpan.FromMinutes(10));
+
+        // Chưa hết hạn
+        _timeProvider.Advance(TimeSpan.FromMinutes(9));
+        Assert.Equal(4, await _service.GetConcurrentHoldAsync(email));
+
+        // Đã hết hạn (sau 10 phút)
+        _timeProvider.Advance(TimeSpan.FromMinutes(2));
+        Assert.Equal(0, await _service.GetConcurrentHoldAsync(email));
+    }
+
+    [Fact]
+    public async Task ReleaseHold_DecrementsQuantityCorrectly()
+    {
+        const string email = "buyer4@ticketshield.vn";
+        await _service.RecordHoldAsync(email, 5);
+        await _service.ReleaseHoldAsync(email, 2);
+
+        var count = await _service.GetConcurrentHoldAsync(email);
+        Assert.Equal(3, count);
+
+        // Giải phóng hết hoặc quá số lượng -> trả về 0
+        await _service.ReleaseHoldAsync(email, 5);
+        Assert.Equal(0, await _service.GetConcurrentHoldAsync(email));
+    }
 }

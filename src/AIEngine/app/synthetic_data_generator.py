@@ -12,65 +12,83 @@ import numpy as np
 import pandas as pd
 
 FEATURE_COLUMNS = [
-    "action_interval_std_dev",
-    "is_webdriver",
-    "device_hash_entropy",
     "time_to_checkout",
+    "action_interval_std_dev",
     "burst_rate_10s",
+    "concurrent_hold",
+    "is_webdriver",
     "device_account_overlap",
 ]
 
 def generate_standard_user(n: int = 2500, seed: int = 42) -> pd.DataFrame:
     """Cohort 1: StandardUser — Người mua vé bình thường."""
     rng = np.random.default_rng(seed)
-    return pd.DataFrame({
-        "action_interval_std_dev": np.clip(rng.normal(loc=190.0, scale=40.0, size=n), 60.0, 400.0),
-        "is_webdriver": rng.binomial(n=1, p=0.005, size=n).astype(float),
-        "device_hash_entropy": np.clip(rng.normal(loc=0.85, scale=0.07, size=n), 0.55, 1.00),
+    df = pd.DataFrame({
         "time_to_checkout": np.clip(rng.normal(loc=15.0, scale=4.0, size=n), 6.0, 45.0),
+        "action_interval_std_dev": np.clip(rng.normal(loc=190.0, scale=40.0, size=n), 60.0, 400.0),
         "burst_rate_10s": rng.poisson(lam=1.2, size=n).astype(float),
+        "concurrent_hold": np.clip(rng.poisson(lam=0.1, size=n), 0, 2).astype(float),
+        "is_webdriver": rng.binomial(n=1, p=0.005, size=n).astype(float),
         "device_account_overlap": np.clip(rng.beta(a=1.0, b=15.0, size=n), 0.0, 1.0),
         "cohort": "StandardUser",
         "label": np.zeros(n, dtype=int),
     })
+    # 25% người dùng không có client telemetry (Spec 08: gán -1.0)
+    mask = rng.random(n) < 0.25
+    df.loc[mask, "action_interval_std_dev"] = -1.0
+    df.loc[mask, "is_webdriver"] = -1.0
+    df.loc[mask, "device_account_overlap"] = -1.0
+    return df
 
 def generate_power_user(n: int = 1000, seed: int = 43) -> pd.DataFrame:
     """Cohort 2: PowerUser — Game thủ / người dùng thành thạo, mua rất nhanh nhưng là người thật."""
     rng = np.random.default_rng(seed)
-    return pd.DataFrame({
-        "action_interval_std_dev": np.clip(rng.normal(loc=90.0, scale=18.0, size=n), 60.0, 160.0),
-        "is_webdriver": np.zeros(n, dtype=float), # Người thật không có cờ webdriver
-        "device_hash_entropy": np.clip(rng.normal(loc=0.78, scale=0.08, size=n), 0.50, 0.95),
+    df = pd.DataFrame({
         "time_to_checkout": np.clip(rng.normal(loc=3.2, scale=0.8, size=n), 2.0, 5.0),
+        "action_interval_std_dev": np.clip(rng.normal(loc=90.0, scale=18.0, size=n), 60.0, 160.0),
         "burst_rate_10s": np.clip(rng.poisson(lam=2.5, size=n), 1, 6).astype(float),
+        "concurrent_hold": np.clip(rng.poisson(lam=0.2, size=n), 0, 2).astype(float),
+        "is_webdriver": np.zeros(n, dtype=float), # Người thật không có cờ webdriver
         "device_account_overlap": np.clip(rng.beta(a=1.0, b=10.0, size=n), 0.0, 0.3),
         "cohort": "PowerUser",
         "label": np.zeros(n, dtype=int),
     })
+    # 25% power user không có client telemetry (Spec 08: gán -1.0)
+    mask = rng.random(n) < 0.25
+    df.loc[mask, "action_interval_std_dev"] = -1.0
+    df.loc[mask, "is_webdriver"] = -1.0
+    df.loc[mask, "device_account_overlap"] = -1.0
+    return df
 
 def generate_simple_bot(n: int = 2500, seed: int = 44) -> pd.DataFrame:
     """Cohort 3: SimpleBot — Bot tự động hóa cào vé, lộ cờ webdriver và tốc độ máy tính."""
     rng = np.random.default_rng(seed)
-    return pd.DataFrame({
-        "action_interval_std_dev": np.clip(rng.normal(loc=12.0, scale=5.0, size=n), 1.0, 25.0),
-        "is_webdriver": rng.binomial(n=1, p=0.96, size=n).astype(float),
-        "device_hash_entropy": np.clip(rng.normal(loc=0.15, scale=0.07, size=n), 0.00, 0.35),
+    df = pd.DataFrame({
         "time_to_checkout": np.clip(rng.exponential(scale=0.8, size=n), 0.2, 2.0),
+        "action_interval_std_dev": np.clip(rng.normal(loc=12.0, scale=5.0, size=n), 1.0, 25.0),
         "burst_rate_10s": np.clip(rng.poisson(lam=12.0, size=n), 6, 35).astype(float),
+        "concurrent_hold": np.clip(rng.poisson(lam=3.0, size=n), 0, 15).astype(float),
+        "is_webdriver": rng.binomial(n=1, p=0.96, size=n).astype(float),
         "device_account_overlap": np.clip(rng.beta(a=9.0, b=1.5, size=n), 0.5, 1.0),
         "cohort": "SimpleBot",
         "label": np.ones(n, dtype=int),
     })
+    # 30% SimpleBot gọi thẳng API không giả lập client telemetry (Spec 08: gán -1.0)
+    mask = rng.random(n) < 0.30
+    df.loc[mask, "action_interval_std_dev"] = -1.0
+    df.loc[mask, "is_webdriver"] = -1.0
+    df.loc[mask, "device_account_overlap"] = -1.0
+    return df
 
 def generate_stealth_bot(n: int = 1500, seed: int = 45) -> pd.DataFrame:
     """Cohort 4: StealthBot / Grey Zone — Bot phe vé tinh vi cố tình chèn delay ngụy trang."""
     rng = np.random.default_rng(seed)
     return pd.DataFrame({
-        "action_interval_std_dev": np.clip(rng.normal(loc=55.0, scale=15.0, size=n), 25.0, 95.0),
-        "is_webdriver": rng.binomial(n=1, p=0.20, size=n).astype(float),
-        "device_hash_entropy": np.clip(rng.normal(loc=0.48, scale=0.12, size=n), 0.20, 0.70),
         "time_to_checkout": np.clip(rng.normal(loc=4.2, scale=1.2, size=n), 1.8, 7.5),
+        "action_interval_std_dev": np.clip(rng.normal(loc=55.0, scale=15.0, size=n), 25.0, 95.0),
         "burst_rate_10s": np.clip(rng.poisson(lam=4.5, size=n), 2, 12).astype(float),
+        "concurrent_hold": np.clip(rng.poisson(lam=1.5, size=n), 0, 8).astype(float),
+        "is_webdriver": rng.binomial(n=1, p=0.20, size=n).astype(float),
         "device_account_overlap": np.clip(rng.beta(a=4.0, b=2.5, size=n), 0.1, 0.9),
         "cohort": "StealthBot",
         "label": rng.binomial(n=1, p=0.65, size=n), # 65% bot, 35% human edge-cases

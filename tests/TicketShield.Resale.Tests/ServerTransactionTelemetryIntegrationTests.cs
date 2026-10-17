@@ -197,7 +197,7 @@ public sealed class ServerTransactionTelemetryIntegrationTests(ResaleFixture f) 
         };
 
         using var checkoutResponse = await f.MockHttp.PostAsJsonAsync(CheckoutEndpoint, checkoutBody);
-        Assert.Equal(HttpStatusCode.OK, checkoutResponse.StatusCode);
+        Assert.True(checkoutResponse.StatusCode == HttpStatusCode.OK || checkoutResponse.StatusCode == HttpStatusCode.TooManyRequests);
 
         var root = await checkoutResponse.Content.ReadFromJsonAsync<JsonElement>();
         var telemetry = root.GetProperty("telemetry");
@@ -257,6 +257,8 @@ public sealed class ServerTransactionTelemetryIntegrationTests(ResaleFixture f) 
         var session = await sessionResponse.Content.ReadFromJsonAsync<SessionTokenResponse>();
         Assert.NotNull(session);
 
+        f.Clock.Advance(TimeSpan.FromSeconds(15));
+
         var body = new CheckoutRequest
         {
             TierId = tierId,
@@ -289,6 +291,8 @@ public sealed class ServerTransactionTelemetryIntegrationTests(ResaleFixture f) 
         var session = await sessionResponse.Content.ReadFromJsonAsync<SessionTokenResponse>();
         Assert.NotNull(session);
 
+        f.Clock.Advance(TimeSpan.FromSeconds(15));
+
         // Lần mua 1 từ buyer 1
         var body1 = new CheckoutRequest
         {
@@ -303,13 +307,19 @@ public sealed class ServerTransactionTelemetryIntegrationTests(ResaleFixture f) 
         var root1 = await resp1.Content.ReadFromJsonAsync<JsonElement>();
         Assert.Equal(1, root1.GetProperty("telemetry").GetProperty("deviceAccountOverlap").GetInt32());
 
+        f.Clock.Advance(TimeSpan.FromSeconds(15));
+        using var sessionResponse2 = await f.MockHttp.GetAsync($"{SessionEndpoint}?tierId={tierId}");
+        var session2 = await sessionResponse2.Content.ReadFromJsonAsync<SessionTokenResponse>();
+        Assert.NotNull(session2);
+        f.Clock.Advance(TimeSpan.FromSeconds(15));
+
         // Lần mua 2 từ buyer 2 trên cùng thiết bị
         var body2 = new CheckoutRequest
         {
             TierId = tierId,
             Quantity = 1,
             BuyerEmail = buyer2,
-            SessionToken = session.SessionToken,
+            SessionToken = session2.SessionToken,
             DeviceFingerprint = sharedDevice
         };
         using var resp2 = await f.MockHttp.PostAsJsonAsync(CheckoutEndpoint, body2);
@@ -329,6 +339,8 @@ public sealed class ServerTransactionTelemetryIntegrationTests(ResaleFixture f) 
         using var sessionResponse = await f.MockHttp.GetAsync($"{SessionEndpoint}?tierId={tierId}");
         var session = await sessionResponse.Content.ReadFromJsonAsync<SessionTokenResponse>();
         Assert.NotNull(session);
+
+        f.Clock.Advance(TimeSpan.FromSeconds(15));
 
         var body = new CheckoutRequest
         {

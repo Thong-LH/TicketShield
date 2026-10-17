@@ -6,8 +6,8 @@ using MockOrganizer.API.Models;
 namespace MockOrganizer.API.Services;
 
 public class ServerTransactionTelemetryService(
-    OrganizerDbContext db,
-    ISessionTokenService sessionTokenService,
+    OrganizerDbContext? db = null,
+    ISessionTokenService sessionTokenService = null!,
     IRedisSlidingWindowService? slidingWindowService = null,
     TimeProvider? clock = null,
     ILogger<ServerTransactionTelemetryService>? logger = null)
@@ -44,9 +44,9 @@ public class ServerTransactionTelemetryService(
             timeToCheckout = -1.0;
         }
 
-        // 2. Tra cứu số vé đang giữ đồng thời (concurrent_hold) trong DB
-        var concurrentHold = 0;
-        if (!string.IsNullOrWhiteSpace(buyerEmail))
+        // 2. Tra cứu số vé đang giữ đồng thời (concurrent_hold) qua Redis (không chọc DB theo BE-PIPE-8.2.3, fallback DB nếu Redis chưa có)
+        var concurrentHold = await _slidingWindow.GetConcurrentHoldAsync(buyerEmail, ct);
+        if (concurrentHold == 0 && db != null && !string.IsNullOrWhiteSpace(buyerEmail))
         {
             try
             {
@@ -60,9 +60,7 @@ public class ServerTransactionTelemetryService(
             }
             catch (Exception ex)
             {
-                // Cơ chế Fail-Open: Không làm gián đoạn luồng mua nếu DB tra cứu hold lỗi
-                logger?.LogWarning(ex, "Failed to query concurrent hold for {Email}. Defaulting to 0.", buyerEmail);
-                concurrentHold = 0;
+                logger?.LogWarning(ex, "Failed to query fallback DB hold for {Email}.", buyerEmail);
             }
         }
 

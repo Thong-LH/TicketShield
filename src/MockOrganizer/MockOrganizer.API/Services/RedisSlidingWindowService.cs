@@ -64,6 +64,7 @@ return count
     // In-Memory Fallback Store (Sử dụng khi Redis offline hoặc trong môi trường test độc lập)
     private readonly ConcurrentDictionary<string, List<long>> _memoryBurstStore = new();
     private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, long>> _memoryOverlapStore = new();
+    private readonly ConcurrentDictionary<string, (int Quantity, long ExpireAtMs)> _memoryHoldStore = new();
     private readonly object _burstLock = new();
 
     public RedisSlidingWindowService(
@@ -183,6 +184,117 @@ return count
             ExecutionDurationMs: Math.Round(durationMs, 3),
             IsRedisAvailable: isRedis
         );
+    }
+
+    public async Task<int> GetConcurrentHoldAsync(string? buyerEmail, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(buyerEmail))
+            return 0;
+
+        var key = $"{_prefix}hold:count:{buyerEmail.Trim().ToLowerInvariant()}";
+
+        if (IsRedisReady())
+        {
+            try
+            {
+                var db = _redis!.GetDatabase();
+                var val = await db.StringGetAsync(key);
+                if (val.HasValue && int.TryParse(val, out var count))
+                {
+                    return Math.Max(0, count);
+                }
+                return 0;
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(ex, "Failed to read concurrent hold from Redis for {Email}. Using fallback.", buyerEmail);
+            }
+        }
+
+        // In-memory fallback
+        var nowMs = _clock.GetUtcNow().ToUnixTimeMilliseconds();
+        if (_memoryHoldStore.TryGetValue(key, out var entry))
+        {
+            if (entry.ExpireAtMs > nowMs)
+                return Math.Max(0, entry.Quantity);
+            _memoryHoldStore.TryRemove(key, out _);
+        }
+
+        return 0;
+    }
+
+    public async Task RecordHoldAsync(string? buyerEmail, int quantity, TimeSpan? holdWindow = null, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(buyerEmail) || quantity <= 0)
+            return;
+
+        var key = $"{_prefix}hold:count:{buyerEmail.Trim().ToLowerInvariant()}";
+        var window = holdWindow ?? TimeSpan.FromMinutes(10);
+
+        if (IsRedisReady())
+        {
+            try
+            {
+                var db = _redis!.GetDatabase();
+                await db.StringIncrementAsync(key, quantity);
+                await db.KeyExpireAsync(key, window);
+                return;
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(ex, "Failed to record hold in Redis for {Email}. Using in-memory fallback.", buyerEmail);
+            }
+        }
+
+        // In-memory fallback
+        var nowMs = _clock.GetUtcNow().ToUnixTimeMilliseconds();
+        var expireAtMs = nowMs + (long)window.TotalMilliseconds;
+        _memoryHoldStore.AddOrUpdate(
+            key,
+            _ => (quantity, expireAtMs),
+            (_, existing) =>
+            {
+                var baseQty = existing.ExpireAtMs > nowMs ? existing.Quantity : 0;
+                return (baseQty + quantity, expireAtMs);
+            });
+    }
+
+    public async Task ReleaseHoldAsync(string? buyerEmail, int quantity, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(buyerEmail) || quantity <= 0)
+            return;
+
+        var key = $"{_prefix}hold:count:{buyerEmail.Trim().ToLowerInvariant()}";
+
+        if (IsRedisReady())
+        {
+            try
+            {
+                var db = _redis!.GetDatabase();
+                var remaining = await db.StringDecrementAsync(key, quantity);
+                if (remaining <= 0)
+                {
+                    await db.KeyDeleteAsync(key);
+                }
+                return;
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(ex, "Failed to release hold in Redis for {Email}. Using in-memory fallback.", buyerEmail);
+            }
+        }
+
+        // In-memory fallback
+        var nowMs = _clock.GetUtcNow().ToUnixTimeMilliseconds();
+        _memoryHoldStore.AddOrUpdate(
+            key,
+            _ => (0, 0),
+            (_, existing) =>
+            {
+                if (existing.ExpireAtMs <= nowMs) return (0, 0);
+                var rem = existing.Quantity - quantity;
+                return rem <= 0 ? (0, 0) : (rem, existing.ExpireAtMs);
+            });
     }
 
     private bool IsRedisReady() => _redis != null && _redis.IsConnected;

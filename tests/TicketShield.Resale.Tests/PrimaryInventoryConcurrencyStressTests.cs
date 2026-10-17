@@ -5,6 +5,8 @@ using Microsoft.Extensions.DependencyInjection;
 using MockOrganizer.API.Controllers;
 using MockOrganizer.API.Data;
 using MockOrganizer.API.Entities;
+using MockOrganizer.API.Models;
+using MockOrganizer.API.Services;
 using Xunit;
 
 namespace TicketShield.Resale.Tests;
@@ -27,16 +29,33 @@ public sealed class PrimaryInventoryConcurrencyStressTests(ResaleFixture f) : IC
         var tierId = await CreateTestTierAsync(initialAvailable: initialStock);
 
         // 2. Act: Bắn đồng thời 50 HTTP requests tranh mua 5 vé cuối cùng
+        var sessionService = f.Mock.Services.GetRequiredService<ISessionTokenService>();
+        var now = f.Clock.GetUtcNow();
         var checkoutTasks = Enumerable.Range(1, concurrentRequests).Select(async i =>
         {
+            var token = sessionService.GenerateSessionToken(tierId, now.AddSeconds(-12));
             var body = new CheckoutRequest
             {
                 TierId = tierId,
                 Quantity = 1,
-                BuyerEmail = $"stress_buyer_{i}_{Guid.NewGuid():N}@ticketshield.vn"
+                BuyerEmail = $"stress_buyer_{i}_{Guid.NewGuid():N}@ticketshield.vn",
+                SessionToken = token,
+                DeviceFingerprint = $"dev_stress_{i}_{Guid.NewGuid():N}",
+                Telemetry = new ClientTelemetryDto
+                {
+                    IsWebdriver = 0,
+                    ActionIntervalStdDev = 180.0f + (i % 30),
+                    DeviceFingerprint = $"dev_stress_{i}"
+                }
             };
 
-            using var response = await f.MockHttp.PostAsJsonAsync(CheckoutEndpoint, body);
+            using var req = new HttpRequestMessage(HttpMethod.Post, CheckoutEndpoint)
+            {
+                Content = JsonContent.Create(body)
+            };
+            req.Headers.Add("X-Forwarded-For", $"10.1.{i / 250}.{i % 250 + 1}");
+
+            using var response = await f.MockHttp.SendAsync(req);
             return response.StatusCode;
         });
 
@@ -79,21 +98,38 @@ public sealed class PrimaryInventoryConcurrencyStressTests(ResaleFixture f) : IC
         const int initialStock = 5;
         const int concurrentRequests = 50;
         var tierId = await CreateTestTierAsync(initialAvailable: initialStock);
+        var sessionService = f.Mock.Services.GetRequiredService<ISessionTokenService>();
+        var now = f.Clock.GetUtcNow();
 
         // 2. Act: 50 requests đồng thời cạnh tranh, nếu gặp 503 (Server Busy) thì client retry
         // để mô phỏng hành vi client thực tế cho đến khi đạt trạng thái kết thúc (200 OK hoặc 409 Conflict)
         var checkoutTasks = Enumerable.Range(1, concurrentRequests).Select(async i =>
         {
+            var token = sessionService.GenerateSessionToken(tierId, now.AddSeconds(-12));
             var body = new CheckoutRequest
             {
                 TierId = tierId,
                 Quantity = 1,
-                BuyerEmail = $"retry_buyer_{i}_{Guid.NewGuid():N}@ticketshield.vn"
+                BuyerEmail = $"retry_buyer_{i}_{Guid.NewGuid():N}@ticketshield.vn",
+                SessionToken = token,
+                DeviceFingerprint = $"dev_retry_{i}_{Guid.NewGuid():N}",
+                Telemetry = new ClientTelemetryDto
+                {
+                    IsWebdriver = 0,
+                    ActionIntervalStdDev = 185.0f + (i % 20),
+                    DeviceFingerprint = $"dev_retry_{i}"
+                }
             };
 
             for (var retry = 0; retry < 10; retry++)
             {
-                using var response = await f.MockHttp.PostAsJsonAsync(CheckoutEndpoint, body);
+                using var req = new HttpRequestMessage(HttpMethod.Post, CheckoutEndpoint)
+                {
+                    Content = JsonContent.Create(body)
+                };
+                req.Headers.Add("X-Forwarded-For", $"10.2.{i / 250}.{i % 250 + 1}");
+
+                using var response = await f.MockHttp.SendAsync(req);
                 if (response.StatusCode == HttpStatusCode.ServiceUnavailable)
                 {
                     // Contention backoff nhẹ trước khi thử lại
@@ -147,10 +183,17 @@ public sealed class PrimaryInventoryConcurrencyStressTests(ResaleFixture f) : IC
             {
                 TierId = tierId,
                 Quantity = requestedPerOrder,
-                BuyerEmail = $"multi_buyer_{i}_{Guid.NewGuid():N}@ticketshield.vn"
+                BuyerEmail = $"multi_buyer_{i}_{Guid.NewGuid():N}@ticketshield.vn",
+                DeviceFingerprint = $"dev_multi_{i}_{Guid.NewGuid():N}"
             };
 
-            using var response = await f.MockHttp.PostAsJsonAsync(CheckoutEndpoint, body);
+            using var req = new HttpRequestMessage(HttpMethod.Post, CheckoutEndpoint)
+            {
+                Content = JsonContent.Create(body)
+            };
+            req.Headers.Add("X-Forwarded-For", $"10.3.0.{i}");
+
+            using var response = await f.MockHttp.SendAsync(req);
             return response.StatusCode;
         });
 

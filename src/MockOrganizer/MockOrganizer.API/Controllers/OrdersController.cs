@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using MockOrganizer.API.AntiBotScoring;
 using MockOrganizer.API.Data;
 using MockOrganizer.API.Entities;
 using MockOrganizer.API.Models;
@@ -13,7 +14,9 @@ public class OrdersController(
     OrganizerDbContext db,
     IServerTransactionTelemetryService telemetryService,
     ISessionTokenService sessionTokenService,
+    IAntiBotGuardService antiBotGuardService,
     ILogger<OrdersController> logger,
+    IRedisSlidingWindowService? slidingWindowService = null,
     TimeProvider? clock = null)
     : ControllerBase
 {
@@ -43,7 +46,7 @@ public class OrdersController(
     /// <summary>
     /// POST /api/organizer/orders/checkout
     /// Lock trừ tồn kho nguyên tử và tạo đơn hàng sơ cấp.
-    /// Đo đạc time_to_checkout và concurrent_hold (BE-PIPE-8.2.1).
+    /// Kiểm soát bởi 20ms Fail-Open Anti-Bot Guard (BE-PIPE-8.2.3).
     /// </summary>
     [HttpPost("checkout")]
     public async Task<IActionResult> Checkout(
@@ -52,17 +55,71 @@ public class OrdersController(
         if (request.Quantity <= 0)
             return BadRequest(new { message = "Quantity must be greater than 0." });
 
-        // BE-PIPE-8.2.1 + BE-PIPE-8.2.2: Đo đạc time_to_checkout, concurrent_hold và Redis sliding window
         var clientIp = HttpContext.Request.Headers["X-Forwarded-For"].FirstOrDefault()
             ?? HttpContext.Connection.RemoteIpAddress?.ToString();
-        var deviceFingerprint = request.ResolvedDeviceFingerprint;
 
-        var telemetry = await telemetryService.MeasureAsync(
-            request.SessionToken, request.BuyerEmail, deviceFingerprint, clientIp, ct);
+        // BE-PIPE-8.2.3: Anti-Bot Guard check với SLA 20ms và cơ chế Fail-Open tự động TRƯỚC KHI xử lý DB
+        var guardResult = await antiBotGuardService.EvaluateCheckoutGuardAsync(request, clientIp, ct);
+
+        // Tier 3: Block (RiskScore >= 0.75) -> Chặn ngay lập tức, tuyệt đối không chọc DB
+        if (guardResult.Decision == AntiBotDecision.Block)
+        {
+            logger.LogWarning(
+                "Checkout BLOCKED by AntiBotGuard. RiskScore={Score}, TimeToCheckout={Time}s, Burst10s={Burst}, IsWebdriver={Wd}, DeviceOverlap={Overlap}",
+                guardResult.RiskScore, guardResult.Vector.TimeToCheckout, guardResult.Vector.BurstRate10s, guardResult.Vector.IsWebDriver, guardResult.Vector.DeviceAccountOverlap);
+
+            return StatusCode(StatusCodes.Status429TooManyRequests, new
+            {
+                message = "Suspicious automated activity detected. Checkout blocked.",
+                decision = "Block",
+                riskScore = guardResult.RiskScore,
+                executionDurationMs = guardResult.ExecutionDurationMs,
+                reason = guardResult.Reason,
+                telemetry = guardResult.Telemetry != null ? new
+                {
+                    timeToCheckoutSeconds = guardResult.Telemetry.TimeToCheckoutSeconds,
+                    concurrentHoldCount   = guardResult.Telemetry.ConcurrentHoldCount,
+                    burstRate10s          = guardResult.Telemetry.BurstRate10s,
+                    deviceAccountOverlap  = guardResult.Telemetry.DeviceAccountOverlap,
+                    executionDurationMs   = guardResult.Telemetry.ExecutionDurationMs,
+                    redisDurationMs       = guardResult.Telemetry.RedisDurationMs,
+                    isSessionValid        = guardResult.Telemetry.IsSessionValid
+                } : null
+            });
+        }
+
+        // Tier 2: Challenge (0.35 <= RiskScore < 0.75) -> Yêu cầu CAPTCHA / PoW challenge
+        if (guardResult.Decision == AntiBotDecision.Challenge)
+        {
+            logger.LogInformation(
+                "Checkout CHALLENGED by AntiBotGuard. RiskScore={Score}. Triggering verification challenge.",
+                guardResult.RiskScore);
+
+            return StatusCode(StatusCodes.Status403Forbidden, new
+            {
+                message = "Verification challenge required to proceed with checkout.",
+                decision = "Challenge",
+                riskScore = guardResult.RiskScore,
+                executionDurationMs = guardResult.ExecutionDurationMs,
+                challengeRequired = true
+            });
+        }
+
+        // Tier 1: Allow (RiskScore < 0.35) hoặc Fail-Open -> Tiến hành lock trừ tồn kho nguyên tử (xmin)
+        var telemetry = guardResult.Telemetry ?? new ServerTransactionTelemetryResult(
+            TimeToCheckoutSeconds: guardResult.Vector.TimeToCheckout,
+            ConcurrentHoldCount: (int)guardResult.Vector.ConcurrentHold,
+            IssuedAtUtc: DateTimeOffset.MinValue,
+            ReceivedAtUtc: _clock.GetUtcNow(),
+            ExecutionDurationMs: guardResult.ExecutionDurationMs,
+            IsSessionValid: guardResult.Vector.TimeToCheckout >= 0,
+            BurstRate10s: (int)guardResult.Vector.BurstRate10s,
+            DeviceAccountOverlap: (int)guardResult.Vector.DeviceAccountOverlap
+        );
 
         logger.LogInformation(
-            "Checkout telemetry measured: TimeToCheckout={TimeToCheckout}s, ConcurrentHold={Hold}, BurstRate10s={Burst}, DeviceOverlap={Overlap}, Latency={Duration}ms, RedisLatency={RedisDuration}ms, ValidSession={IsValid}",
-            telemetry.TimeToCheckoutSeconds, telemetry.ConcurrentHoldCount, telemetry.BurstRate10s, telemetry.DeviceAccountOverlap, telemetry.ExecutionDurationMs, telemetry.RedisDurationMs, telemetry.IsSessionValid);
+            "Checkout allowed by AntiBotGuard (FailOpen={IsFailOpen}): RiskScore={Score}, GuardLatency={Duration}ms",
+            guardResult.IsFailOpen, guardResult.RiskScore, guardResult.ExecutionDurationMs);
 
         for (var attempt = 1; attempt <= MaxRetries; attempt++)
         {
@@ -107,6 +164,12 @@ public class OrdersController(
                 await db.SaveChangesAsync(ct);
                 await tx.CommitAsync(ct);
 
+                // Ghi nhận số vé đang giữ vào Redis sau khi commit thành công (BE-PIPE-8.2.3)
+                if (slidingWindowService != null && !string.IsNullOrWhiteSpace(request.BuyerEmail))
+                {
+                    await slidingWindowService.RecordHoldAsync(request.BuyerEmail, request.Quantity, ct: ct);
+                }
+
                 return Ok(new
                 {
                     orderId            = order.Id,
@@ -118,6 +181,13 @@ public class OrdersController(
                     totalAmount        = order.TotalAmount,
                     status             = order.Status,
                     remainingAvailable = tier.AvailableQuantity,
+                    antiBot = new
+                    {
+                        decision        = guardResult.Decision.ToString(),
+                        riskScore       = guardResult.RiskScore,
+                        isFailOpen      = guardResult.IsFailOpen,
+                        guardDurationMs = guardResult.ExecutionDurationMs
+                    },
                     telemetry          = new
                     {
                         timeToCheckoutSeconds = telemetry.TimeToCheckoutSeconds,

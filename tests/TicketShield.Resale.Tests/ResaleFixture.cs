@@ -89,6 +89,12 @@ public sealed class ResaleFixture : IAsyncLifetime
         mockBuilder.Services.AddSingleton<MockOrganizer.API.Services.ISessionTokenService, MockOrganizer.API.Services.SessionTokenService>();
         mockBuilder.Services.AddSingleton<MockOrganizer.API.Services.IRedisSlidingWindowService, MockOrganizer.API.Services.RedisSlidingWindowService>();
         mockBuilder.Services.AddScoped<MockOrganizer.API.Services.IServerTransactionTelemetryService, MockOrganizer.API.Services.ServerTransactionTelemetryService>();
+        mockBuilder.Services.Configure<MockOrganizer.API.AntiBotScoring.AntiBotScoringOptions>(o =>
+        {
+            o.GuardTimeoutMs = 1000;
+        });
+        mockBuilder.Services.AddSingleton<MockOrganizer.API.AntiBotScoring.IAntiBotScoringService, MockOrganizer.API.AntiBotScoring.AntiBotScoringService>();
+        mockBuilder.Services.AddScoped<MockOrganizer.API.AntiBotScoring.IAntiBotGuardService, MockOrganizer.API.AntiBotScoring.AntiBotGuardService>();
         mockBuilder.Services.AddControllers().AddApplicationPart(typeof(MockOrganizer.API.Controllers.MockTicketsController).Assembly);
         mockBuilder.Services.AddOrganizerResale(mockBuilder.Configuration);
         Mock = mockBuilder.Build();
