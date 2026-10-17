@@ -145,7 +145,7 @@ public class OrdersController(
                 // 3. Trừ tồn kho nguyên tử
                 tier.AvailableQuantity -= request.Quantity;
 
-                // 4. Tạo đơn hàng
+                // 4. Tạo đơn hàng (Mua vé sơ cấp không cần thanh toán -> SUCCESS)
                 var order = new MockOrder
                 {
                     Id          = Guid.NewGuid(),
@@ -155,7 +155,7 @@ public class OrdersController(
                     Quantity    = request.Quantity,
                     UnitPrice   = tier.Price,
                     TotalAmount = tier.Price * request.Quantity,
-                    Status      = "PENDING",
+                    Status      = "SUCCESS",
                     BuyerEmail  = request.BuyerEmail,
                 };
                 db.MockOrders.Add(order);
