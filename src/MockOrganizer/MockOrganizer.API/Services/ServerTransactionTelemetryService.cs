@@ -8,16 +8,21 @@ namespace MockOrganizer.API.Services;
 public class ServerTransactionTelemetryService(
     OrganizerDbContext db,
     ISessionTokenService sessionTokenService,
+    IRedisSlidingWindowService? slidingWindowService = null,
     TimeProvider? clock = null,
     ILogger<ServerTransactionTelemetryService>? logger = null)
     : IServerTransactionTelemetryService
 {
     private static readonly TimeSpan DefaultHoldWindow = TimeSpan.FromMinutes(10);
     private readonly TimeProvider _clock = clock ?? TimeProvider.System;
+    private readonly IRedisSlidingWindowService _slidingWindow =
+        slidingWindowService ?? new RedisSlidingWindowService(null, null, clock);
 
     public async Task<ServerTransactionTelemetryResult> MeasureAsync(
         string? sessionToken,
         string? buyerEmail,
+        string? deviceFingerprint = null,
+        string? clientIp = null,
         CancellationToken ct = default)
     {
         var sw = Stopwatch.StartNew();
@@ -61,6 +66,10 @@ public class ServerTransactionTelemetryService(
             }
         }
 
+        // 3. Đo đạc tần suất burst_rate_10s và device_account_overlap qua Redis Sliding Window (BE-PIPE-8.2.2)
+        var redisTelemetry = await _slidingWindow
+            .MeasureSlidingWindowTelemetryAsync(clientIp, deviceFingerprint, buyerEmail, ct);
+
         sw.Stop();
         var executionDurationMs = sw.Elapsed.TotalMilliseconds;
 
@@ -70,7 +79,10 @@ public class ServerTransactionTelemetryService(
             IssuedAtUtc: isValid ? issuedAt : DateTimeOffset.MinValue,
             ReceivedAtUtc: now,
             ExecutionDurationMs: executionDurationMs,
-            IsSessionValid: isValid
+            IsSessionValid: isValid,
+            BurstRate10s: redisTelemetry.BurstRate10s,
+            DeviceAccountOverlap: redisTelemetry.DeviceAccountOverlap,
+            RedisDurationMs: redisTelemetry.ExecutionDurationMs
         );
     }
 }

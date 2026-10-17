@@ -52,11 +52,17 @@ public class OrdersController(
         if (request.Quantity <= 0)
             return BadRequest(new { message = "Quantity must be greater than 0." });
 
-        // BE-PIPE-8.2.1: Đo đạc time_to_checkout và tra cứu concurrent_hold từ DB
-        var telemetry = await telemetryService.MeasureAsync(request.SessionToken, request.BuyerEmail, ct);
+        // BE-PIPE-8.2.1 + BE-PIPE-8.2.2: Đo đạc time_to_checkout, concurrent_hold và Redis sliding window
+        var clientIp = HttpContext.Request.Headers["X-Forwarded-For"].FirstOrDefault()
+            ?? HttpContext.Connection.RemoteIpAddress?.ToString();
+        var deviceFingerprint = request.ResolvedDeviceFingerprint;
+
+        var telemetry = await telemetryService.MeasureAsync(
+            request.SessionToken, request.BuyerEmail, deviceFingerprint, clientIp, ct);
+
         logger.LogInformation(
-            "Checkout telemetry measured: TimeToCheckout={TimeToCheckout}s, ConcurrentHold={Hold}, Latency={Duration}ms, ValidSession={IsValid}",
-            telemetry.TimeToCheckoutSeconds, telemetry.ConcurrentHoldCount, telemetry.ExecutionDurationMs, telemetry.IsSessionValid);
+            "Checkout telemetry measured: TimeToCheckout={TimeToCheckout}s, ConcurrentHold={Hold}, BurstRate10s={Burst}, DeviceOverlap={Overlap}, Latency={Duration}ms, RedisLatency={RedisDuration}ms, ValidSession={IsValid}",
+            telemetry.TimeToCheckoutSeconds, telemetry.ConcurrentHoldCount, telemetry.BurstRate10s, telemetry.DeviceAccountOverlap, telemetry.ExecutionDurationMs, telemetry.RedisDurationMs, telemetry.IsSessionValid);
 
         for (var attempt = 1; attempt <= MaxRetries; attempt++)
         {
@@ -116,7 +122,10 @@ public class OrdersController(
                     {
                         timeToCheckoutSeconds = telemetry.TimeToCheckoutSeconds,
                         concurrentHoldCount   = telemetry.ConcurrentHoldCount,
+                        burstRate10s          = telemetry.BurstRate10s,
+                        deviceAccountOverlap  = telemetry.DeviceAccountOverlap,
                         executionDurationMs   = telemetry.ExecutionDurationMs,
+                        redisDurationMs       = telemetry.RedisDurationMs,
                         isSessionValid        = telemetry.IsSessionValid
                     }
                 });
@@ -156,4 +165,11 @@ public class CheckoutRequest
     public int Quantity { get; set; }
     public string? BuyerEmail { get; set; }
     public string? SessionToken { get; set; }
+    public string? DeviceFingerprint { get; set; }
+    public ClientTelemetryDto? Telemetry { get; set; }
+
+    public string? ResolvedDeviceFingerprint =>
+        !string.IsNullOrWhiteSpace(DeviceFingerprint)
+            ? DeviceFingerprint
+            : Telemetry?.DeviceFingerprint;
 }

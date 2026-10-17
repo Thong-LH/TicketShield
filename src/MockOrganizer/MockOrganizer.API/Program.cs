@@ -3,6 +3,7 @@ using MockOrganizer.API.Data;
 using MockOrganizer.API.Resale;
 using MockOrganizer.API.AntiBotScoring;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
+using StackExchange.Redis;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
@@ -36,6 +37,31 @@ builder.Services.Configure<AntiBotScoringOptions>(
 builder.Services.AddSingleton<IAntiBotScoringService, AntiBotScoringService>();
 
 builder.Services.AddSingleton<MockOrganizer.API.Services.ISessionTokenService, MockOrganizer.API.Services.SessionTokenService>();
+
+// BE-PIPE-8.2.2 (SCRUM-252): Redis Sliding Window Counter cho burst_rate_10s và device_account_overlap
+var redisConnectionString = builder.Configuration.GetValue<string>("Redis:ConnectionString") ?? "localhost:6379";
+var redisEnabled = builder.Configuration.GetValue<bool>("Redis:Enabled", true);
+
+builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
+{
+    if (!redisEnabled) return null!;
+    try
+    {
+        var configuration = ConfigurationOptions.Parse(redisConnectionString);
+        configuration.AbortOnConnectFail = false;
+        configuration.ConnectTimeout = 1000;
+        configuration.SyncTimeout = 1000;
+        return ConnectionMultiplexer.Connect(configuration);
+    }
+    catch (Exception ex)
+    {
+        var logger = sp.GetService<ILogger<Program>>();
+        logger?.LogWarning(ex, "Failed to connect to Redis at {Connection}. Will fallback to In-Memory Sliding Window.", redisConnectionString);
+        return null!;
+    }
+});
+builder.Services.AddSingleton<MockOrganizer.API.Services.IRedisSlidingWindowService, MockOrganizer.API.Services.RedisSlidingWindowService>();
+
 builder.Services.AddScoped<MockOrganizer.API.Services.IServerTransactionTelemetryService, MockOrganizer.API.Services.ServerTransactionTelemetryService>();
 
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")

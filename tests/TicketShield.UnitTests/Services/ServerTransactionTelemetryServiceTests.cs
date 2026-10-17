@@ -318,4 +318,51 @@ public sealed class ServerTransactionTelemetryServiceTests : IDisposable
         Assert.Equal(2, result.ConcurrentHoldCount);
         Assert.True(result.IsSessionValid);
     }
+
+    // =========================================================================
+    // 3. BE-PIPE-8.2.2 Integration Tests (burst_rate_10s & device_account_overlap)
+    // =========================================================================
+
+    [Fact]
+    public async Task MeasureAsync_WithDeviceAndIp_MeasuresBurstRateAndDeviceOverlap()
+    {
+        var buyer = "sliding_window_buyer@ticketshield.vn";
+        var tierId = Guid.NewGuid();
+        var token = _sessionTokenService.GenerateSessionToken(tierId);
+        const string deviceFingerprint = "dev_fingerprint_hash_abc123";
+        const string clientIp = "192.168.1.55";
+
+        var sut = new ServerTransactionTelemetryService(_db, _sessionTokenService);
+
+        var result = await sut.MeasureAsync(
+            sessionToken: token,
+            buyerEmail: buyer,
+            deviceFingerprint: deviceFingerprint,
+            clientIp: clientIp);
+
+        Assert.True(result.IsSessionValid);
+        Assert.Equal(1, result.BurstRate10s);
+        Assert.Equal(1, result.DeviceAccountOverlap);
+        Assert.True(result.RedisDurationMs >= 0.0);
+    }
+
+    [Fact]
+    public async Task MeasureAsync_WhenDeviceMissing_ReportsNegativeOneOverlap()
+    {
+        var buyer = "missing_dev_buyer@ticketshield.vn";
+        var tierId = Guid.NewGuid();
+        var token = _sessionTokenService.GenerateSessionToken(tierId);
+
+        var sut = new ServerTransactionTelemetryService(_db, _sessionTokenService);
+
+        var result = await sut.MeasureAsync(
+            sessionToken: token,
+            buyerEmail: buyer,
+            deviceFingerprint: null,
+            clientIp: "10.0.0.1");
+
+        Assert.True(result.IsSessionValid);
+        Assert.Equal(1, result.BurstRate10s);
+        Assert.Equal(-1, result.DeviceAccountOverlap); // Spec 08 missing policy
+    }
 }
