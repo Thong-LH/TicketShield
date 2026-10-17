@@ -65,7 +65,6 @@ return count
     private readonly ConcurrentDictionary<string, List<long>> _memoryBurstStore = new();
     private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, long>> _memoryOverlapStore = new();
     private readonly ConcurrentDictionary<string, (int Quantity, long ExpireAtMs)> _memoryHoldStore = new();
-    private readonly object _burstLock = new();
 
     public RedisSlidingWindowService(
         IConnectionMultiplexer? redis = null,
@@ -321,11 +320,11 @@ return count
         var cutoff = nowMs - (long)BurstWindow.TotalMilliseconds;
         var maxCount = 1;
 
-        lock (_burstLock)
+        foreach (var key in keys)
         {
-            foreach (var key in keys)
+            var list = _memoryBurstStore.GetOrAdd(key, _ => new List<long>());
+            lock (list)
             {
-                var list = _memoryBurstStore.GetOrAdd(key, _ => new List<long>());
                 list.RemoveAll(ts => ts <= cutoff);
                 list.Add(nowMs);
                 if (list.Count > maxCount)

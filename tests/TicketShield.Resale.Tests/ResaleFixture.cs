@@ -100,7 +100,9 @@ public sealed class ResaleFixture : IAsyncLifetime
         Mock = mockBuilder.Build();
         using (var scope = Mock.Services.CreateScope()) {
             await scope.ServiceProvider.GetRequiredService<ResaleStore>().Database.MigrateAsync();
-            await OrganizerDatabaseSeeder.SeedOrganizerAsync(scope.ServiceProvider.GetRequiredService<OrganizerDbContext>());
+            var orgDb = scope.ServiceProvider.GetRequiredService<OrganizerDbContext>();
+            await OrganizerDatabaseSeeder.SeedOrganizerAsync(orgDb);
+            _ = await orgDb.MockOrders.AsNoTracking().FirstOrDefaultAsync();
         }
         Mock.MapGrpcService<OrganizerResaleGrpcService>(); Mock.MapControllers(); await Mock.StartAsync();
         Channel = GrpcChannel.ForAddress($"http://127.0.0.1:{mockGrpcPort}"); Grpc = new(Channel);

@@ -44,8 +44,16 @@ public class ServerTransactionTelemetryService(
             timeToCheckout = -1.0;
         }
 
-        // 2. Tra cứu số vé đang giữ đồng thời (concurrent_hold) qua Redis (không chọc DB theo BE-PIPE-8.2.3, fallback DB nếu Redis chưa có)
-        var concurrentHold = await _slidingWindow.GetConcurrentHoldAsync(buyerEmail, ct);
+        // 2 & 3. Pipeline đồng thời tra cứu concurrent_hold và sliding window telemetry (burst_rate_10s, device_account_overlap)
+        var holdTask = _slidingWindow.GetConcurrentHoldAsync(buyerEmail, ct);
+        var redisTelemetryTask = _slidingWindow.MeasureSlidingWindowTelemetryAsync(clientIp, deviceFingerprint, buyerEmail, ct);
+
+        await Task.WhenAll(holdTask, redisTelemetryTask);
+
+        var concurrentHold = await holdTask;
+        var redisTelemetry = await redisTelemetryTask;
+
+        // Fallback DB nếu Redis chưa có bản ghi (ví dụ test legacy seed DB trực tiếp)
         if (concurrentHold == 0 && db != null && !string.IsNullOrWhiteSpace(buyerEmail))
         {
             try
@@ -63,10 +71,6 @@ public class ServerTransactionTelemetryService(
                 logger?.LogWarning(ex, "Failed to query fallback DB hold for {Email}.", buyerEmail);
             }
         }
-
-        // 3. Đo đạc tần suất burst_rate_10s và device_account_overlap qua Redis Sliding Window (BE-PIPE-8.2.2)
-        var redisTelemetry = await _slidingWindow
-            .MeasureSlidingWindowTelemetryAsync(clientIp, deviceFingerprint, buyerEmail, ct);
 
         sw.Stop();
         var executionDurationMs = sw.Elapsed.TotalMilliseconds;
