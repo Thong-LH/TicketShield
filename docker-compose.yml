@@ -42,6 +42,22 @@ services:
       timeout: 5s
       retries: 5
 
+  redis:
+    image: redis:7-alpine
+    container_name: ticketshield_redis
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - ticketshield_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   mock-organizer-api:
     build:
       context: .
@@ -51,11 +67,14 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       ConnectionStrings__DefaultConnection: "Host=postgres;Port=5432;Database=organizer_db;Username=postgres;Password=postgres"
+      Redis__ConnectionString: "redis:6379"
     ports:
       - "5001:5001"
       - "5004:5004"
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     networks:
       - ticketshield_network
@@ -167,3 +186,4 @@ networks:
 volumes:
   postgres_data:
   rabbitmq_data:
+  redis_data:

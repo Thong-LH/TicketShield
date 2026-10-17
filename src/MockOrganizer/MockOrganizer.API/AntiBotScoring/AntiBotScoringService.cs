@@ -76,25 +76,34 @@ public class AntiBotScoringService : IAntiBotScoringService, IDisposable
         if (Path.IsPathRooted(configuredPath) && File.Exists(configuredPath))
             return configuredPath;
 
-        // Thử tìm trong AppContext.BaseDirectory
+        // 1. Thử tìm trong AppContext.BaseDirectory
         string baseDir = AppContext.BaseDirectory;
         string combined = Path.Combine(baseDir, configuredPath);
         if (File.Exists(combined)) return combined;
 
-        // Thử tìm trong Current Directory
+        // 2. Thử tìm trong Current Directory
         string currentDir = Directory.GetCurrentDirectory();
         combined = Path.Combine(currentDir, configuredPath);
         if (File.Exists(combined)) return combined;
 
-        // Thử tìm thư mục gốc project TicketShield
-        string parent = currentDir;
-        for (int i = 0; i < 4; i++)
+        // 3. Tìm ngược lên các thư mục cha từ Current Directory và BaseDirectory
+        var candidates = new[] { currentDir, baseDir };
+        foreach (var startDir in candidates)
         {
-            string candidate = Path.Combine(parent, configuredPath);
-            if (File.Exists(candidate)) return candidate;
-            var parentDir = Directory.GetParent(parent);
-            if (parentDir == null) break;
-            parent = parentDir.FullName;
+            string? dir = startDir;
+            for (int i = 0; i < 6 && dir != null; i++)
+            {
+                var p1 = Path.Combine(dir, configuredPath);
+                if (File.Exists(p1)) return p1;
+
+                var p2 = Path.Combine(dir, "src", "MockOrganizer", "MockOrganizer.API", configuredPath);
+                if (File.Exists(p2)) return p2;
+
+                var p3 = Path.Combine(dir, "MockOrganizer.API", configuredPath);
+                if (File.Exists(p3)) return p3;
+
+                dir = Directory.GetParent(dir)?.FullName;
+            }
         }
 
         return configuredPath;
@@ -152,9 +161,9 @@ public class AntiBotScoringService : IAntiBotScoringService, IDisposable
     {
         var dummyVectors = new BotRiskVector[]
         {
-            new() { ActionIntervalStdDev = 190.0f, IsWebDriver = 0.0f, DeviceHashEntropy = 0.85f, TimeToCheckout = 12.5f, BurstRate10s = 1.0f, DeviceAccountOverlap = 0.02f },
-            new() { ActionIntervalStdDev = 10.0f,  IsWebDriver = 1.0f, DeviceHashEntropy = 0.15f, TimeToCheckout = 0.8f,  BurstRate10s = 15.0f, DeviceAccountOverlap = 0.95f },
-            new() { ActionIntervalStdDev = 60.0f,  IsWebDriver = 0.0f, DeviceHashEntropy = 0.50f, TimeToCheckout = 4.0f,  BurstRate10s = 4.0f,  DeviceAccountOverlap = 0.50f }
+            new() { TimeToCheckout = 12.5f, ActionIntervalStdDev = 190.0f, BurstRate10s = 1.0f, ConcurrentHold = 0.0f, IsWebDriver = 0.0f, DeviceAccountOverlap = 0.02f },
+            new() { TimeToCheckout = 0.8f,  ActionIntervalStdDev = 10.0f,  BurstRate10s = 15.0f, ConcurrentHold = 8.0f, IsWebDriver = 1.0f, DeviceAccountOverlap = 0.95f },
+            new() { TimeToCheckout = 4.0f,  ActionIntervalStdDev = 60.0f,  BurstRate10s = 4.0f,  ConcurrentHold = 2.0f, IsWebDriver = 0.0f, DeviceAccountOverlap = 0.50f }
         };
 
         // 1. Warm-up (500 lượt để JIT và model cache sẵn sàng)
@@ -219,11 +228,11 @@ public class AntiBotScoringService : IAntiBotScoringService, IDisposable
     {
         float score = 0.0f;
         if (v.IsWebDriver > 0.5f) score += 0.50f;
-        if (v.ActionIntervalStdDev < 25.0f) score += 0.25f;
-        if (v.TimeToCheckout < 2.0f) score += 0.20f;
+        if (v.ActionIntervalStdDev >= 0.0f && v.ActionIntervalStdDev < 25.0f) score += 0.25f;
+        if (v.TimeToCheckout >= 0.0f && v.TimeToCheckout < 2.0f) score += 0.20f;
         if (v.BurstRate10s > 6.0f) score += 0.20f;
+        if (v.ConcurrentHold > 4.0f) score += 0.20f;
         if (v.DeviceAccountOverlap > 0.6f) score += 0.20f;
-        if (v.DeviceHashEntropy < 0.3f) score += 0.15f;
         return Math.Clamp(score, 0.0f, 1.0f);
     }
 

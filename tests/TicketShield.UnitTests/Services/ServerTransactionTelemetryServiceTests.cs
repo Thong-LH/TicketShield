@@ -1,5 +1,9 @@
 using System.Diagnostics;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using MockOrganizer.API.Data;
+using MockOrganizer.API.Entities;
 using MockOrganizer.API.Services;
 using Xunit;
 
@@ -9,14 +13,25 @@ namespace TicketShield.UnitTests.Services;
 /// Unit and Benchmark Tests for BE-PIPE-8.2.1:
 /// Server Transaction Latency Measurement (time_to_checkout) and Concurrent Hold Lookup.
 /// </summary>
-public sealed class ServerTransactionTelemetryServiceTests
+public sealed class ServerTransactionTelemetryServiceTests : IDisposable
 {
+    private readonly SqliteConnection _connection;
+    private readonly OrganizerDbContext _db;
     private readonly IConfiguration _config;
     private readonly ISessionTokenService _sessionTokenService;
-    private readonly IPipelineHoldTracker _holdTracker;
 
     public ServerTransactionTelemetryServiceTests()
     {
+        _connection = new SqliteConnection("Data Source=:memory:");
+        _connection.Open();
+
+        var options = new DbContextOptionsBuilder<OrganizerDbContext>()
+            .UseSqlite(_connection)
+            .Options;
+
+        _db = new OrganizerDbContext(options);
+        _db.Database.EnsureCreated();
+
         _config = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
@@ -25,7 +40,12 @@ public sealed class ServerTransactionTelemetryServiceTests
             .Build();
 
         _sessionTokenService = new SessionTokenService(_config);
-        _holdTracker = new InMemoryPipelineHoldTracker();
+    }
+
+    public void Dispose()
+    {
+        _db.Dispose();
+        _connection.Dispose();
     }
 
     // =========================================================================
@@ -140,7 +160,7 @@ public sealed class ServerTransactionTelemetryServiceTests
         var issuedAt = DateTimeOffset.UtcNow.AddSeconds(-3.5);
         var token = _sessionTokenService.GenerateSessionToken(tierId, issuedAt);
 
-        var sut = new ServerTransactionTelemetryService(_holdTracker, _sessionTokenService);
+        var sut = new ServerTransactionTelemetryService(_db, _sessionTokenService);
 
         var result = await sut.MeasureAsync(token, "buyer@test.com");
 
@@ -153,7 +173,7 @@ public sealed class ServerTransactionTelemetryServiceTests
     [Fact]
     public async Task MeasureAsync_WithInvalidOrMissingToken_SetsTimeToCheckoutToNegativeOne()
     {
-        var sut = new ServerTransactionTelemetryService(_holdTracker, _sessionTokenService);
+        var sut = new ServerTransactionTelemetryService(_db, _sessionTokenService);
 
         var resultNull = await sut.MeasureAsync(null, "buyer@test.com");
         Assert.False(resultNull.IsSessionValid);
@@ -169,26 +189,94 @@ public sealed class ServerTransactionTelemetryServiceTests
     {
         var targetBuyer = "target_buyer@ticketshield.vn";
         var otherBuyer = "other_buyer@ticketshield.vn";
+        var now = DateTimeOffset.UtcNow;
 
-        // Ghi số vé đang giữ vào Pipeline Cache (tương đương Redis key hold:{buyerEmail})
-        await _holdTracker.SetHoldCountAsync(targetBuyer, 5);
-        await _holdTracker.SetHoldCountAsync(otherBuyer, 2);
+        // 1. Đơn PENDING hợp lệ của targetBuyer (2 vé, tạo 2 phút trước) -> TÍNH
+        _db.MockOrders.Add(new MockOrder
+        {
+            Id = Guid.NewGuid(),
+            BuyerEmail = targetBuyer,
+            Quantity = 2,
+            Status = "PENDING",
+            CreatedAt = now.AddMinutes(-2),
+            EventId = "ev-1",
+            TierName = "GA"
+        });
 
-        var sut = new ServerTransactionTelemetryService(_holdTracker, _sessionTokenService);
+        // 2. Đơn PENDING hợp lệ thứ hai của targetBuyer (3 vé, tạo 5 phút trước) -> TÍNH
+        _db.MockOrders.Add(new MockOrder
+        {
+            Id = Guid.NewGuid(),
+            BuyerEmail = targetBuyer,
+            Quantity = 3,
+            Status = "PENDING",
+            CreatedAt = now.AddMinutes(-5),
+            EventId = "ev-1",
+            TierName = "VIP"
+        });
 
-        var resultTarget = await sut.MeasureAsync(null, targetBuyer);
-        var resultOther = await sut.MeasureAsync(null, otherBuyer);
-        var resultUnknown = await sut.MeasureAsync(null, "unknown@ticketshield.vn");
+        // 3. Đơn đã CONFIRMED của targetBuyer -> KHÔNG TÍNH
+        _db.MockOrders.Add(new MockOrder
+        {
+            Id = Guid.NewGuid(),
+            BuyerEmail = targetBuyer,
+            Quantity = 4,
+            Status = "CONFIRMED",
+            CreatedAt = now.AddMinutes(-1),
+            EventId = "ev-1",
+            TierName = "GA"
+        });
 
-        Assert.Equal(5, resultTarget.ConcurrentHoldCount);
-        Assert.Equal(2, resultOther.ConcurrentHoldCount);
-        Assert.Equal(0, resultUnknown.ConcurrentHoldCount);
+        // 4. Đơn đã CANCELLED của targetBuyer -> KHÔNG TÍNH
+        _db.MockOrders.Add(new MockOrder
+        {
+            Id = Guid.NewGuid(),
+            BuyerEmail = targetBuyer,
+            Quantity = 1,
+            Status = "CANCELLED",
+            CreatedAt = now.AddMinutes(-3),
+            EventId = "ev-1",
+            TierName = "GA"
+        });
+
+        // 5. Đơn PENDING nhưng đã quá hạn (15 phút trước, vượt quá 10 phút window) -> KHÔNG TÍNH
+        _db.MockOrders.Add(new MockOrder
+        {
+            Id = Guid.NewGuid(),
+            BuyerEmail = targetBuyer,
+            Quantity = 10,
+            Status = "PENDING",
+            CreatedAt = now.AddMinutes(-15),
+            EventId = "ev-1",
+            TierName = "GA"
+        });
+
+        // 6. Đơn PENDING của người khác -> KHÔNG TÍNH
+        _db.MockOrders.Add(new MockOrder
+        {
+            Id = Guid.NewGuid(),
+            BuyerEmail = otherBuyer,
+            Quantity = 6,
+            Status = "PENDING",
+            CreatedAt = now.AddMinutes(-1),
+            EventId = "ev-1",
+            TierName = "GA"
+        });
+
+        await _db.SaveChangesAsync();
+
+        var sut = new ServerTransactionTelemetryService(_db, _sessionTokenService);
+
+        var result = await sut.MeasureAsync(null, targetBuyer);
+
+        // Chỉ có đơn 1 (2 vé) + đơn 2 (3 vé) = đúng 5 vé
+        Assert.Equal(5, result.ConcurrentHoldCount);
     }
 
     [Fact]
     public async Task MeasureAsync_WhenBuyerEmailIsEmptyOrNull_ReturnsZeroConcurrentHold()
     {
-        var sut = new ServerTransactionTelemetryService(_holdTracker, _sessionTokenService);
+        var sut = new ServerTransactionTelemetryService(_db, _sessionTokenService);
 
         var resultNull = await sut.MeasureAsync(null, null);
         Assert.Equal(0, resultNull.ConcurrentHoldCount);
@@ -204,9 +292,19 @@ public sealed class ServerTransactionTelemetryServiceTests
         var tierId = Guid.NewGuid();
         var token = _sessionTokenService.GenerateSessionToken(tierId);
 
-        await _holdTracker.SetHoldCountAsync(buyer, 2);
+        _db.MockOrders.Add(new MockOrder
+        {
+            Id = Guid.NewGuid(),
+            BuyerEmail = buyer,
+            Quantity = 2,
+            Status = "PENDING",
+            CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-1),
+            EventId = "ev-bench",
+            TierName = "GA"
+        });
+        await _db.SaveChangesAsync();
 
-        var sut = new ServerTransactionTelemetryService(_holdTracker, _sessionTokenService);
+        var sut = new ServerTransactionTelemetryService(_db, _sessionTokenService);
 
         // Warm up
         _ = await sut.MeasureAsync(token, buyer);
@@ -214,10 +312,57 @@ public sealed class ServerTransactionTelemetryServiceTests
         // Đo đạc thực tế
         var result = await sut.MeasureAsync(token, buyer);
 
-        // Kiểm tra tiêu chí Acceptance Criteria SLA: < 2ms (In-Memory/Cache đạt < 0.1ms)
+        // Kiểm tra tiêu chí Acceptance Criteria SLA: < 2ms
         Assert.True(result.ExecutionDurationMs < 2.0,
             $"ExecutionDurationMs was {result.ExecutionDurationMs:F4} ms, expected < 2.0 ms");
         Assert.Equal(2, result.ConcurrentHoldCount);
         Assert.True(result.IsSessionValid);
+    }
+
+    // =========================================================================
+    // 3. BE-PIPE-8.2.2 Integration Tests (burst_rate_10s & device_account_overlap)
+    // =========================================================================
+
+    [Fact]
+    public async Task MeasureAsync_WithDeviceAndIp_MeasuresBurstRateAndDeviceOverlap()
+    {
+        var buyer = "sliding_window_buyer@ticketshield.vn";
+        var tierId = Guid.NewGuid();
+        var token = _sessionTokenService.GenerateSessionToken(tierId);
+        const string deviceFingerprint = "dev_fingerprint_hash_abc123";
+        const string clientIp = "192.168.1.55";
+
+        var sut = new ServerTransactionTelemetryService(_db, _sessionTokenService);
+
+        var result = await sut.MeasureAsync(
+            sessionToken: token,
+            buyerEmail: buyer,
+            deviceFingerprint: deviceFingerprint,
+            clientIp: clientIp);
+
+        Assert.True(result.IsSessionValid);
+        Assert.Equal(1, result.BurstRate10s);
+        Assert.Equal(1, result.DeviceAccountOverlap);
+        Assert.True(result.RedisDurationMs >= 0.0);
+    }
+
+    [Fact]
+    public async Task MeasureAsync_WhenDeviceMissing_ReportsNegativeOneOverlap()
+    {
+        var buyer = "missing_dev_buyer@ticketshield.vn";
+        var tierId = Guid.NewGuid();
+        var token = _sessionTokenService.GenerateSessionToken(tierId);
+
+        var sut = new ServerTransactionTelemetryService(_db, _sessionTokenService);
+
+        var result = await sut.MeasureAsync(
+            sessionToken: token,
+            buyerEmail: buyer,
+            deviceFingerprint: null,
+            clientIp: "10.0.0.1");
+
+        Assert.True(result.IsSessionValid);
+        Assert.Equal(1, result.BurstRate10s);
+        Assert.Equal(-1, result.DeviceAccountOverlap); // Spec 08 missing policy
     }
 }

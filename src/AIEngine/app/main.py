@@ -169,10 +169,10 @@ def train_and_export_onnx(
     session = ort.InferenceSession(output_onnx_path)
     input_name = session.get_inputs()[0].name
 
-    sample_human = np.array([[190.0, 0.0, 0.85, 12.5, 1.0, 0.02]], dtype=np.float32)
-    sample_power = np.array([[95.0, 0.0, 0.80, 3.0, 2.0, 0.05]], dtype=np.float32)
-    sample_bot = np.array([[10.0, 1.0, 0.15, 0.8, 15.0, 0.95]], dtype=np.float32)
-    sample_grey = np.array([[55.0, 0.0, 0.48, 4.0, 4.0, 0.50]], dtype=np.float32)
+    sample_human = np.array([[12.5, 190.0, 1.0, 0.0, 0.0, 0.02]], dtype=np.float32)
+    sample_power = np.array([[3.0, 95.0, 2.0, 0.0, 0.0, 0.05]], dtype=np.float32)
+    sample_bot = np.array([[0.8, 10.0, 15.0, 8.0, 1.0, 0.95]], dtype=np.float32)
+    sample_grey = np.array([[4.0, 55.0, 4.0, 3.0, 0.0, 0.50]], dtype=np.float32)
 
     samples = np.vstack([sample_human, sample_power, sample_bot, sample_grey])
     raw_outputs = session.run(None, {input_name: samples})

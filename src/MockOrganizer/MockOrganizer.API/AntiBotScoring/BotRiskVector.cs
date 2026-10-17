@@ -4,51 +4,64 @@ using System.Text.Json.Serialization;
 namespace MockOrganizer.API.AntiBotScoring;
 
 /// <summary>
-/// Vector 6 chiều biểu diễn hành vi của phiên giao dịch (Contract US-8.1 + US-8.2 + US-8.3).
-/// Thứ tự các thuộc tính tương ứng chính xác với input tensor [1, 6] của mô hình ONNX:
-///   [0] action_interval_std_dev (ms, Client SDK)
-///   [1] is_webdriver            (0.0 hoặc 1.0, Client SDK)
-///   [2] device_hash_entropy     (0.0 - 1.0, Client SDK)
-///   [3] time_to_checkout        (giây, Server Telemetry)
-///   [4] burst_rate_10s          (số lượt bấm trong 10s, Server Redis)
+/// Vector 6 chiều biểu diễn hành vi của phiên giao dịch (Contract US-8.1 + US-8.2 + US-8.3 - BE-PIPE-8.2.3).
+/// Thứ tự các thuộc tính tương ứng chính xác với input tensor [1, 6] chuẩn hóa của mô hình ONNX:
+///   [0] time_to_checkout        (giây, Server Telemetry)
+///   [1] action_interval_std_dev (ms, Client SDK)
+///   [2] burst_rate_10s          (số lượt bấm trong 10s, Server Redis)
+///   [3] concurrent_hold         (số vé giữ, Server Redis - không chọc DB)
+///   [4] is_webdriver            (0.0 hoặc 1.0, Client SDK)
 ///   [5] device_account_overlap  (0.0 - 1.0, Server Redis)
 /// </summary>
 public record BotRiskVector
 {
-    [JsonPropertyName("action_interval_std_dev")]
-    [Range(0, 10000, ErrorMessage = "action_interval_std_dev must be >= 0")]
-    public float ActionIntervalStdDev { get; init; }
-
-    [JsonPropertyName("is_webdriver")]
-    [Range(0.0f, 1.0f, ErrorMessage = "is_webdriver must be 0.0 or 1.0")]
-    public float IsWebDriver { get; init; }
-
-    [JsonPropertyName("device_hash_entropy")]
-    [Range(0.0f, 1.0f, ErrorMessage = "device_hash_entropy must be between 0.0 and 1.0")]
-    public float DeviceHashEntropy { get; init; }
-
     [JsonPropertyName("time_to_checkout")]
-    [Range(0.0f, 3600.0f, ErrorMessage = "time_to_checkout must be >= 0")]
+    [Range(-1.0f, 3600.0f, ErrorMessage = "time_to_checkout must be >= -1.0")]
     public float TimeToCheckout { get; init; }
+
+    [JsonPropertyName("action_interval_std_dev")]
+    [Range(-1.0f, 10000.0f, ErrorMessage = "action_interval_std_dev must be >= -1.0")]
+    public float ActionIntervalStdDev { get; init; }
 
     [JsonPropertyName("burst_rate_10s")]
     [Range(0.0f, 1000.0f, ErrorMessage = "burst_rate_10s must be >= 0")]
-    public float BurstRate10s { get; init; }
+    public float BurstRate10s { get; init; } = 1.0f;
+
+    [JsonPropertyName("concurrent_hold")]
+    [Range(0.0f, 1000.0f, ErrorMessage = "concurrent_hold must be >= 0")]
+    public float ConcurrentHold { get; init; }
+
+    [JsonPropertyName("is_webdriver")]
+    [Range(-1.0f, 1.0f, ErrorMessage = "is_webdriver must be between -1.0 and 1.0")]
+    public float IsWebDriver { get; init; }
 
     [JsonPropertyName("device_account_overlap")]
-    [Range(0.0f, 1.0f, ErrorMessage = "device_account_overlap must be between 0.0 and 1.0")]
+    [Range(-1.0f, 1.0f, ErrorMessage = "device_account_overlap must be between -1.0 and 1.0")]
     public float DeviceAccountOverlap { get; init; }
 
     /// <summary>
+    /// Thuộc tính dự phòng tương thích ngược (deprecated từ SCRUM-257).
+    /// </summary>
+    [JsonPropertyName("device_hash_entropy")]
+    public float DeviceHashEntropy { get; init; }
+
+    /// <summary>
     /// Chuyển đổi thành mảng float 6 phần tử phục vụ tạo Tensor ONNX.
+    /// Thứ tự khớp 100% với Hợp đồng Chuẩn hóa BE-PIPE-8.2.3:
+    ///   [0] time_to_checkout
+    ///   [1] action_interval_std_dev
+    ///   [2] burst_rate_10s
+    ///   [3] concurrent_hold
+    ///   [4] is_webdriver
+    ///   [5] device_account_overlap
     /// </summary>
     public float[] ToArray() =>
     [
-        ActionIntervalStdDev,
-        IsWebDriver,
-        DeviceHashEntropy,
         TimeToCheckout,
+        ActionIntervalStdDev,
         BurstRate10s,
+        ConcurrentHold,
+        IsWebDriver,
         DeviceAccountOverlap
     ];
 }

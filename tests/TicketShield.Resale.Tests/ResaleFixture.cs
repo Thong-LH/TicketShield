@@ -87,13 +87,22 @@ public sealed class ResaleFixture : IAsyncLifetime
         mockBuilder.Services.AddSingleton<TimeProvider>(Clock);
         mockBuilder.Services.AddDbContext<OrganizerDbContext>(o => o.UseNpgsql(Database.MockConnection));
         mockBuilder.Services.AddSingleton<MockOrganizer.API.Services.ISessionTokenService, MockOrganizer.API.Services.SessionTokenService>();
+        mockBuilder.Services.AddSingleton<MockOrganizer.API.Services.IRedisSlidingWindowService, MockOrganizer.API.Services.RedisSlidingWindowService>();
         mockBuilder.Services.AddScoped<MockOrganizer.API.Services.IServerTransactionTelemetryService, MockOrganizer.API.Services.ServerTransactionTelemetryService>();
+        mockBuilder.Services.Configure<MockOrganizer.API.AntiBotScoring.AntiBotScoringOptions>(o =>
+        {
+            o.GuardTimeoutMs = 1000;
+        });
+        mockBuilder.Services.AddSingleton<MockOrganizer.API.AntiBotScoring.IAntiBotScoringService, MockOrganizer.API.AntiBotScoring.AntiBotScoringService>();
+        mockBuilder.Services.AddScoped<MockOrganizer.API.AntiBotScoring.IAntiBotGuardService, MockOrganizer.API.AntiBotScoring.AntiBotGuardService>();
         mockBuilder.Services.AddControllers().AddApplicationPart(typeof(MockOrganizer.API.Controllers.MockTicketsController).Assembly);
         mockBuilder.Services.AddOrganizerResale(mockBuilder.Configuration);
         Mock = mockBuilder.Build();
         using (var scope = Mock.Services.CreateScope()) {
             await scope.ServiceProvider.GetRequiredService<ResaleStore>().Database.MigrateAsync();
-            await OrganizerDatabaseSeeder.SeedOrganizerAsync(scope.ServiceProvider.GetRequiredService<OrganizerDbContext>());
+            var orgDb = scope.ServiceProvider.GetRequiredService<OrganizerDbContext>();
+            await OrganizerDatabaseSeeder.SeedOrganizerAsync(orgDb);
+            _ = await orgDb.MockOrders.AsNoTracking().FirstOrDefaultAsync();
         }
         Mock.MapGrpcService<OrganizerResaleGrpcService>(); Mock.MapControllers(); await Mock.StartAsync();
         Channel = GrpcChannel.ForAddress($"http://127.0.0.1:{mockGrpcPort}"); Grpc = new(Channel);

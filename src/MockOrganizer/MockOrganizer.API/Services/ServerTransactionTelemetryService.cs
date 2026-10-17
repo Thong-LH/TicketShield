@@ -1,20 +1,28 @@
 using System.Diagnostics;
+using Microsoft.EntityFrameworkCore;
+using MockOrganizer.API.Data;
 using MockOrganizer.API.Models;
 
 namespace MockOrganizer.API.Services;
 
 public class ServerTransactionTelemetryService(
-    IPipelineHoldTracker holdTracker,
-    ISessionTokenService sessionTokenService,
+    OrganizerDbContext? db = null,
+    ISessionTokenService sessionTokenService = null!,
+    IRedisSlidingWindowService? slidingWindowService = null,
     TimeProvider? clock = null,
     ILogger<ServerTransactionTelemetryService>? logger = null)
     : IServerTransactionTelemetryService
 {
+    private static readonly TimeSpan DefaultHoldWindow = TimeSpan.FromMinutes(10);
     private readonly TimeProvider _clock = clock ?? TimeProvider.System;
+    private readonly IRedisSlidingWindowService _slidingWindow =
+        slidingWindowService ?? new RedisSlidingWindowService(null, null, clock);
 
     public async Task<ServerTransactionTelemetryResult> MeasureAsync(
         string? sessionToken,
         string? buyerEmail,
+        string? deviceFingerprint = null,
+        string? clientIp = null,
         CancellationToken ct = default)
     {
         var sw = Stopwatch.StartNew();
@@ -36,19 +44,31 @@ public class ServerTransactionTelemetryService(
             timeToCheckout = -1.0;
         }
 
-        // 2. Tra cứu số vé đang giữ đồng thời (concurrent_hold) từ Pipeline Cache (key hold:{buyerEmail})
-        var concurrentHold = 0;
-        if (!string.IsNullOrWhiteSpace(buyerEmail))
+        // 2 & 3. Pipeline đồng thời tra cứu concurrent_hold và sliding window telemetry (burst_rate_10s, device_account_overlap)
+        var holdTask = _slidingWindow.GetConcurrentHoldAsync(buyerEmail, ct);
+        var redisTelemetryTask = _slidingWindow.MeasureSlidingWindowTelemetryAsync(clientIp, deviceFingerprint, buyerEmail, ct);
+
+        await Task.WhenAll(holdTask, redisTelemetryTask);
+
+        var concurrentHold = await holdTask;
+        var redisTelemetry = await redisTelemetryTask;
+
+        // Fallback DB nếu Redis chưa có bản ghi (ví dụ test legacy seed DB trực tiếp)
+        if (concurrentHold == 0 && db != null && !string.IsNullOrWhiteSpace(buyerEmail))
         {
             try
             {
-                concurrentHold = await holdTracker.GetHoldCountAsync(buyerEmail, ct);
+                var cutoff = now - DefaultHoldWindow;
+                concurrentHold = await db.MockOrders
+                    .AsNoTracking()
+                    .Where(o => o.BuyerEmail == buyerEmail
+                             && o.Status == "PENDING"
+                             && o.CreatedAt >= cutoff)
+                    .SumAsync(o => (int?)o.Quantity, ct) ?? 0;
             }
             catch (Exception ex)
             {
-                // Cơ chế Fail-Open: Không làm gián đoạn luồng mua nếu cache lỗi
-                logger?.LogWarning(ex, "Failed to query concurrent hold from pipeline cache for {Email}. Defaulting to 0.", buyerEmail);
-                concurrentHold = 0;
+                logger?.LogWarning(ex, "Failed to query fallback DB hold for {Email}.", buyerEmail);
             }
         }
 
@@ -61,7 +81,10 @@ public class ServerTransactionTelemetryService(
             IssuedAtUtc: isValid ? issuedAt : DateTimeOffset.MinValue,
             ReceivedAtUtc: now,
             ExecutionDurationMs: executionDurationMs,
-            IsSessionValid: isValid
+            IsSessionValid: isValid,
+            BurstRate10s: redisTelemetry.BurstRate10s,
+            DeviceAccountOverlap: redisTelemetry.DeviceAccountOverlap,
+            RedisDurationMs: redisTelemetry.ExecutionDurationMs
         );
     }
 }

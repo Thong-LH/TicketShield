@@ -3,10 +3,13 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
+using MockOrganizer.API.AntiBotScoring;
 using MockOrganizer.API.Controllers;
 using MockOrganizer.API.Data;
 using MockOrganizer.API.Entities;
+using MockOrganizer.API.Models;
 using MockOrganizer.API.Services;
+using Moq;
 using Xunit;
 
 namespace TicketShield.UnitTests.Services;
@@ -16,7 +19,7 @@ public sealed class OrdersControllerTelemetryTests : IDisposable
     private readonly SqliteConnection _connection;
     private readonly OrganizerDbContext _db;
     private readonly ISessionTokenService _sessionTokenService;
-    private readonly IPipelineHoldTracker _holdTracker;
+    private readonly IRedisSlidingWindowService _slidingWindow;
     private readonly IServerTransactionTelemetryService _telemetryService;
     private readonly OrdersController _controller;
 
@@ -40,15 +43,44 @@ public sealed class OrdersControllerTelemetryTests : IDisposable
             .Build();
 
         _sessionTokenService = new SessionTokenService(config);
-        _holdTracker = new InMemoryPipelineHoldTracker();
-        _telemetryService = new ServerTransactionTelemetryService(_holdTracker, _sessionTokenService);
+        _slidingWindow = new RedisSlidingWindowService();
+        _telemetryService = new ServerTransactionTelemetryService(_db, _sessionTokenService, _slidingWindow);
+
+        var guardMock = new Mock<IAntiBotGuardService>();
+        guardMock.Setup(g => g.EvaluateCheckoutGuardAsync(
+                It.IsAny<CheckoutRequest>(),
+                It.IsAny<string?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((CheckoutRequest req, string? ip, CancellationToken ct) =>
+            {
+                var telem = _telemetryService.MeasureAsync(req.SessionToken, req.BuyerEmail, req.ResolvedDeviceFingerprint, ip, ct).GetAwaiter().GetResult();
+                return new AntiBotGuardResult
+                {
+                    Decision = AntiBotDecision.Allow,
+                    RiskScore = 0.1f,
+                    IsFailOpen = false,
+                    ExecutionDurationMs = 0.5,
+                    Vector = new BotRiskVector
+                    {
+                        TimeToCheckout = (float)telem.TimeToCheckoutSeconds,
+                        ActionIntervalStdDev = 200f,
+                        IsWebDriver = 0f,
+                        DeviceAccountOverlap = (float)telem.DeviceAccountOverlap,
+                        BurstRate10s = (float)telem.BurstRate10s,
+                        ConcurrentHold = (float)telem.ConcurrentHoldCount
+                    },
+                    Telemetry = telem,
+                    Reason = string.Empty
+                };
+            });
 
         _controller = new OrdersController(
             _db,
             _telemetryService,
             _sessionTokenService,
-            _holdTracker,
-            NullLogger<OrdersController>.Instance
+            guardMock.Object,
+            NullLogger<OrdersController>.Instance,
+            _slidingWindow
         );
     }
 
@@ -59,7 +91,7 @@ public sealed class OrdersControllerTelemetryTests : IDisposable
     }
 
     [Fact]
-    public async Task Checkout_UpdatesPipelineHoldTracker_AndFeedsIntoNextCheckoutTelemetry()
+    public async Task Checkout_UpdatesSlidingWindowHold_AndFeedsIntoNextCheckoutTelemetry()
     {
         // 1. Chuẩn bị TicketTier có sẵn 100 vé
         var tier = new TicketTier
@@ -92,8 +124,8 @@ public sealed class OrdersControllerTelemetryTests : IDisposable
 
         Assert.Equal(0, doc1.GetProperty("telemetry").GetProperty("concurrentHoldCount").GetInt32());
 
-        // Kiểm tra sau lần 1, cache đã ghi nhận 2 vé đang giữ
-        var holdAfterReq1 = await _holdTracker.GetHoldCountAsync(buyerEmail);
+        // Kiểm tra sau lần 1, Redis sliding window store đã ghi nhận 2 vé đang giữ
+        var holdAfterReq1 = await _slidingWindow.GetConcurrentHoldAsync(buyerEmail);
         Assert.Equal(2, holdAfterReq1);
 
         // 3. Lần Checkout thứ hai: Buyer tiếp tục checkout 3 vé
@@ -109,11 +141,11 @@ public sealed class OrdersControllerTelemetryTests : IDisposable
         var okResult2 = Assert.IsType<OkObjectResult>(result2);
         var doc2 = System.Text.Json.JsonSerializer.SerializeToElement(okResult2.Value!);
 
-        // Telemetry lần này PHẢI đọc được concurrentHoldCount = 2 từ cache pipeline!
+        // Telemetry lần này PHẢI đọc được concurrentHoldCount = 2 từ sliding window store!
         Assert.Equal(2, doc2.GetProperty("telemetry").GetProperty("concurrentHoldCount").GetInt32());
 
-        // Sau lần 2, cache phải tăng lũy tiến lên 5 vé đang giữ
-        var holdAfterReq2 = await _holdTracker.GetHoldCountAsync(buyerEmail);
+        // Sau lần 2, store phải tăng lũy tiến lên 5 vé đang giữ
+        var holdAfterReq2 = await _slidingWindow.GetConcurrentHoldAsync(buyerEmail);
         Assert.Equal(5, holdAfterReq2);
     }
 }
