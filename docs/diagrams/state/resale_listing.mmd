@@ -1,0 +1,20 @@
+stateDiagram-v2
+    [*] --> Draft: SubmitTicket
+
+    %% GIAI ĐOẠN XÁC THỰC VÉ GỐC (OTP GMAIL BTC)
+    Draft --> Verified: VerifyOTP
+    Draft --> Cancelled: CancelVerification
+
+    %% GIAI ĐOẠN NIÊM YẾT & ĐẶT MUA
+    Verified --> Transacting: ReserveTicket
+    Verified --> Cancelled: CancelListing
+    Verified --> Expired: EventCutoff
+
+    %% GIAI ĐOẠN KẾT QUẢ GIAO DỊCH
+    Transacting --> Verified: ReleaseHold
+    Transacting --> Sold: ConfirmPayment
+
+    %% KẾT THÚC VÒNG ĐỜI
+    Sold --> [*]
+    Cancelled --> [*]
+    Expired --> [*]

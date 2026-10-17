@@ -1,0 +1,68 @@
+graph TB
+    %% 1. TẦNG ỨNG DỤNG NGƯỜI DÙNG
+    subgraph ClientLayer ["1. TẦNG ỨNG DỤNG NGƯỜI DÙNG (CLIENT LAYER)"]
+        ClientApp["Ứng Dụng Web Khách Hàng<br/>(Web Client Application)"]
+    end
+
+    %% 2. HỆ THỐNG TICKETSHIELD
+    subgraph TicketShieldSystem ["2. HỆ THỐNG TICKETSHIELD (SYSTEM BOUNDARY)"]
+        APIGateway["Cổng Điều Phối API<br/>(API Gateway)"]
+
+        %% Khối Dịch Vụ Nghiệp Vụ Cốt Lõi
+        subgraph CoreServices ["Khối Nghiệp Vụ Cốt Lõi (Core Business Services)"]
+            AuthService["Quản Lý Định Danh & Phân Quyền<br/>(Identity & Access Service)"]
+            TradeService["Sàn Giao Dịch & Bán Lại Vé<br/>(Marketplace & Trading Service)"]
+            EscrowService["Quản Lý Ký Quỹ & Khiếu Nại<br/>(Escrow & Dispute Service)"]
+            SettlementService["Dịch Vụ Quyết Toán & Giải Ngân<br/>(Settlement & Payout Service)"]
+        end
+
+        %% Khối AI Tách Biệt Độc Lập
+        subgraph AISubsystem ["Phân Hệ Trí Tuệ Nhân Tạo (AI Defense Subsystem)"]
+            BotDetectionService["Dịch Vụ Phát Hiện Bot & Gian Lận<br/>(AI Anti-Bot & Fraud Engine)"]
+            TelemetryStore[("Kho Dữ Liệu Dấu Vết Hành Vi<br/>(Behavioral Telemetry Store)")]
+        end
+
+        %% Trục Tích Hợp Sự Kiện
+        subgraph IntegrationBus ["Trục Tích Hợp Bất Đồng Bộ (Event Bus)"]
+            EventBus["Hàng Đợi Thông Điệp & Sự Kiện<br/>(Message Broker)"]
+        end
+
+        %% Tầng Lưu Trữ Dữ Liệu
+        subgraph DataStorage ["Tầng Lưu Trữ Dữ Liệu (Data Stores)"]
+            MainDB[("Cơ Sở Dữ Liệu Hệ Thống<br/>(Core Relational Database)")]
+            SettlementDB[("Cơ Sở Dữ Liệu Quyết Toán<br/>(Settlement Database)")]
+        end
+    end
+
+    %% 3. ĐỐI TÁC NGOẠI VI
+    subgraph ExternalServices ["3. ĐỐI TÁC NGOẠI VI (EXTERNAL SERVICES)"]
+        OrganizerSystem["Hệ Thống Ban Tổ Chức Vé<br/>(Event Organizer System)"]
+        PaymentGateway["Cổng Thanh Toán Trực Tuyến<br/>(Payment Gateway - Thu Tiền Vào)"]
+        BankingService["Cổng Chuyển Khoản Liên Ngân Hàng<br/>(Banking Payout Service - NAPAS 247)"]
+    end
+
+    %% LUỒNG GIAO TIẾP
+    ClientApp -->|"Gửi yêu cầu & Telemetry"| APIGateway
+    APIGateway --> AuthService
+    APIGateway --> TradeService
+    APIGateway -.->|"Kiểm tra rủi ro Checkout"| BotDetectionService
+
+    %% Giao tiếp nội bộ
+    BotDetectionService --> TelemetryStore
+    TradeService -->|"Đánh giá rủi ro mua vé"| BotDetectionService
+    TradeService -->|"Khóa tiền tạm giữ"| EscrowService
+
+    AuthService --> MainDB
+    TradeService --> MainDB
+    EscrowService --> MainDB
+    SettlementService --> SettlementDB
+
+    TradeService --> EventBus
+    EscrowService -.->|"Lệnh giải ngân qua Outbox"| EventBus
+    EventBus -->|"Tiếp nhận sự kiện thanh toán"| SettlementService
+    SettlementService -.->|"Báo cáo hoàn tất giải ngân"| EscrowService
+
+    %% Tương tác ngoại vi
+    TradeService <-->|"Xác thực & Cấp đổi mã vé"| OrganizerSystem
+    PaymentGateway -->|"Webhook báo thanh toán thành công"| TradeService
+    SettlementService -->|"Thực hiện lệnh chuyển khoản"| BankingService

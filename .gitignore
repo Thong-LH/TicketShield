@@ -10,6 +10,11 @@ docs/*
 !docs/reports/
 !docs/specs/
 !docs/contracts/
+!docs/architecture/
+!docs/diagrams/
+!docs/deployment/
+!docs/sprints/
+!docs/ai/
 !docs/*.md
 
 # Scripts (allow script source files, ignore heavy binary executables)
