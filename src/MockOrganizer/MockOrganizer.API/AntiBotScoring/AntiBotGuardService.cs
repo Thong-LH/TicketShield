@@ -16,7 +16,8 @@ public class AntiBotGuardService(
     IAntiBotScoringService scoringService,
     ILogger<AntiBotGuardService> logger,
     IOptions<AntiBotScoringOptions>? options = null,
-    TimeProvider? clock = null)
+    TimeProvider? clock = null,
+    IAntiBotAnalyticsCollector? analyticsCollector = null)
     : IAntiBotGuardService
 {
     private readonly TimeSpan _guardTimeout = TimeSpan.FromMilliseconds(options?.Value.GuardTimeoutMs ?? 20);
@@ -38,6 +39,7 @@ public class AntiBotGuardService(
             var evaluateTask = ExecuteInternalAsync(request, clientIp, linkedCts.Token);
             var completedTask = await Task.WhenAny(evaluateTask, Task.Delay(_guardTimeout, ct));
 
+            AntiBotGuardResult result;
             if (completedTask != evaluateTask)
             {
                 sw.Stop();
@@ -45,10 +47,15 @@ public class AntiBotGuardService(
                     "AntiBotGuard: {TimeoutMs}ms SLA timeout exceeded ({ElapsedMs:F2}ms). Triggering Fail-Open fallback to ALLOW.",
                     _guardTimeout.TotalMilliseconds, sw.Elapsed.TotalMilliseconds);
 
-                return CreateFailOpenResult(sw.Elapsed.TotalMilliseconds, $"SLA Timeout (> {_guardTimeout.TotalMilliseconds}ms)");
+                result = CreateFailOpenResult(sw.Elapsed.TotalMilliseconds, $"SLA Timeout (> {_guardTimeout.TotalMilliseconds}ms)");
+            }
+            else
+            {
+                result = await evaluateTask;
             }
 
-            return await evaluateTask;
+            RecordAnalytics(result, request);
+            return result;
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
@@ -57,7 +64,9 @@ public class AntiBotGuardService(
                 "AntiBotGuard: Operation timed out at 20ms ({ElapsedMs:F2}ms). Triggering Fail-Open fallback to ALLOW.",
                 sw.Elapsed.TotalMilliseconds);
 
-            return CreateFailOpenResult(sw.Elapsed.TotalMilliseconds, "SLA Timeout (> 20ms)");
+            var failResult = CreateFailOpenResult(sw.Elapsed.TotalMilliseconds, "SLA Timeout (> 20ms)");
+            RecordAnalytics(failResult, request);
+            return failResult;
         }
         catch (Exception ex)
         {
@@ -66,8 +75,24 @@ public class AntiBotGuardService(
                 "AntiBotGuard: Error during evaluation ({ElapsedMs:F2}ms). Triggering Fail-Open fallback to ALLOW.",
                 sw.Elapsed.TotalMilliseconds);
 
-            return CreateFailOpenResult(sw.Elapsed.TotalMilliseconds, $"Exception: {ex.Message}");
+            var failResult = CreateFailOpenResult(sw.Elapsed.TotalMilliseconds, $"Exception: {ex.Message}");
+            RecordAnalytics(failResult, request);
+            return failResult;
         }
+    }
+
+    private void RecordAnalytics(AntiBotGuardResult result, CheckoutRequest request)
+    {
+        analyticsCollector?.RecordEvaluation(new AntiBotEvaluationLog
+        {
+            RequestId = request.SessionToken,
+            BuyerEmail = request.BuyerEmail ?? string.Empty,
+            Decision = result.Decision,
+            RiskScore = result.RiskScore,
+            LatencyMs = result.ExecutionDurationMs,
+            IsFailOpen = result.IsFailOpen,
+            Reason = result.Reason
+        });
     }
 
     private async Task<AntiBotGuardResult> ExecuteInternalAsync(

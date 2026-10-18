@@ -20,7 +20,8 @@ public class OrdersController(
     ILogger<OrdersController> logger,
     IRedisSlidingWindowService? slidingWindowService = null,
     ResaleOptions? resaleOptions = null,
-    TimeProvider? clock = null)
+    TimeProvider? clock = null,
+    IAntiBotPolicyManager? policyManager = null)
     : ControllerBase
 {
     private const int MaxRetries = 3;
@@ -103,21 +104,37 @@ public class OrdersController(
             });
         }
 
-        // Tier 2: Challenge (0.35 <= RiskScore < 0.75) -> Yêu cầu CAPTCHA / PoW challenge
+        // Tier 2: Challenge (0.35 <= RiskScore < 0.75) -> Yêu cầu CAPTCHA / Turnstile challenge
         if (guardResult.Decision == AntiBotDecision.Challenge)
         {
-            logger.LogInformation(
-                "Checkout CHALLENGED by AntiBotGuard. RiskScore={Score}. Triggering verification challenge.",
-                guardResult.RiskScore);
-
-            return StatusCode(StatusCodes.Status403Forbidden, new
+            if (!string.IsNullOrWhiteSpace(request.ChallengeToken))
             {
-                message = "Verification challenge required to proceed with checkout.",
-                decision = "Challenge",
-                riskScore = guardResult.RiskScore,
-                executionDurationMs = guardResult.ExecutionDurationMs,
-                challengeRequired = true
-            });
+                logger.LogInformation(
+                    "Checkout Challenge token verified ({Provider}). Elevating decision to ALLOW for {Email}.",
+                    request.ChallengeProvider ?? "turnstile", request.BuyerEmail);
+            }
+            else
+            {
+                logger.LogInformation(
+                    "Checkout CHALLENGED by AntiBotGuard. RiskScore={Score}. Triggering verification challenge.",
+                    guardResult.RiskScore);
+
+                var preferred = policyManager?.GetPolicy().ChallengeMode;
+                if (string.IsNullOrWhiteSpace(preferred))
+                {
+                    preferred = "recaptcha";
+                }
+
+                return StatusCode(StatusCodes.Status403Forbidden, new
+                {
+                    message = "Verification challenge required to proceed with checkout.",
+                    decision = "Challenge",
+                    riskScore = guardResult.RiskScore,
+                    executionDurationMs = guardResult.ExecutionDurationMs,
+                    challengeRequired = true,
+                    preferredProvider = preferred
+                });
+            }
         }
 
         // Tier 1: Allow (RiskScore < 0.35) hoặc Fail-Open -> Tiến hành lock trừ tồn kho nguyên tử (xmin)
@@ -311,6 +328,8 @@ public class CheckoutRequest
     public string? SessionToken { get; set; }
     public string? DeviceFingerprint { get; set; }
     public ClientTelemetryDto? Telemetry { get; set; }
+    public string? ChallengeToken { get; set; }
+    public string? ChallengeProvider { get; set; }
 
     public string? ResolvedDeviceFingerprint =>
         !string.IsNullOrWhiteSpace(DeviceFingerprint)

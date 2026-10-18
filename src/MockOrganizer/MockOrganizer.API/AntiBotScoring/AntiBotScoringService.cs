@@ -40,14 +40,17 @@ public class AntiBotScoringService : IAntiBotScoringService, IDisposable
     private readonly InferenceSession? _session;
     private readonly string _inputName;
     private readonly string _outputName;
+    private readonly IAntiBotPolicyManager? _policyManager;
     private bool _disposed;
 
     public AntiBotScoringService(
         IOptions<AntiBotScoringOptions> options,
-        ILogger<AntiBotScoringService> logger)
+        ILogger<AntiBotScoringService> logger,
+        IAntiBotPolicyManager? policyManager = null)
     {
         _logger = logger;
         _options = options.Value;
+        _policyManager = policyManager;
         _inputName = _options.InputNodeName;
         _outputName = _options.OutputNodeName;
 
@@ -141,10 +144,14 @@ public class AntiBotScoringService : IAntiBotScoringService, IDisposable
         sw.Stop();
         double elapsedMs = sw.Elapsed.TotalMilliseconds;
 
+        var policy = _policyManager?.GetPolicy();
+        float allowThreshold = policy?.AllowThreshold ?? _options.AllowThreshold;
+        float blockThreshold = policy?.BlockThreshold ?? _options.BlockThreshold;
+
         AntiBotDecision decision = botProbability switch
         {
-            _ when botProbability < _options.AllowThreshold => AntiBotDecision.Allow,
-            _ when botProbability >= _options.BlockThreshold => AntiBotDecision.Block,
+            _ when botProbability < allowThreshold => AntiBotDecision.Allow,
+            _ when botProbability >= blockThreshold => AntiBotDecision.Block,
             _ => AntiBotDecision.Challenge
         };
 

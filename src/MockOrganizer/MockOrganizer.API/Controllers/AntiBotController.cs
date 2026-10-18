@@ -3,21 +3,36 @@ using MockOrganizer.API.AntiBotScoring;
 
 namespace MockOrganizer.API.Controllers;
 
+public record UpdateAntiBotPolicyRequest
+{
+    public float AllowThreshold { get; init; } = 0.35f;
+    public float BlockThreshold { get; init; } = 0.75f;
+    public string? ChallengeMode { get; init; }
+    public string? EventId { get; init; }
+    public string? UpdatedBy { get; init; }
+}
+
 [ApiController]
 [Route("api/anti-bot")]
 [Produces("application/json")]
 public class AntiBotController : ControllerBase
 {
     private readonly IAntiBotScoringService _scoringService;
+    private readonly IAntiBotPolicyManager _policyManager;
+    private readonly IAntiBotAnalyticsCollector _analyticsCollector;
     private readonly IHostEnvironment _env;
     private readonly ILogger<AntiBotController> _logger;
 
     public AntiBotController(
         IAntiBotScoringService scoringService,
+        IAntiBotPolicyManager policyManager,
+        IAntiBotAnalyticsCollector analyticsCollector,
         IHostEnvironment env,
         ILogger<AntiBotController> logger)
     {
         _scoringService = scoringService;
+        _policyManager = policyManager;
+        _analyticsCollector = analyticsCollector;
         _env = env;
         _logger = logger;
     }
@@ -43,6 +58,80 @@ public class AntiBotController : ControllerBase
             result.RiskScore, result.Decision, result.InferenceTimeMs);
 
         return Ok(result);
+    }
+
+    /// <summary>
+    /// Lấy cấu hình ngưỡng phân luồng quyết định hiện tại (US-8.4, SCRUM-260).
+    /// </summary>
+    [HttpGet("policy")]
+    [ProducesResponseType(typeof(AntiBotPolicyConfig), StatusCodes.Status200OK)]
+    public ActionResult<AntiBotPolicyConfig> GetPolicy([FromQuery] string? eventId = null)
+    {
+        var policy = _policyManager.GetPolicy(eventId);
+        return Ok(policy);
+    }
+
+    /// <summary>
+    /// Cập nhật ngưỡng động trong runtime không cần restart (US-8.4, SCRUM-260).
+    /// </summary>
+    [HttpPut("policy")]
+    [ProducesResponseType(typeof(AntiBotPolicyConfig), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public ActionResult<AntiBotPolicyConfig> UpdatePolicy([FromBody] UpdateAntiBotPolicyRequest request)
+    {
+        if (!ModelState.IsValid)
+        {
+            return BadRequest(ModelState);
+        }
+
+        bool success = _policyManager.TryUpdatePolicy(
+            request.AllowThreshold,
+            request.BlockThreshold,
+            out string? errorMessage,
+            request.EventId,
+            request.UpdatedBy,
+            request.ChallengeMode);
+
+        if (!success)
+        {
+            return BadRequest(new { message = errorMessage });
+        }
+
+        var updatedPolicy = _policyManager.GetPolicy(request.EventId);
+        return Ok(updatedPolicy);
+    }
+
+    /// <summary>
+    /// Đặt lại ngưỡng về mặc định ban đầu (Allow = 0.35, Block = 0.75).
+    /// </summary>
+    [HttpPost("policy/reset")]
+    [ProducesResponseType(typeof(AntiBotPolicyConfig), StatusCodes.Status200OK)]
+    public ActionResult<AntiBotPolicyConfig> ResetPolicy([FromQuery] string? eventId = null)
+    {
+        _policyManager.ResetToDefault(eventId);
+        return Ok(_policyManager.GetPolicy(eventId));
+    }
+
+    /// <summary>
+    /// Lấy báo cáo phân bổ lưu lượng và danh sách giao dịch gần nhất cho Dashboard BTC (US-8.4, SCRUM-259).
+    /// </summary>
+    [HttpGet("analytics")]
+    [ProducesResponseType(typeof(AntiBotAnalyticsSummary), StatusCodes.Status200OK)]
+    public ActionResult<AntiBotAnalyticsSummary> GetAnalytics([FromQuery] string? eventId = null)
+    {
+        var summary = _analyticsCollector.GetSummary(eventId);
+        return Ok(summary);
+    }
+
+    /// <summary>
+    /// Đặt lại số liệu thống kê an ninh (phục vụ demo / testing).
+    /// </summary>
+    [HttpPost("analytics/reset")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public IActionResult ResetAnalytics([FromQuery] string? eventId = null)
+    {
+        _analyticsCollector.Reset(eventId);
+        return Ok(new { message = "Analytics reset successfully." });
     }
 
     /// <summary>
