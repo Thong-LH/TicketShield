@@ -62,6 +62,9 @@ builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
 });
 builder.Services.AddSingleton<MockOrganizer.API.Services.IRedisSlidingWindowService, MockOrganizer.API.Services.RedisSlidingWindowService>();
 
+// SCRUM-247: Chặn replay checkout bằng nonce dùng một lần (Redis SET NX, fallback In-Memory)
+builder.Services.AddSingleton<MockOrganizer.API.Services.IReplayGuardService, MockOrganizer.API.Services.ReplayGuardService>();
+
 builder.Services.AddScoped<MockOrganizer.API.Services.IServerTransactionTelemetryService, MockOrganizer.API.Services.ServerTransactionTelemetryService>();
 builder.Services.AddScoped<IAntiBotGuardService, AntiBotGuardService>();
 

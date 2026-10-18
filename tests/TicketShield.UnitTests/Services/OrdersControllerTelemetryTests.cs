@@ -79,6 +79,7 @@ public sealed class OrdersControllerTelemetryTests : IDisposable
             _telemetryService,
             _sessionTokenService,
             guardMock.Object,
+            new ReplayGuardService(_sessionTokenService),
             NullLogger<OrdersController>.Instance,
             _slidingWindow
         );
