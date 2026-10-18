@@ -4,6 +4,7 @@ using MockOrganizer.API.AntiBotScoring;
 using MockOrganizer.API.Data;
 using MockOrganizer.API.Entities;
 using MockOrganizer.API.Models;
+using MockOrganizer.API.Resale;
 using MockOrganizer.API.Services;
 
 namespace MockOrganizer.API.Controllers;
@@ -17,6 +18,7 @@ public class OrdersController(
     IAntiBotGuardService antiBotGuardService,
     ILogger<OrdersController> logger,
     IRedisSlidingWindowService? slidingWindowService = null,
+    ResaleOptions? resaleOptions = null,
     TimeProvider? clock = null)
     : ControllerBase
 {
@@ -121,6 +123,8 @@ public class OrdersController(
             "Checkout allowed by AntiBotGuard (FailOpen={IsFailOpen}): RiskScore={Score}, GuardLatency={Duration}ms",
             guardResult.IsFailOpen, guardResult.RiskScore, guardResult.ExecutionDurationMs);
 
+        var now = _clock.GetUtcNow();
+
         for (var attempt = 1; attempt <= MaxRetries; attempt++)
         {
             await using var tx = await db.Database.BeginTransactionAsync(ct);
@@ -160,7 +164,45 @@ public class OrdersController(
                 };
                 db.MockOrders.Add(order);
 
-                // 5. SaveChanges — EF kiểm tra xmin, ném DbUpdateConcurrencyException nếu race
+                // 5. Sinh MockTicket chính thức cho từng vé trong cùng Transaction nguyên tử
+                var orgId = Guid.TryParse(resaleOptions?.OrganizerId, out var g)
+                    ? g
+                    : Guid.Parse("e0000000-0000-0000-0000-000000000001");
+
+                var issuedTickets = new List<MockTicket>();
+                for (var i = 0; i < request.Quantity; i++)
+                {
+                    var randHex = Guid.NewGuid().ToString("N")[..8].ToUpperInvariant();
+                    var ticketCode = $"{GenerateTierPrefix(tier.TierName)}-{now:yyyy}-{randHex}";
+                    var ticket = new MockTicket
+                    {
+                        Id            = Guid.NewGuid(),
+                        OrganizerId   = orgId,
+                        TicketCode    = ticketCode,
+                        EventName     = tier.EventId,
+                        SeatZone      = tier.TierName,
+                        OriginalPrice = tier.Price,
+                        OwnerEmail    = request.BuyerEmail?.Trim() ?? string.Empty,
+                        OwnerName     = request.BuyerName?.Trim(),
+                        OwnerPhone    = request.BuyerPhone?.Trim(),
+                        Status        = "VALID",
+                        CreatedAt     = now.UtcDateTime,
+                        UpdatedAt     = now.UtcDateTime,
+                    };
+                    db.MockTickets.Add(ticket);
+                    issuedTickets.Add(ticket);
+
+                    if (resaleOptions != null)
+                    {
+                        resaleOptions.TicketMappings[ticket.TicketCode] = new TicketMapping
+                        {
+                            EventId = tier.EventId,
+                            TierId  = tier.Id.ToString()
+                        };
+                    }
+                }
+
+                // 6. SaveChanges — EF kiểm tra xmin, ném DbUpdateConcurrencyException nếu race
                 await db.SaveChangesAsync(ct);
                 await tx.CommitAsync(ct);
 
@@ -181,6 +223,15 @@ public class OrdersController(
                     totalAmount        = order.TotalAmount,
                     status             = order.Status,
                     remainingAvailable = tier.AvailableQuantity,
+                    tickets            = issuedTickets.Select(t => new
+                    {
+                        ticketCode  = t.TicketCode,
+                        seatZone    = t.SeatZone,
+                        ownerEmail  = t.OwnerEmail,
+                        ownerName   = t.OwnerName,
+                        ownerPhone  = t.OwnerPhone,
+                        status      = t.Status,
+                    }),
                     antiBot = new
                     {
                         decision        = guardResult.Decision.ToString(),
@@ -227,6 +278,14 @@ public class OrdersController(
 
         return StatusCode(503, new { message = "Checkout failed unexpectedly." });
     }
+
+    private static string GenerateTierPrefix(string tierName)
+    {
+        var lower = tierName.ToLowerInvariant();
+        if (lower.Contains("vip") || lower.Contains("diamond")) return "ATSH-VIP";
+        if (lower.Contains("ga") || lower.Contains("standing")) return "ATSH-GA";
+        return "ATSH-STD";
+    }
 }
 
 public class CheckoutRequest
@@ -234,6 +293,8 @@ public class CheckoutRequest
     public Guid TierId { get; set; }
     public int Quantity { get; set; }
     public string? BuyerEmail { get; set; }
+    public string? BuyerName { get; set; }
+    public string? BuyerPhone { get; set; }
     public string? SessionToken { get; set; }
     public string? DeviceFingerprint { get; set; }
     public ClientTelemetryDto? Telemetry { get; set; }
