@@ -73,16 +73,37 @@ Mọi bản ghi dữ liệu (huấn luyện CSV hay nhật ký thực thi server
 
 ## 5. Cấu Trúc Payload Trao Đổi Client-Server (REST API Contract)
 
+`POST /api/organizer/orders/checkout` (tên trường ngoài cùng theo `CheckoutRequest`, trong `telemetry` giữ snake_case):
+
 ```json
 {
-  "session_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-  "ticket_id": "TCK-VIP-2026-001",
+  "tierId": "c0000000-0000-0000-0000-000000000002",
   "quantity": 2,
+  "buyerEmail": "buyer@example.com",
+  "sessionToken": "<payloadBase64Url>.<hmacBase64Url>",
   "telemetry": {
     "is_webdriver": 0,
     "action_interval_std_dev": 285.4,
-    "device_fingerprint": "a1b2c3d4e5f67890abcdef1234567890"
+    "device_fingerprint": "a1b2c3d4e5f67890abcdef1234567890",
+    "nonce": "0360dc7d-f018-410c-bd1b-380e79bc9f2d",
+    "client_timestamp": 1792324839620
   }
 }
 ```
 *(Nếu bot gọi thẳng API và không gửi object `telemetry`, server tự động gán `telemetry_missing = 1` và áp dụng chế tài rủi ro).*
+
+- `sessionToken`: lấy từ `GET /api/organizer/orders/session?tierId=` khi mở trang chọn vé, mỗi hạng vé một token.
+- `nonce` (SCRUM-247): UUID v4 mới cho mỗi request, tối đa 64 ký tự.
+- `client_timestamp` (SCRUM-247): epoch mili-giây lúc gửi, client chỉnh theo `issuedAtUtc` của session token để bù đồng hồ máy lệch.
+
+### 5.1. Chặn phát lại trước khi chấm điểm (SCRUM-247)
+
+Kiểm tra chạy trước Anti-Bot Guard, không bị Fail-Open 20ms bỏ qua. Request bị từ chối không được chấm điểm, không tính vào Redis Sliding Window, không trừ tồn kho.
+
+| Điều kiện | HTTP | `code` |
+| :--- | :--- | :--- |
+| Session token hợp lệ nhưng cấp cho hạng vé khác `tierId` | 409 | `TIER_MISMATCH` |
+| Có `nonce` nhưng thiếu `client_timestamp`, hoặc lệch giờ server quá 5 giây | 409 | `CLOCK_SKEW` |
+| `nonce` rỗng, dài quá 64 ký tự, hoặc đã dùng trong 10 phút qua (Redis `SET NX EX 600`, dự phòng In-Memory) | 409 | `REPLAY` |
+
+Không có `nonce` thì bỏ qua kiểm tra giờ và nonce (client cũ). 409 hết vé không có trường `code`, client phân biệt bằng trường này.

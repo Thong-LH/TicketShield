@@ -15,6 +15,7 @@ public class OrdersController(
     IServerTransactionTelemetryService telemetryService,
     ISessionTokenService sessionTokenService,
     IAntiBotGuardService antiBotGuardService,
+    IReplayGuardService replayGuardService,
     ILogger<OrdersController> logger,
     IRedisSlidingWindowService? slidingWindowService = null,
     TimeProvider? clock = null)
@@ -54,6 +55,18 @@ public class OrdersController(
     {
         if (request.Quantity <= 0)
             return BadRequest(new { message = "Quantity must be greater than 0." });
+
+        // SCRUM-247: Chặn replay (nonce, lệch giờ, khớp hạng vé) TRƯỚC Anti-Bot Guard
+        // để không bị Fail-Open bỏ qua và không làm tăng bộ đếm Redis Sliding Window.
+        var replayResult = await replayGuardService.ValidateAsync(request, ct);
+        if (!replayResult.IsAllowed)
+        {
+            logger.LogWarning(
+                "Checkout REJECTED by ReplayGuard. Code={Code}, TierId={TierId}",
+                replayResult.Code, request.TierId);
+
+            return Conflict(new { message = replayResult.Message, code = replayResult.Code });
+        }
 
         var clientIp = HttpContext?.Request?.Headers["X-Forwarded-For"].FirstOrDefault()
             ?? HttpContext?.Connection?.RemoteIpAddress?.ToString();

@@ -39,6 +39,14 @@ public record ClientTelemetryDto
 
     [JsonPropertyName("device_fingerprint")]
     public string? DeviceFingerprint { get; init; }
+
+    /// <summary>Mã dùng một lần do Client SDK sinh cho mỗi request (SCRUM-247).</summary>
+    [JsonPropertyName("nonce")]
+    public string? Nonce { get; init; }
+
+    /// <summary>Giờ gửi request (epoch ms) đã chỉnh theo giờ server (SCRUM-247).</summary>
+    [JsonPropertyName("client_timestamp")]
+    public long? ClientTimestamp { get; init; }
 }
 
 /// <summary>
