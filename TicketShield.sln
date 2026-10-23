@@ -41,6 +41,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TicketShield.Identity.Infra
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TicketShield.Settlement.API", "src\TicketShield.Settlement.API\TicketShield.Settlement.API.csproj", "{E4B0BDAA-46F0-4F86-8E25-3CA66FF8659E}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TicketShield.AntiBot.Gateway", "src\TicketShield.AntiBot.Gateway\TicketShield.AntiBot.Gateway.csproj", "{DE9180CA-02BB-4553-B09A-99CEA6F2C12B}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -219,6 +221,18 @@ Global
 		{E4B0BDAA-46F0-4F86-8E25-3CA66FF8659E}.Release|x64.Build.0 = Release|Any CPU
 		{E4B0BDAA-46F0-4F86-8E25-3CA66FF8659E}.Release|x86.ActiveCfg = Release|Any CPU
 		{E4B0BDAA-46F0-4F86-8E25-3CA66FF8659E}.Release|x86.Build.0 = Release|Any CPU
+		{DE9180CA-02BB-4553-B09A-99CEA6F2C12B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{DE9180CA-02BB-4553-B09A-99CEA6F2C12B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{DE9180CA-02BB-4553-B09A-99CEA6F2C12B}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{DE9180CA-02BB-4553-B09A-99CEA6F2C12B}.Debug|x64.Build.0 = Debug|Any CPU
+		{DE9180CA-02BB-4553-B09A-99CEA6F2C12B}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{DE9180CA-02BB-4553-B09A-99CEA6F2C12B}.Debug|x86.Build.0 = Debug|Any CPU
+		{DE9180CA-02BB-4553-B09A-99CEA6F2C12B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{DE9180CA-02BB-4553-B09A-99CEA6F2C12B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{DE9180CA-02BB-4553-B09A-99CEA6F2C12B}.Release|x64.ActiveCfg = Release|Any CPU
+		{DE9180CA-02BB-4553-B09A-99CEA6F2C12B}.Release|x64.Build.0 = Release|Any CPU
+		{DE9180CA-02BB-4553-B09A-99CEA6F2C12B}.Release|x86.ActiveCfg = Release|Any CPU
+		{DE9180CA-02BB-4553-B09A-99CEA6F2C12B}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -240,5 +254,6 @@ Global
 		{B9D58B11-7B90-43EA-9066-0B25192EB866} = {2A32C63B-6962-9799-37ED-5207156C076E}
 		{3F98AC32-BBA2-4A72-92E7-D8AFB8477782} = {2A32C63B-6962-9799-37ED-5207156C076E}
 		{E4B0BDAA-46F0-4F86-8E25-3CA66FF8659E} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+		{DE9180CA-02BB-4553-B09A-99CEA6F2C12B} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 	EndGlobalSection
 EndGlobal
