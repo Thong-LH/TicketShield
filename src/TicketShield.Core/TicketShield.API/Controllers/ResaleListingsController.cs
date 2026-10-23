@@ -16,6 +16,8 @@ using TicketShield.Application.Features.ResaleListings.Queries.GetPaymentStatus;
 using TicketShield.Application.Features.ResaleListings.Queries.GetResaleListingByPrivateToken;
 using TicketShield.Application.Features.ResaleListings.Queries.GetResaleListingDetail;
 using TicketShield.Application.Features.ResaleListings.Queries.GetSellerListings;
+using TicketShield.Application.Features.Admin.FeeSettings.Models;
+using TicketShield.Application.Features.Admin.FeeSettings.Queries.GetFeeSettings;
 using TicketShield.Application.Resale;
 using TicketShield.Domain.Enums;
 
@@ -272,6 +274,19 @@ public class ResaleListingsController(
         }
 
         var result = await Mediator.Send(new SimulatePaymentSuccessCommand(id), ct);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// BE-CORE-2.6.2: Retrieve current public resale fee policy (buyer & seller percentages, minimum fees)
+    /// </summary>
+    [AllowAnonymous]
+    [HttpGet("fee-policy")]
+    [HttpGet("/api/v1/fee-settings/public")]
+    [ProducesResponseType(typeof(ApiResponse<ResaleFeeConfig>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetFeePolicy(CancellationToken ct)
+    {
+        var result = await Mediator.Send(new GetFeeSettingsQuery(), ct);
         return Ok(result);
     }
 }
