@@ -23,8 +23,8 @@ public class GetDisputeEvidenceFileQueryHandler : IRequestHandler<GetDisputeEvid
 
     public async Task<DisputeEvidenceFileResult> Handle(GetDisputeEvidenceFileQuery request, CancellationToken cancellationToken)
     {
-        var buyerId = _currentUser?.UserId ?? Guid.Empty;
-        if (buyerId == Guid.Empty)
+        var userId = _currentUser?.UserId ?? Guid.Empty;
+        if (userId == Guid.Empty)
         {
             throw new UnauthorizedException("Bạn phải đăng nhập để xem ảnh khiếu nại.");
         }
@@ -37,7 +37,9 @@ public class GetDisputeEvidenceFileQueryHandler : IRequestHandler<GetDisputeEvid
             throw new NotFoundException("Khiếu nại", request.DisputeId);
         }
 
-        if (dispute.BuyerId != buyerId)
+        // Người mua xem ảnh của mình; nhân viên xử lý khiếu nại xem được mọi ảnh.
+        var isStaff = _currentUser?.Role is "Admin" or "Cskh" or "Moderator";
+        if (dispute.BuyerId != userId && !isStaff)
         {
             throw new ForbiddenAccessException("Bạn không có quyền xem ảnh khiếu nại này.");
         }
