@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Mvc;
 using TicketShield.API.Filters;
 using TicketShield.Application.Common.Interfaces;
 using TicketShield.Application.Common.Models;
+using TicketShield.Application.Features.Admin.FeeSettings.Models;
+using TicketShield.Application.Features.Admin.FeeSettings.Queries.GetFeeSettings;
 using TicketShield.Application.Features.ResaleListings.Commands.CancelResaleListing;
 using TicketShield.Application.Features.ResaleListings.Commands.CreateMultiResaleListing;
 using TicketShield.Application.Features.ResaleListings.Commands.HoldListingForPurchase;
@@ -16,8 +18,6 @@ using TicketShield.Application.Features.ResaleListings.Queries.GetPaymentStatus;
 using TicketShield.Application.Features.ResaleListings.Queries.GetResaleListingByPrivateToken;
 using TicketShield.Application.Features.ResaleListings.Queries.GetResaleListingDetail;
 using TicketShield.Application.Features.ResaleListings.Queries.GetSellerListings;
-using TicketShield.Application.Features.Admin.FeeSettings.Models;
-using TicketShield.Application.Features.Admin.FeeSettings.Queries.GetFeeSettings;
 using TicketShield.Application.Resale;
 using TicketShield.Domain.Enums;
 
@@ -278,10 +278,12 @@ public class ResaleListingsController(
     }
 
     /// <summary>
-    /// BE-CORE-2.6.2: Retrieve current public resale fee policy (buyer & seller percentages, minimum fees)
+    /// BE-CORE-2.6.2: Retrieve current public resale fee policy (buyer &amp; seller percentages, minimum fees)
+    /// Hỗ trợ cả 3 route aliases: fee-policy, fee-config và /api/v1/fee-settings/public
     /// </summary>
     [AllowAnonymous]
     [HttpGet("fee-policy")]
+    [HttpGet("fee-config")]
     [HttpGet("/api/v1/fee-settings/public")]
     [ProducesResponseType(typeof(ApiResponse<ResaleFeeConfig>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetFeePolicy(CancellationToken ct)
