@@ -24,7 +24,10 @@ public interface ITicketShieldDbContext
 
     Task<IDbContextTransactionProxy?> BeginAdvisoryLockTransactionAsync(long lockKey, CancellationToken cancellationToken = default);
 
-    Task<IDbContextTransactionProxy?> TryBeginAdvisoryLockTransactionAsync(long lockKey, CancellationToken cancellationToken = default);
+    // Leader lock for background workers. It lives on its own connection, so the caller's
+    // SaveChanges commit normally and services may open their own transactions.
+    // Returns null when another instance holds the lock; dispose to release it.
+    Task<IAsyncDisposable?> TryAcquireWorkerLockAsync(long lockKey, CancellationToken cancellationToken = default);
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

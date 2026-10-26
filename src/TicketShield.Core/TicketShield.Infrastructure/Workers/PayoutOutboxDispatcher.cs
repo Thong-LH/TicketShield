@@ -47,8 +47,8 @@ public class PayoutOutboxDispatcher : BackgroundService
 
         // FIX Lỗi 03: Non-blocking Distributed Advisory Lock (Leader Election)
         var lockKey = ComputeWorkerLockKey(nameof(PayoutOutboxDispatcher));
-        await using var lockTx = await db.TryBeginAdvisoryLockTransactionAsync(lockKey, cancellationToken);
-        if (lockTx == null)
+        await using var workerLock = await db.TryAcquireWorkerLockAsync(lockKey, cancellationToken);
+        if (workerLock == null)
         {
             _logger.LogDebug("Another instance is already dispatching payout outbox. Skipping cycle.");
             return 0;
