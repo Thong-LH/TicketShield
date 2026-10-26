@@ -52,6 +52,19 @@ public static class DatabaseSeeder
         shadowAdmin.Role = UserRole.Admin;
         shadowAdmin.IsActive = true;
 
+        var moderatorId = Guid.Parse("33333333-3333-3333-3333-333333333333");
+        var shadowModerator = await context.ShadowUsers.FirstOrDefaultAsync(u => u.Id == moderatorId);
+        if (shadowModerator == null)
+        {
+            shadowModerator = new ShadowUser { Id = moderatorId };
+            await context.ShadowUsers.AddAsync(shadowModerator);
+        }
+        shadowModerator.Email = "moderator@ticketshield.vn";
+        shadowModerator.FullName = "Le Thi CSKH & Moderator";
+        shadowModerator.PhoneNumber = "0933333333";
+        shadowModerator.Role = UserRole.Moderator;
+        shadowModerator.IsActive = true;
+
         await context.SaveChangesAsync();
 
         // 3. Seed / Sync Organizer, Concert Events & Ticket Tiers
