@@ -140,6 +140,9 @@ using (var scope = app.Services.CreateScope())
     }
 }
 
+// Dựng sớm kho ảnh bằng chứng để log khởi động báo đang dùng Cloudinary hay ổ đĩa (SCRUM-268).
+app.Services.GetRequiredService<IDisputeEvidenceFileStore>();
+
 // Configure the HTTP request pipeline.
 app.UseMiddleware<GlobalExceptionHandlingMiddleware>();
 

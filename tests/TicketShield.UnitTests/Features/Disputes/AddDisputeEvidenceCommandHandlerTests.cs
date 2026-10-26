@@ -6,6 +6,7 @@ using TicketShield.API.Middlewares;
 using TicketShield.Application.Common.Interfaces;
 using TicketShield.Application.Features.Disputes.Commands.AddDisputeEvidence;
 using TicketShield.Application.Features.Disputes.Queries.GetDisputeEvidenceFile;
+using TicketShield.Application.Features.Disputes.Queries.GetDisputes;
 using TicketShield.Domain.Entities;
 using TicketShield.Domain.Enums;
 using TicketShield.Domain.Exceptions;
@@ -218,6 +219,89 @@ public class AddDisputeEvidenceCommandHandlerTests
         Assert.Equal(403, await StatusCodeOf(ex));
     }
 
+    [Theory]
+    [InlineData("Admin")]
+    [InlineData("Cskh")]
+    [InlineData("Moderator")]
+    public async Task Handle_WhenStaffWhoIsNotTheBuyerReadsTheImage_ReturnsTheBytes(string role)
+    {
+        await using var db = CreateDb();
+        var seeded = await SeedDisputeAsync(db);
+        using var files = new TempEvidenceStore();
+        var added = await new AddDisputeEvidenceCommandHandler(db, files.Store, new StubUser(seeded.BuyerId)).Handle(
+            new AddDisputeEvidenceCommand
+            {
+                DisputeId = seeded.DisputeId,
+                Content = Jpeg,
+                ContentType = "image/jpeg"
+            }, CancellationToken.None);
+
+        var file = await new GetDisputeEvidenceFileQueryHandler(db, files.Store, new StubUser(Guid.NewGuid(), role)).Handle(
+            new GetDisputeEvidenceFileQuery
+            {
+                DisputeId = seeded.DisputeId,
+                EvidenceId = added.Data!.EvidenceId
+            }, CancellationToken.None);
+
+        Assert.Equal(Jpeg, file.Content);
+        Assert.Equal("image/jpeg", file.ContentType);
+    }
+
+    [Fact]
+    public async Task Handle_WhenNobodyIsSignedInAndReadsTheImage_Returns401()
+    {
+        await using var db = CreateDb();
+        var seeded = await SeedDisputeAsync(db);
+        using var files = new TempEvidenceStore();
+        var added = await new AddDisputeEvidenceCommandHandler(db, files.Store, new StubUser(seeded.BuyerId)).Handle(
+            new AddDisputeEvidenceCommand
+            {
+                DisputeId = seeded.DisputeId,
+                Content = Png,
+                ContentType = "image/png"
+            }, CancellationToken.None);
+
+        var ex = await Assert.ThrowsAsync<UnauthorizedException>(() =>
+            new GetDisputeEvidenceFileQueryHandler(db, files.Store, new StubUser(null, "Admin")).Handle(
+                new GetDisputeEvidenceFileQuery
+                {
+                    DisputeId = seeded.DisputeId,
+                    EvidenceId = added.Data!.EvidenceId
+                }, CancellationToken.None));
+
+        Assert.Equal(401, await StatusCodeOf(ex));
+    }
+
+    [Fact]
+    public async Task GetDisputes_WhenEvidenceIsStoredAsCloudinaryUrl_DoesNotSendTheUrlToTheBrowser()
+    {
+        // SQLite không ORDER BY được DateTimeOffset mà danh sách khiếu nại lại sắp theo CreatedAt.
+        await using var db = new TicketShieldDbContext(new DbContextOptionsBuilder<TicketShieldDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options);
+        var seeded = await SeedDisputeAsync(db);
+        const string secureUrl =
+            "https://res.cloudinary.com/xfxlcgql/image/authenticated/s--AbCd1234--/v1761500000/dispute-evidence/0123456789abcdef0123456789abcdef.png";
+        var evidenceId = Guid.NewGuid();
+        db.DisputeEvidences.Add(new DisputeEvidence
+        {
+            Id = evidenceId,
+            DisputeId = seeded.DisputeId,
+            UploaderId = seeded.BuyerId,
+            EvidenceType = "IMAGE",
+            FileUrl = secureUrl
+        });
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var result = await new GetDisputesQueryHandler(db, new StubUser(Guid.NewGuid(), "Admin"))
+            .Handle(new GetDisputesQuery(), CancellationToken.None);
+
+        var evidence = Assert.Single(Assert.Single(result.Data!.Items).Evidences);
+        Assert.Equal(evidenceId, evidence.EvidenceId);
+        Assert.Equal("", evidence.FileUrl);
+    }
+
     private static async Task<int> StatusCodeOf(Exception exception)
     {
         var context = new DefaultHttpContext();
@@ -345,11 +429,11 @@ public class AddDisputeEvidenceCommandHandlerTests
         }
     }
 
-    private sealed class StubUser(Guid? userId) : ICurrentUserService
+    private sealed class StubUser(Guid? userId, string role = "User") : ICurrentUserService
     {
         public Guid? UserId { get; } = userId;
         public string? Email => "buyer@test.local";
-        public string? Role => "User";
+        public string? Role { get; } = role;
         public bool IsAuthenticated => UserId.HasValue;
     }
 }
