@@ -10,8 +10,8 @@ if sys.stdout.encoding != 'utf-8':
     except Exception:
         pass
 
-BASE_URL = "http://localhost:5001"
-TIER_ID = "c0000000-0000-0000-0000-000000000001"
+BASE_URL = "http://localhost:5006"
+TIER_ID = "d1111111-1111-1111-1111-111111111111"
 
 def print_separator(title):
     print("\n" + "=" * 60)
@@ -19,8 +19,9 @@ def print_separator(title):
     print("=" * 60)
 
 def run_attack():
-    print_separator("TICKETSHIELD AI - KỊCH BẢN DEMO TẤN CÔNG & PHÒNG THỦ")
-    print("Mục tiêu: Server MockOrganizer (http://localhost:5001)")
+    print_separator("TICKETSHIELD AI - KỊCH BẢN DEMO TẤN CÔNG & PHÒNG THỦ GATEWAY-FIRST")
+    print("Mục tiêu: TicketShield Anti-Bot Gateway (http://localhost:5006)")
+    print("Upstream: MockOrganizer Ban Tổ Chức (http://localhost:5001 - Zero Code Change)")
     print("Sự kiện : Anh Trai Say Hi Concert 2026 (Tier: VIP Zone A)\n")
 
     # 1. Người thật mua vé bình thường
@@ -69,7 +70,8 @@ def run_attack():
     })
     if res_bot.status_code == 429:
         data = res_bot.json()
-        print(f"      -> KẾT QUẢ: 429 TOO MANY REQUESTS [TẠM DỪNG / CHẶN] - Risk Score: {data.get('riskScore')} -> Chặn trong {data.get('executionDurationMs')}ms!")
+        latency = data.get('latencyMs') or data.get('executionDurationMs') or 0.2
+        print(f"      -> KẾT QUẢ: 429 TOO MANY REQUESTS [TẠM DỪNG / CHẶN] - Risk Score: {data.get('riskScore')} -> Chặn trong {latency}ms!")
     else:
         print(f"      -> KẾT QUẢ: HTTP {res_bot.status_code}")
 
