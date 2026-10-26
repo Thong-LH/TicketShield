@@ -54,8 +54,8 @@ public class DisputeHarvestWorker : BackgroundService
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ITicketShieldDbContext>();
         var lockKey = ComputeWorkerLockKey(nameof(DisputeHarvestWorker));
-        await using var lockTx = await db.TryBeginAdvisoryLockTransactionAsync(lockKey, cancellationToken);
-        if (lockTx == null)
+        await using var workerLock = await db.TryAcquireWorkerLockAsync(lockKey, cancellationToken);
+        if (workerLock == null)
         {
             _logger.LogDebug("Another instance is already harvesting dispute evidence. Skipping cycle.");
             return 0;

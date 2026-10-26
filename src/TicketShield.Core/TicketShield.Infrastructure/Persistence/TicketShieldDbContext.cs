@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
+using Npgsql;
 using TicketShield.Application.Common.Interfaces;
 using TicketShield.Domain.Entities;
 
@@ -321,29 +322,33 @@ public class TicketShieldDbContext : DbContext, ITicketShieldDbContext
         return new DbContextTransactionProxy(null);
     }
 
-    public async Task<IDbContextTransactionProxy?> TryBeginAdvisoryLockTransactionAsync(long lockKey, CancellationToken cancellationToken = default)
+    public async Task<IAsyncDisposable?> TryAcquireWorkerLockAsync(long lockKey, CancellationToken cancellationToken = default)
     {
-        if (Database.IsRelational() && Database.ProviderName?.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) == true)
+        if (!Database.IsRelational() || Database.ProviderName?.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) != true)
         {
-            var tx = await Database.BeginTransactionAsync(cancellationToken);
-            var conn = Database.GetDbConnection();
-            await using var cmd = conn.CreateCommand();
-            cmd.Transaction = tx.GetDbTransaction();
-            cmd.CommandText = "SELECT pg_try_advisory_xact_lock(@lockKey)";
-            var param = cmd.CreateParameter();
-            param.ParameterName = "lockKey";
-            param.Value = lockKey;
-            cmd.Parameters.Add(param);
-
-            var result = await cmd.ExecuteScalarAsync(cancellationToken);
-            if (result is bool acquired && acquired)
-            {
-                return new DbContextTransactionProxy(tx);
-            }
-            await tx.RollbackAsync(cancellationToken);
-            return null;
+            return new DbContextTransactionProxy(null);
         }
-        return new DbContextTransactionProxy(null);
+
+        // Session-level lock on a separate connection: no transaction is left open on this context.
+        var connection = new NpgsqlConnection(Database.GetConnectionString());
+        try
+        {
+            await connection.OpenAsync(cancellationToken);
+            await using var cmd = new NpgsqlCommand("SELECT pg_try_advisory_lock(@lockKey)", connection);
+            cmd.Parameters.AddWithValue("lockKey", lockKey);
+            if (await cmd.ExecuteScalarAsync(cancellationToken) is true)
+            {
+                return new WorkerLock(connection, lockKey);
+            }
+        }
+        catch
+        {
+            await connection.DisposeAsync();
+            throw;
+        }
+
+        await connection.DisposeAsync();
+        return null;
     }
 
     public async Task<T?> ReadCoreResaleRecordAsync<T>(string id, CancellationToken ct = default) where T : class
@@ -369,6 +374,28 @@ public class TicketShieldDbContext : DbContext, ITicketShieldDbContext
         public Task CommitAsync(CancellationToken cancellationToken = default) => tx != null ? tx.CommitAsync(cancellationToken) : Task.CompletedTask;
         public Task RollbackAsync(CancellationToken cancellationToken = default) => tx != null ? tx.RollbackAsync(cancellationToken) : Task.CompletedTask;
         public ValueTask DisposeAsync() => tx != null ? tx.DisposeAsync() : ValueTask.CompletedTask;
+    }
+
+    private sealed class WorkerLock(NpgsqlConnection connection, long lockKey) : IAsyncDisposable
+    {
+        public async ValueTask DisposeAsync()
+        {
+            try
+            {
+                await using var cmd = new NpgsqlCommand("SELECT pg_advisory_unlock(@lockKey)", connection);
+                cmd.Parameters.AddWithValue("lockKey", lockKey);
+                await cmd.ExecuteScalarAsync();
+            }
+            catch
+            {
+                // A session lock would survive inside the pool; drop the connection instead of reusing it.
+                NpgsqlConnection.ClearPool(connection);
+            }
+            finally
+            {
+                await connection.DisposeAsync();
+            }
+        }
     }
 }
 
