@@ -38,15 +38,18 @@ public class AutomaticSettlementWorkerTests
 
         var dueId = Guid.NewGuid();
         var waitingId = Guid.NewGuid();
+        var dueSeller = new ShadowUser { Id = Guid.NewGuid(), Email = "due@test.local", FullName = "Due", PayoutAccountNumber = "0938434102" };
+        var waitingSeller = new ShadowUser { Id = Guid.NewGuid(), Email = "waiting@test.local", FullName = "Waiting", PayoutAccountNumber = "0938434102" };
         await using (var db = provider.GetRequiredService<TicketShieldDbContext>())
         {
+            db.ShadowUsers.AddRange(dueSeller, waitingSeller);
             db.EscrowTransactions.AddRange(
                 new EscrowTransaction
                 {
                     Id = dueId,
                     ListingId = Guid.NewGuid(),
                     BuyerId = Guid.NewGuid(),
-                    SellerId = Guid.NewGuid(),
+                    SellerId = dueSeller.Id,
                     Status = EscrowStatus.Locked,
                     InSettlementBuffer = true,
                     UnlockAt = DateTimeOffset.UtcNow.AddMinutes(-1)
@@ -56,7 +59,7 @@ public class AutomaticSettlementWorkerTests
                     Id = waitingId,
                     ListingId = Guid.NewGuid(),
                     BuyerId = Guid.NewGuid(),
-                    SellerId = Guid.NewGuid(),
+                    SellerId = waitingSeller.Id,
                     Status = EscrowStatus.Locked,
                     InSettlementBuffer = true,
                     UnlockAt = DateTimeOffset.UtcNow.AddHours(2)

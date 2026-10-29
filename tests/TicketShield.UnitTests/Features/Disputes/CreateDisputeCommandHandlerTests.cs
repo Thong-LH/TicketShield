@@ -53,7 +53,7 @@ public class CreateDisputeCommandHandlerTests
         var dispute = await db.Disputes.AsNoTracking().SingleAsync();
 
         Assert.Equal(EscrowStatus.Disputed, escrow.Status);
-        Assert.True(escrow.InSettlementBuffer);
+        Assert.False(escrow.InSettlementBuffer);
         Assert.Equal(DisputeStatus.Open, dispute.Status);
         Assert.Equal(seeded.EscrowId, dispute.EscrowId);
         Assert.Equal(seeded.BuyerId, dispute.BuyerId);

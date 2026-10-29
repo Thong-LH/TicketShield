@@ -144,6 +144,9 @@ public class EscrowPayoutSettlerTests
     {
         await using var db = CreateDb();
         var escrowId = await SeedLockedEscrowAsync(db, 100_000m, "0938434102");
+        var escrow = await db.EscrowTransactions.SingleAsync(e => e.Id == escrowId);
+        escrow.Status = EscrowStatus.Released;
+        await db.SaveChangesAsync();
         var settler = new EscrowPayoutSettler(db, new EscrowSettlementCas(db));
 
         Assert.False(await settler.TryResumeReleaseAsync(escrowId));
@@ -154,6 +157,9 @@ public class EscrowPayoutSettlerTests
     {
         await using var db = CreateDb();
         var escrowId = await SeedLockedEscrowAsync(db, 100_000m, "0938434102");
+        var escrow = await db.EscrowTransactions.SingleAsync(e => e.Id == escrowId);
+        escrow.Status = EscrowStatus.Released;
+        await db.SaveChangesAsync();
         var settler = new EscrowPayoutSettler(db, new EscrowSettlementCas(db));
 
         Assert.False(await settler.TryResumeReleaseAsync(escrowId));

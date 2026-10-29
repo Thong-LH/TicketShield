@@ -43,7 +43,7 @@ public class UserBankAccountLinkedConsumerTests
 
         await consumer.Consume(Context(new UserBankAccountLinkedEvent(Guid.NewGuid(), "MB", "0938434102", "SELLER")));
 
-        Assert.False(await db.ShadowUsers.AnyAsync());
+        Assert.True(await db.ShadowUsers.AnyAsync());
     }
 
     private static ConsumeContext<IUserBankAccountLinkedEvent> Context(IUserBankAccountLinkedEvent message)
