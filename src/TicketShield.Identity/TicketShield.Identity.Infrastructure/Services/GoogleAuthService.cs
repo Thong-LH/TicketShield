@@ -20,13 +20,27 @@ public class GoogleAuthService : IGoogleAuthService
     {
         try
         {
-            var clientId = _configuration["GoogleAuth:ClientId"];
-            var settings = new GoogleJsonWebSignature.ValidationSettings();
+            var webClientId = _configuration["GoogleAuth:ClientId"]
+                              ?? _configuration["GOOGLE_AUTH_CLIENT_ID"]
+                              ?? _configuration["GOOGLEAUTH__CLIENTID"];
+            var androidClientId = _configuration["GoogleAuth:AndroidClientId"]
+                                  ?? _configuration["GOOGLE_AUTH_ANDROID_CLIENT_ID"]
+                                  ?? _configuration["GOOGLEAUTH__ANDROIDCLIENTID"];
 
-            // Only enforce audience check if a real non-mock Google Client ID is configured
-            if (!string.IsNullOrWhiteSpace(clientId) && !clientId.StartsWith("mock-", StringComparison.OrdinalIgnoreCase))
+            var audiences = new List<string>();
+            if (!string.IsNullOrWhiteSpace(webClientId) && !webClientId.StartsWith("mock-", StringComparison.OrdinalIgnoreCase))
             {
-                settings.Audience = new[] { clientId };
+                audiences.Add(webClientId);
+            }
+            if (!string.IsNullOrWhiteSpace(androidClientId) && !androidClientId.StartsWith("mock-", StringComparison.OrdinalIgnoreCase))
+            {
+                audiences.Add(androidClientId);
+            }
+
+            var settings = new GoogleJsonWebSignature.ValidationSettings();
+            if (audiences.Count > 0)
+            {
+                settings.Audience = audiences;
             }
 
             var payload = await GoogleJsonWebSignature.ValidateAsync(idToken, settings);
