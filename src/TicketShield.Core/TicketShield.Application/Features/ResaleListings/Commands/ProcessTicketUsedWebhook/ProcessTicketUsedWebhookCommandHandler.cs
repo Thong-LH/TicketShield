@@ -32,9 +32,29 @@ public class ProcessTicketUsedWebhookCommandHandler : IRequestHandler<ProcessTic
         }
 
         var ticketCode = request.Payload.TicketCode.Trim();
+        var tickets = await _dbContext.Tickets
+            .Where(t => t.TicketCode == ticketCode)
+            .ToListAsync(cancellationToken);
+        foreach (var ticket in tickets)
+        {
+            ticket.Status = TicketStatus.Used;
+            ticket.UpdatedAt = DateTimeOffset.UtcNow;
+        }
+
         var escrow = await FindEscrowAsync(ticketCode, cancellationToken);
         if (escrow == null)
         {
+            if (tickets.Count > 0)
+            {
+                await _dbContext.SaveChangesAsync(cancellationToken);
+                return ApiResponse<ProcessTicketUsedWebhookResponse>.SuccessResponse(
+                    new ProcessTicketUsedWebhookResponse
+                    {
+                        EscrowId = Guid.Empty,
+                        EscrowStatus = "None"
+                    },
+                    $"Đã ghi nhận vé {ticketCode} được sử dụng qua cổng soát vé.");
+            }
             throw new NotFoundException("Giao dịch ký quỹ chứa vé", ticketCode);
         }
 

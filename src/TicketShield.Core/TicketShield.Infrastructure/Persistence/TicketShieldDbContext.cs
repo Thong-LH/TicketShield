@@ -16,6 +16,7 @@ public class TicketShieldDbContext : DbContext, ITicketShieldDbContext
     public DbSet<Organizer> Organizers => Set<Organizer>();
     public DbSet<Event> Events => Set<Event>();
     public DbSet<TicketTier> TicketTiers => Set<TicketTier>();
+    public DbSet<Ticket> Tickets => Set<Ticket>();
     public DbSet<ResaleListing> ResaleListings => Set<ResaleListing>();
     public DbSet<EscrowTransaction> EscrowTransactions => Set<EscrowTransaction>();
     public DbSet<PayoutTransaction> PayoutTransactions => Set<PayoutTransaction>();
@@ -24,6 +25,7 @@ public class TicketShieldDbContext : DbContext, ITicketShieldDbContext
     public DbSet<DisputeEvidence> DisputeEvidences => Set<DisputeEvidence>();
     public DbSet<DisputeMessage> DisputeMessages => Set<DisputeMessage>();
     public DbSet<SystemSetting> SystemSettings => Set<SystemSetting>();
+    public DbSet<Commission> Commissions => Set<Commission>();
     public DbSet<CoreResaleRow> CoreResaleRecords => Set<CoreResaleRow>();
     public DbSet<ShadowUser> ShadowUsers => Set<ShadowUser>();
 
@@ -78,6 +80,39 @@ public class TicketShieldDbContext : DbContext, ITicketShieldDbContext
                 .OnDelete(DeleteBehavior.Cascade);
         });
 
+        // Ticket (Decoupled Physical/Digital Asset - US-10.1)
+        modelBuilder.Entity<Ticket>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.TicketCode).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.SeatZone).HasMaxLength(100);
+            entity.Property(e => e.OriginalPrice).HasPrecision(15, 2);
+            entity.Property(e => e.Status).HasConversion<string>();
+
+            entity.HasIndex(e => new { e.EventId, e.TicketCode });
+            entity.HasIndex(e => e.CurrentOwnerId);
+
+            entity.HasOne(e => e.Event)
+                .WithMany()
+                .HasForeignKey(e => e.EventId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(e => e.Tier)
+                .WithMany()
+                .HasForeignKey(e => e.TierId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(e => e.CurrentOwner)
+                .WithMany()
+                .HasForeignKey(e => e.CurrentOwnerId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(e => e.PreviousTicket)
+                .WithMany()
+                .HasForeignKey(e => e.PreviousTicketId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
         // ResaleListing (P2P Core)
         modelBuilder.Entity<ResaleListing>(entity =>
         {
@@ -87,6 +122,11 @@ public class TicketShieldDbContext : DbContext, ITicketShieldDbContext
             entity.Property(e => e.AppliedMarkupPercentage).HasPrecision(5, 2);
             entity.Property(e => e.VerificationStatus).HasConversion<string>();
             entity.Property(e => e.ListingStatus).HasConversion<string>();
+
+            entity.HasOne(e => e.Ticket)
+                .WithMany(t => t.ResaleListings)
+                .HasForeignKey(e => e.TicketId)
+                .OnDelete(DeleteBehavior.SetNull);
 
             entity.HasOne(e => e.Event)
                 .WithMany(ev => ev.ResaleListings)
@@ -268,6 +308,23 @@ public class TicketShieldDbContext : DbContext, ITicketShieldDbContext
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Id).HasColumnName("Id").HasColumnType("text");
             entity.Property(e => e.Json).HasColumnName("Json").HasColumnType("jsonb");
+        });
+
+        // Commission (Platform Fee per Event / Global Fallback)
+        modelBuilder.Entity<Commission>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.BuyerFeeRate).HasPrecision(6, 4);
+            entity.Property(e => e.SellerFeeRate).HasPrecision(6, 4);
+            entity.Property(e => e.MinimumBuyerFee).HasPrecision(15, 2);
+            entity.Property(e => e.MinimumSellerFee).HasPrecision(15, 2);
+
+            entity.HasOne(e => e.Event)
+                .WithMany(ev => ev.Commissions)
+                .HasForeignKey(e => e.EventId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(e => new { e.EventId, e.IsActive, e.EffectiveFrom, e.EffectiveTo });
         });
 
         // Automatic snake_case naming for PostgreSQL

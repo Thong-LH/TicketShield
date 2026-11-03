@@ -155,7 +155,7 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
             }
 
             // 7. Calculate Fees via Dynamic DynamicResaleFeeCalculator
-            var feeResult = await _feeCalculator.CalculateFeeAsync(listing.ResalePrice, listing.IsPrivate, cancellationToken);
+            var feeResult = await _feeCalculator.CalculateFeeAsync(listing.ResalePrice, listing.IsPrivate, listing.EventId, cancellationToken);
 
             // 8. Determine Payment Reference (transfer_content for VietQR / NAPAS 247)
             string paymentReference;
@@ -410,7 +410,7 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
 
             foreach (var listing in bundleListings)
             {
-                var feeResult = await _feeCalculator.CalculateFeeAsync(listing.ResalePrice, listing.IsPrivate, cancellationToken);
+                var feeResult = await _feeCalculator.CalculateFeeAsync(listing.ResalePrice, listing.IsPrivate, listing.EventId, cancellationToken);
                 totalOriginalPrice += listing.ResalePrice;
                 totalBuyerFee += feeResult.BuyerFee;
                 totalSellerFee += feeResult.SellerFee;

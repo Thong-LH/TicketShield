@@ -9,6 +9,7 @@ public interface ITicketShieldDbContext
     DbSet<Organizer> Organizers { get; }
     DbSet<Event> Events { get; }
     DbSet<TicketTier> TicketTiers { get; }
+    DbSet<Ticket> Tickets { get; }
     DbSet<ResaleListing> ResaleListings { get; }
     DbSet<EscrowTransaction> EscrowTransactions { get; }
     DbSet<PayoutTransaction> PayoutTransactions { get; }
@@ -17,6 +18,7 @@ public interface ITicketShieldDbContext
     DbSet<DisputeEvidence> DisputeEvidences { get; }
     DbSet<DisputeMessage> DisputeMessages { get; }
     DbSet<SystemSetting> SystemSettings { get; }
+    DbSet<Commission> Commissions { get; }
     DbSet<CoreResaleRow> CoreResaleRecords { get; }
     DbSet<ShadowUser> ShadowUsers { get; }
 

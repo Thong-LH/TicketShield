@@ -36,7 +36,11 @@ public class ResaleListing : BaseEntity
     public bool IsBundleAllOrNothing { get; set; } = false;
     public int BundleTotalTickets { get; set; } = 0;
 
+    // Ticket reference (US-10.1 Decoupling)
+    public Guid? TicketId { get; set; }
+
     // Navigation
+    public Ticket? Ticket { get; set; }
     public Event Event { get; set; } = null!;
     public TicketTier Tier { get; set; } = null!;
     public ShadowUser Seller { get; set; } = null!;

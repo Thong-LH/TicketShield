@@ -143,6 +143,76 @@ public class ResolveDisputeCommandHandler : IRequestHandler<ResolveDisputeComman
             dispute.Status = DisputeStatus.Resolved;
             dispute.Resolution = DisputeResolution.RefundBuyer;
             dispute.RefundAmount = dispute.Escrow.TotalBuyerPaid;
+
+            // FIX BUG "Vé ma" (US-10.2 / SCRUM-325): Cascade Listing Invalidation
+            // Buyer mua vé rồi đăng bán lại. Khi Admin duyệt Refund đơn mua gốc,
+            // toàn bộ Listing mà Buyer đã tạo từ vé này phải bị Cancelled ngay lập tức,
+            // giải phóng giữ chỗ nếu đang Transacting, và đánh dấu TicketStatus = Cancelled.
+            var ticketTokens = (dispute.Escrow.NewTicketCode ?? "")
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            if (ticketTokens.Count == 0 && dispute.Escrow.ListingId != Guid.Empty)
+            {
+                var originalCode = await _db.ResaleListings
+                    .Where(l => l.Id == dispute.Escrow.ListingId)
+                    .Select(l => l.OriginalTicketCode)
+                    .FirstOrDefaultAsync(cancellationToken);
+                if (!string.IsNullOrWhiteSpace(originalCode))
+                {
+                    ticketTokens.Add(originalCode);
+                }
+            }
+
+            var downstreamListings = await _db.ResaleListings
+                .Include(l => l.Ticket)
+                .Where(l => l.SellerId == dispute.Escrow.BuyerId)
+                .Where(l => l.ListingStatus == ListingStatus.Verified || l.ListingStatus == ListingStatus.Transacting)
+                .ToListAsync(cancellationToken);
+
+            foreach (var downstream in downstreamListings)
+            {
+                var matchesCode = ticketTokens.Contains(downstream.OriginalTicketCode)
+                    || (downstream.Ticket != null && ticketTokens.Contains(downstream.Ticket.TicketCode));
+
+                if (matchesCode)
+                {
+                    downstream.ListingStatus = ListingStatus.Cancelled;
+                    downstream.UpdatedAt = now;
+
+                    if (downstream.Ticket != null)
+                    {
+                        downstream.Ticket.Status = TicketStatus.Cancelled;
+                        downstream.Ticket.UpdatedAt = now;
+                    }
+
+                    // Nếu đang có ai đó giữ chỗ (Pending escrow), hủy luôn escrow giữ chỗ
+                    var downstreamEscrows = await _db.EscrowTransactions
+                        .Where(e => e.ListingId == downstream.Id && e.Status == EscrowStatus.Pending)
+                        .ToListAsync(cancellationToken);
+
+                    foreach (var de in downstreamEscrows)
+                    {
+                        de.Status = EscrowStatus.Cancelled;
+                        de.UnlockAt = now;
+                        de.UpdatedAt = now;
+                    }
+                }
+            }
+
+            // Đồng thời cập nhật trạng thái các Ticket entity tương ứng nếu tồn tại
+            if (ticketTokens.Count > 0)
+            {
+                var affectedTickets = await _db.Tickets
+                    .Where(t => ticketTokens.Contains(t.TicketCode))
+                    .ToListAsync(cancellationToken);
+
+                foreach (var t in affectedTickets)
+                {
+                    t.Status = TicketStatus.Cancelled;
+                    t.UpdatedAt = now;
+                }
+            }
         }
         else
         {

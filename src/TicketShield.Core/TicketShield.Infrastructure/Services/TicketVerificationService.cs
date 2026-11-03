@@ -743,9 +743,36 @@ public class TicketVerificationService : ITicketVerificationService
                     ? Convert.ToHexString(RandomNumberGenerator.GetBytes(16)).ToLowerInvariant()
                     : null;
 
+                var ticket = await _db.Tickets
+                    .FirstOrDefaultAsync(t => t.TicketCode == s.TicketCode && t.EventId == mapping.EventId, ct);
+                if (ticket == null)
+                {
+                    ticket = new Ticket
+                    {
+                        Id = Guid.NewGuid(),
+                        EventId = mapping.EventId,
+                        TierId = mapping.TierId,
+                        CurrentOwnerId = seller,
+                        TicketCode = s.TicketCode,
+                        OriginalPrice = original,
+                        SeatZone = receipt.Ticket?.SeatZone,
+                        Status = TicketStatus.LockedForResale,
+                        CreatedAt = now,
+                        UpdatedAt = now
+                    };
+                    await _db.Tickets.AddAsync(ticket, ct);
+                }
+                else
+                {
+                    ticket.Status = TicketStatus.LockedForResale;
+                    ticket.UpdatedAt = now;
+                }
+
                 var listing = new ResaleListing
                 {
                     Id = id,
+                    TicketId = ticket.Id,
+                    Ticket = ticket,
                     EventId = mapping.EventId,
                     TierId = mapping.TierId,
                     SellerId = seller,

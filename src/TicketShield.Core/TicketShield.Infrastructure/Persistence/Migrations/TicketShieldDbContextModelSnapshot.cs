@@ -22,6 +22,66 @@ namespace TicketShield.Infrastructure.Persistence.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("TicketShield.Domain.Entities.Commission", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<decimal>("BuyerFeeRate")
+                        .HasPrecision(6, 4)
+                        .HasColumnType("numeric(6,4)")
+                        .HasColumnName("buyer_fee_rate");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset>("EffectiveFrom")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("effective_from");
+
+                    b.Property<DateTimeOffset?>("EffectiveTo")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("effective_to");
+
+                    b.Property<Guid?>("EventId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("event_id");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_active");
+
+                    b.Property<decimal>("MinimumBuyerFee")
+                        .HasPrecision(15, 2)
+                        .HasColumnType("numeric(15,2)")
+                        .HasColumnName("minimum_buyer_fee");
+
+                    b.Property<decimal>("MinimumSellerFee")
+                        .HasPrecision(15, 2)
+                        .HasColumnType("numeric(15,2)")
+                        .HasColumnName("minimum_seller_fee");
+
+                    b.Property<decimal>("SellerFeeRate")
+                        .HasPrecision(6, 4)
+                        .HasColumnType("numeric(6,4)")
+                        .HasColumnName("seller_fee_rate");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_commissions");
+
+                    b.HasIndex("EventId", "IsActive", "EffectiveFrom", "EffectiveTo")
+                        .HasDatabaseName("ix_commissions_event_id_is_active_effective_from_effective_to");
+
+                    b.ToTable("commissions");
+                });
+
             modelBuilder.Entity("TicketShield.Domain.Entities.CoreResaleRow", b =>
                 {
                     b.Property<string>("Id")
@@ -755,6 +815,10 @@ namespace TicketShield.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("seller_id");
 
+                    b.Property<Guid?>("TicketId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("ticket_id");
+
                     b.Property<Guid>("TierId")
                         .HasColumnType("uuid")
                         .HasColumnName("tier_id");
@@ -788,6 +852,9 @@ namespace TicketShield.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("SellerId")
                         .HasDatabaseName("ix_resale_listings_seller_id");
+
+                    b.HasIndex("TicketId")
+                        .HasDatabaseName("ix_resale_listings_ticket_id");
 
                     b.HasIndex("TierId")
                         .HasDatabaseName("ix_resale_listings_tier_id");
@@ -913,6 +980,76 @@ namespace TicketShield.Infrastructure.Persistence.Migrations
                     b.ToTable("system_settings");
                 });
 
+            modelBuilder.Entity("TicketShield.Domain.Entities.Ticket", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("CurrentOwnerId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("current_owner_id");
+
+                    b.Property<Guid>("EventId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("event_id");
+
+                    b.Property<decimal>("OriginalPrice")
+                        .HasPrecision(15, 2)
+                        .HasColumnType("numeric(15,2)")
+                        .HasColumnName("original_price");
+
+                    b.Property<Guid?>("PreviousTicketId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("previous_ticket_id");
+
+                    b.Property<string>("SeatZone")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("seat_zone");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("status");
+
+                    b.Property<string>("TicketCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("ticket_code");
+
+                    b.Property<Guid>("TierId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tier_id");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_tickets");
+
+                    b.HasIndex("CurrentOwnerId")
+                        .HasDatabaseName("ix_tickets_current_owner_id");
+
+                    b.HasIndex("PreviousTicketId")
+                        .HasDatabaseName("ix_tickets_previous_ticket_id");
+
+                    b.HasIndex("TierId")
+                        .HasDatabaseName("ix_tickets_tier_id");
+
+                    b.HasIndex("EventId", "TicketCode")
+                        .HasDatabaseName("ix_tickets_event_id_ticket_code");
+
+                    b.ToTable("tickets");
+                });
+
             modelBuilder.Entity("TicketShield.Domain.Entities.TicketTier", b =>
                 {
                     b.Property<Guid>("Id")
@@ -953,6 +1090,17 @@ namespace TicketShield.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("ix_ticket_tiers_event_id");
 
                     b.ToTable("ticket_tiers");
+                });
+
+            modelBuilder.Entity("TicketShield.Domain.Entities.Commission", b =>
+                {
+                    b.HasOne("TicketShield.Domain.Entities.Event", "Event")
+                        .WithMany("Commissions")
+                        .HasForeignKey("EventId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .HasConstraintName("fk_commissions_events_event_id");
+
+                    b.Navigation("Event");
                 });
 
             modelBuilder.Entity("TicketShield.Domain.Entities.Dispute", b =>
@@ -1105,6 +1253,12 @@ namespace TicketShield.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasConstraintName("fk_resale_listings_shadow_users_seller_id");
 
+                    b.HasOne("TicketShield.Domain.Entities.Ticket", "Ticket")
+                        .WithMany("ResaleListings")
+                        .HasForeignKey("TicketId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("fk_resale_listings_tickets_ticket_id");
+
                     b.HasOne("TicketShield.Domain.Entities.TicketTier", "Tier")
                         .WithMany("ResaleListings")
                         .HasForeignKey("TierId")
@@ -1115,6 +1269,46 @@ namespace TicketShield.Infrastructure.Persistence.Migrations
                     b.Navigation("Event");
 
                     b.Navigation("Seller");
+
+                    b.Navigation("Ticket");
+
+                    b.Navigation("Tier");
+                });
+
+            modelBuilder.Entity("TicketShield.Domain.Entities.Ticket", b =>
+                {
+                    b.HasOne("TicketShield.Domain.Entities.ShadowUser", "CurrentOwner")
+                        .WithMany()
+                        .HasForeignKey("CurrentOwnerId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_tickets_shadow_users_current_owner_id");
+
+                    b.HasOne("TicketShield.Domain.Entities.Event", "Event")
+                        .WithMany()
+                        .HasForeignKey("EventId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_tickets_events_event_id");
+
+                    b.HasOne("TicketShield.Domain.Entities.Ticket", "PreviousTicket")
+                        .WithMany()
+                        .HasForeignKey("PreviousTicketId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_tickets_tickets_previous_ticket_id");
+
+                    b.HasOne("TicketShield.Domain.Entities.TicketTier", "Tier")
+                        .WithMany()
+                        .HasForeignKey("TierId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_tickets_ticket_tiers_tier_id");
+
+                    b.Navigation("CurrentOwner");
+
+                    b.Navigation("Event");
+
+                    b.Navigation("PreviousTicket");
 
                     b.Navigation("Tier");
                 });
@@ -1147,6 +1341,8 @@ namespace TicketShield.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("TicketShield.Domain.Entities.Event", b =>
                 {
+                    b.Navigation("Commissions");
+
                     b.Navigation("ResaleListings");
 
                     b.Navigation("TicketTiers");
@@ -1163,6 +1359,11 @@ namespace TicketShield.Infrastructure.Persistence.Migrations
                 });
 
             modelBuilder.Entity("TicketShield.Domain.Entities.ShadowUser", b =>
+                {
+                    b.Navigation("ResaleListings");
+                });
+
+            modelBuilder.Entity("TicketShield.Domain.Entities.Ticket", b =>
                 {
                     b.Navigation("ResaleListings");
                 });

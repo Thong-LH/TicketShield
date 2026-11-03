@@ -41,8 +41,14 @@ public class EscrowTransaction : BaseEntity
         DateTimeOffset utcNow,
         DateTimeOffset eventStartAt,
         TimeSpan buffer,
-        TimeSpan cutoff)
+        TimeSpan cutoff,
+        DateTimeOffset? eventEndAt = null)
     {
+        if (eventEndAt.HasValue && eventEndAt.Value > eventStartAt)
+        {
+            return eventEndAt.Value.Add(buffer);
+        }
+
         var unlockTime = utcNow.Add(buffer);
         var eventCutoff = eventStartAt.Subtract(cutoff);
         return unlockTime <= eventCutoff ? unlockTime : eventCutoff;
