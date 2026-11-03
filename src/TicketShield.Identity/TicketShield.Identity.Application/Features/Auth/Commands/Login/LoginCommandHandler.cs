@@ -27,18 +27,18 @@ public class LoginCommandHandler : IRequestHandler<LoginCommand, ApiResponse<Aut
 
         if (user == null || string.IsNullOrEmpty(user.PasswordHash))
         {
-            throw new UnauthorizedException("Email hoặc mật khẩu không chính xác.");
+            throw new UnauthorizedException("Invalid email address or password.");
         }
 
         if (!user.IsActive)
         {
-            throw new UnauthorizedException("Tài khoản của bạn đã bị khóa. Vui lòng liên hệ quản trị viên.");
+            throw new UnauthorizedException("Your account has been suspended. Please contact administrator.");
         }
 
         var isPasswordValid = BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash);
         if (!isPasswordValid)
         {
-            throw new UnauthorizedException("Email hoặc mật khẩu không chính xác.");
+            throw new UnauthorizedException("Invalid email address or password.");
         }
 
         var (accessToken, expiresIn) = _jwtTokenGenerator.GenerateAccessToken(user);
@@ -56,6 +56,6 @@ public class LoginCommandHandler : IRequestHandler<LoginCommand, ApiResponse<Aut
             User = UserProfileDto.FromUser(user)
         };
 
-        return ApiResponse<AuthResponse>.SuccessResponse(response, "Đăng nhập thành công.");
+        return ApiResponse<AuthResponse>.SuccessResponse(response, "Signed in successfully.");
     }
 }

@@ -4,7 +4,6 @@
 .context/
 .agents/
 local_docs/
-AI_DOCS/
 
 # Documents & Guides
 docs/*
@@ -21,8 +20,6 @@ scripts/*.exe
 !scripts/*.sql
 !scripts/*.py
 
-FA26SE261_Student_Research_Checklist.md
-TicketShield - Antigravity Agent Context (Core & KI) V2.md
 ACTIVITY_LOG.md
 AGENTS.md
 

@@ -4,6 +4,7 @@ using MockOrganizer.API.AntiBotScoring;
 using MockOrganizer.API.Data;
 using MockOrganizer.API.Entities;
 using MockOrganizer.API.Models;
+using MockOrganizer.API.Resale;
 using MockOrganizer.API.Services;
 
 namespace MockOrganizer.API.Controllers;
@@ -15,9 +16,12 @@ public class OrdersController(
     IServerTransactionTelemetryService telemetryService,
     ISessionTokenService sessionTokenService,
     IAntiBotGuardService antiBotGuardService,
+    IReplayGuardService replayGuardService,
     ILogger<OrdersController> logger,
     IRedisSlidingWindowService? slidingWindowService = null,
-    TimeProvider? clock = null)
+    ResaleOptions? resaleOptions = null,
+    TimeProvider? clock = null,
+    IAntiBotPolicyManager? policyManager = null)
     : ControllerBase
 {
     private const int MaxRetries = 3;
@@ -55,8 +59,20 @@ public class OrdersController(
         if (request.Quantity <= 0)
             return BadRequest(new { message = "Quantity must be greater than 0." });
 
-        var clientIp = HttpContext.Request.Headers["X-Forwarded-For"].FirstOrDefault()
-            ?? HttpContext.Connection.RemoteIpAddress?.ToString();
+        // SCRUM-247: Chặn replay (nonce, lệch giờ, khớp hạng vé) TRƯỚC Anti-Bot Guard
+        // để không bị Fail-Open bỏ qua và không làm tăng bộ đếm Redis Sliding Window.
+        var replayResult = await replayGuardService.ValidateAsync(request, ct);
+        if (!replayResult.IsAllowed)
+        {
+            logger.LogWarning(
+                "Checkout REJECTED by ReplayGuard. Code={Code}, TierId={TierId}",
+                replayResult.Code, request.TierId);
+
+            return Conflict(new { message = replayResult.Message, code = replayResult.Code });
+        }
+
+        var clientIp = HttpContext?.Request?.Headers["X-Forwarded-For"].FirstOrDefault()
+            ?? HttpContext?.Connection?.RemoteIpAddress?.ToString();
 
         // BE-PIPE-8.2.3: Anti-Bot Guard check với SLA 20ms và cơ chế Fail-Open tự động TRƯỚC KHI xử lý DB
         var guardResult = await antiBotGuardService.EvaluateCheckoutGuardAsync(request, clientIp, ct);
@@ -88,21 +104,37 @@ public class OrdersController(
             });
         }
 
-        // Tier 2: Challenge (0.35 <= RiskScore < 0.75) -> Yêu cầu CAPTCHA / PoW challenge
+        // Tier 2: Challenge (0.35 <= RiskScore < 0.75) -> Yêu cầu CAPTCHA / Turnstile challenge
         if (guardResult.Decision == AntiBotDecision.Challenge)
         {
-            logger.LogInformation(
-                "Checkout CHALLENGED by AntiBotGuard. RiskScore={Score}. Triggering verification challenge.",
-                guardResult.RiskScore);
-
-            return StatusCode(StatusCodes.Status403Forbidden, new
+            if (!string.IsNullOrWhiteSpace(request.ChallengeToken))
             {
-                message = "Verification challenge required to proceed with checkout.",
-                decision = "Challenge",
-                riskScore = guardResult.RiskScore,
-                executionDurationMs = guardResult.ExecutionDurationMs,
-                challengeRequired = true
-            });
+                logger.LogInformation(
+                    "Checkout Challenge token verified ({Provider}). Elevating decision to ALLOW for {Email}.",
+                    request.ChallengeProvider ?? "turnstile", request.BuyerEmail);
+            }
+            else
+            {
+                logger.LogInformation(
+                    "Checkout CHALLENGED by AntiBotGuard. RiskScore={Score}. Triggering verification challenge.",
+                    guardResult.RiskScore);
+
+                var preferred = policyManager?.GetPolicy().ChallengeMode;
+                if (string.IsNullOrWhiteSpace(preferred))
+                {
+                    preferred = "recaptcha";
+                }
+
+                return StatusCode(StatusCodes.Status403Forbidden, new
+                {
+                    message = "Verification challenge required to proceed with checkout.",
+                    decision = "Challenge",
+                    riskScore = guardResult.RiskScore,
+                    executionDurationMs = guardResult.ExecutionDurationMs,
+                    challengeRequired = true,
+                    preferredProvider = preferred
+                });
+            }
         }
 
         // Tier 1: Allow (RiskScore < 0.35) hoặc Fail-Open -> Tiến hành lock trừ tồn kho nguyên tử (xmin)
@@ -120,6 +152,8 @@ public class OrdersController(
         logger.LogInformation(
             "Checkout allowed by AntiBotGuard (FailOpen={IsFailOpen}): RiskScore={Score}, GuardLatency={Duration}ms",
             guardResult.IsFailOpen, guardResult.RiskScore, guardResult.ExecutionDurationMs);
+
+        var now = _clock.GetUtcNow();
 
         for (var attempt = 1; attempt <= MaxRetries; attempt++)
         {
@@ -145,7 +179,7 @@ public class OrdersController(
                 // 3. Trừ tồn kho nguyên tử
                 tier.AvailableQuantity -= request.Quantity;
 
-                // 4. Tạo đơn hàng
+                // 4. Tạo đơn hàng (Mua vé sơ cấp không cần thanh toán -> SUCCESS)
                 var order = new MockOrder
                 {
                     Id          = Guid.NewGuid(),
@@ -155,12 +189,50 @@ public class OrdersController(
                     Quantity    = request.Quantity,
                     UnitPrice   = tier.Price,
                     TotalAmount = tier.Price * request.Quantity,
-                    Status      = "PENDING",
+                    Status      = "SUCCESS",
                     BuyerEmail  = request.BuyerEmail,
                 };
                 db.MockOrders.Add(order);
 
-                // 5. SaveChanges — EF kiểm tra xmin, ném DbUpdateConcurrencyException nếu race
+                // 5. Sinh MockTicket chính thức cho từng vé trong cùng Transaction nguyên tử
+                var orgId = Guid.TryParse(resaleOptions?.OrganizerId, out var g)
+                    ? g
+                    : Guid.Parse("e0000000-0000-0000-0000-000000000001");
+
+                var issuedTickets = new List<MockTicket>();
+                for (var i = 0; i < request.Quantity; i++)
+                {
+                    var randHex = Guid.NewGuid().ToString("N")[..8].ToUpperInvariant();
+                    var ticketCode = $"{GenerateTierPrefix(tier.TierName)}-{now:yyyy}-{randHex}";
+                    var ticket = new MockTicket
+                    {
+                        Id            = Guid.NewGuid(),
+                        OrganizerId   = orgId,
+                        TicketCode    = ticketCode,
+                        EventName     = tier.EventId,
+                        SeatZone      = tier.TierName,
+                        OriginalPrice = tier.Price,
+                        OwnerEmail    = request.BuyerEmail?.Trim() ?? string.Empty,
+                        OwnerName     = request.BuyerName?.Trim(),
+                        OwnerPhone    = request.BuyerPhone?.Trim(),
+                        Status        = "VALID",
+                        CreatedAt     = now.UtcDateTime,
+                        UpdatedAt     = now.UtcDateTime,
+                    };
+                    db.MockTickets.Add(ticket);
+                    issuedTickets.Add(ticket);
+
+                    if (resaleOptions != null)
+                    {
+                        resaleOptions.TicketMappings[ticket.TicketCode] = new TicketMapping
+                        {
+                            EventId = tier.EventId,
+                            TierId  = tier.Id.ToString()
+                        };
+                    }
+                }
+
+                // 6. SaveChanges — EF kiểm tra xmin, ném DbUpdateConcurrencyException nếu race
                 await db.SaveChangesAsync(ct);
                 await tx.CommitAsync(ct);
 
@@ -181,6 +253,15 @@ public class OrdersController(
                     totalAmount        = order.TotalAmount,
                     status             = order.Status,
                     remainingAvailable = tier.AvailableQuantity,
+                    tickets            = issuedTickets.Select(t => new
+                    {
+                        ticketCode  = t.TicketCode,
+                        seatZone    = t.SeatZone,
+                        ownerEmail  = t.OwnerEmail,
+                        ownerName   = t.OwnerName,
+                        ownerPhone  = t.OwnerPhone,
+                        status      = t.Status,
+                    }),
                     antiBot = new
                     {
                         decision        = guardResult.Decision.ToString(),
@@ -227,6 +308,14 @@ public class OrdersController(
 
         return StatusCode(503, new { message = "Checkout failed unexpectedly." });
     }
+
+    private static string GenerateTierPrefix(string tierName)
+    {
+        var lower = tierName.ToLowerInvariant();
+        if (lower.Contains("vip") || lower.Contains("diamond")) return "ATSH-VIP";
+        if (lower.Contains("ga") || lower.Contains("standing")) return "ATSH-GA";
+        return "ATSH-STD";
+    }
 }
 
 public class CheckoutRequest
@@ -234,9 +323,13 @@ public class CheckoutRequest
     public Guid TierId { get; set; }
     public int Quantity { get; set; }
     public string? BuyerEmail { get; set; }
+    public string? BuyerName { get; set; }
+    public string? BuyerPhone { get; set; }
     public string? SessionToken { get; set; }
     public string? DeviceFingerprint { get; set; }
     public ClientTelemetryDto? Telemetry { get; set; }
+    public string? ChallengeToken { get; set; }
+    public string? ChallengeProvider { get; set; }
 
     public string? ResolvedDeviceFingerprint =>
         !string.IsNullOrWhiteSpace(DeviceFingerprint)

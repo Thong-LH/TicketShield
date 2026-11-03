@@ -117,10 +117,27 @@ public class ResolveDisputeCommandHandler : IRequestHandler<ResolveDisputeComman
             throw new BusinessRuleViolationException("Khoản tiền không còn bị giữ để xử lý khiếu nại.");
         }
 
+        var resolver = await _db.ShadowUsers.FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
+        if (resolver == null)
+        {
+            resolver = new ShadowUser
+            {
+                Id = userId,
+                Email = _currentUser.Email ?? "staff@ticketshield.vn",
+                FullName = _currentUser.FullName ?? _currentUser.Role ?? "Moderator",
+                Role = _currentUser.Role == "Admin" ? UserRole.Admin : UserRole.Moderator,
+                IsActive = true,
+                CreatedAt = now,
+                UpdatedAt = now
+            };
+            await _db.ShadowUsers.AddAsync(resolver, cancellationToken);
+        }
+
         dispute.AdminNotes = request.Reason.Trim();
         dispute.ResolvedBy = userId;
         dispute.ResolvedAt = now;
         dispute.UpdatedAt = now;
+        dispute.Escrow.Status = nextEscrowStatus;
         if (decision == DisputeDecision.Approve)
         {
             dispute.Status = DisputeStatus.Resolved;

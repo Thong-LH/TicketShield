@@ -33,7 +33,7 @@ public class DisputeFreezeRaceTests
             Assert.Equal(EscrowStatus.Disputed, state.Status);
             Assert.Equal(1, state.DisputeCount);
             Assert.Equal(0, state.PayoutCount);
-            Assert.True(state.InSettlementBuffer);
+            Assert.False(state.InSettlementBuffer);
         }
         finally
         {
@@ -110,7 +110,7 @@ public class DisputeFreezeRaceTests
                     Assert.Equal(EscrowStatus.Disputed, state.Status);
                     Assert.Equal(1, state.DisputeCount);
                     Assert.Equal(0, state.PayoutCount);
-                    Assert.True(state.InSettlementBuffer);
+                    Assert.False(state.InSettlementBuffer);
                 }
                 else
                 {

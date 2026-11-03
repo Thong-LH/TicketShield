@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
@@ -10,9 +10,7 @@ namespace MockOrganizer.API.Data.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropIndex(
-                name: "ix_gate_access_logs_ticket_code",
-                table: "gate_access_logs");
+            migrationBuilder.Sql("DROP INDEX IF EXISTS ix_gate_access_logs_ticket_code;");
 
             migrationBuilder.CreateIndex(
                 name: "ix_gate_access_logs_ticket_code_scanned_at",

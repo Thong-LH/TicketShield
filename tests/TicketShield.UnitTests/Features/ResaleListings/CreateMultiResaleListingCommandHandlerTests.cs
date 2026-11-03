@@ -212,7 +212,7 @@ public class CreateMultiResaleListingCommandHandlerTests
         };
 
         var ex = await Assert.ThrowsAsync<ResaleWorkflowException>(() => handler.Handle(command, CancellationToken.None));
-        Assert.Equal("BUNDLE_REQUIRES_2_TO_3_ITEMS", ex.Code);
+        Assert.Equal("BUNDLE_REQUIRES_2_TO_4_ITEMS", ex.Code);
         Assert.Equal(400, ex.HttpStatus);
     }
 
@@ -231,12 +231,13 @@ public class CreateMultiResaleListingCommandHandlerTests
                 new("VERIFY-1", 1_500_000),
                 new("VERIFY-2", 1_500_000),
                 new("VERIFY-3", 1_500_000),
-                new("VERIFY-4", 1_500_000)
+                new("VERIFY-4", 1_500_000),
+                new("VERIFY-5", 1_500_000)
             })
         };
 
         var ex = await Assert.ThrowsAsync<ResaleWorkflowException>(() => handler.Handle(command, CancellationToken.None));
-        Assert.Equal("BUNDLE_REQUIRES_2_TO_3_ITEMS", ex.Code);
+        Assert.Equal("BUNDLE_REQUIRES_2_TO_4_ITEMS", ex.Code);
         Assert.Equal(400, ex.HttpStatus);
     }
 

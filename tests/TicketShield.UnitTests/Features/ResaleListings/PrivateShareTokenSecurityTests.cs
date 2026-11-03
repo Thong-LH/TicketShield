@@ -177,11 +177,11 @@ public class PrivateShareTokenSecurityTests
         var handler = new CancelResaleListingCommandHandler(db, new FakeCurrentUser(seller.Id), organizer);
 
         // Act
-        var error = await Assert.ThrowsAsync<ResaleWorkflowException>(
+        var error = await Assert.ThrowsAsync<BusinessRuleViolationException>(
             () => handler.Handle(new CancelResaleListingCommand(listing.Id), CancellationToken.None));
 
         // Assert — no half-cancel: the listing is untouched and buyers with the link still see it on sale
-        Assert.Equal("ORGANIZER_UNAVAILABLE", error.Code);
+        Assert.Contains("Không thể mở khóa", error.Message);
         Assert.Equal(1, organizer.UnlockCalls);
         db.ChangeTracker.Clear();
         Assert.Equal(ListingStatus.Verified, (await db.ResaleListings.SingleAsync()).ListingStatus);

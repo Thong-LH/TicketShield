@@ -44,7 +44,10 @@ public class OrganizerDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.HasIndex(e => e.EventId);
             entity.Property(e => e.Price).HasPrecision(15, 2);
-            entity.UseXminAsConcurrencyToken();              // Npgsql optimistic concurrency
+            if (Database.ProviderName != "Microsoft.EntityFrameworkCore.Sqlite")
+            {
+                entity.UseXminAsConcurrencyToken();              // Npgsql optimistic concurrency
+            }
         });
 
         modelBuilder.Entity<MockOrder>(entity =>

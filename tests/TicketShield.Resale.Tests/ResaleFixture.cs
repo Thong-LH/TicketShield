@@ -88,6 +88,7 @@ public sealed class ResaleFixture : IAsyncLifetime
         mockBuilder.Services.AddDbContext<OrganizerDbContext>(o => o.UseNpgsql(Database.MockConnection));
         mockBuilder.Services.AddSingleton<MockOrganizer.API.Services.ISessionTokenService, MockOrganizer.API.Services.SessionTokenService>();
         mockBuilder.Services.AddSingleton<MockOrganizer.API.Services.IRedisSlidingWindowService, MockOrganizer.API.Services.RedisSlidingWindowService>();
+        mockBuilder.Services.AddSingleton<MockOrganizer.API.Services.IReplayGuardService, MockOrganizer.API.Services.ReplayGuardService>();
         mockBuilder.Services.AddScoped<MockOrganizer.API.Services.IServerTransactionTelemetryService, MockOrganizer.API.Services.ServerTransactionTelemetryService>();
         mockBuilder.Services.Configure<MockOrganizer.API.AntiBotScoring.AntiBotScoringOptions>(o =>
         {

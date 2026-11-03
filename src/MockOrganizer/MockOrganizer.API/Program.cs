@@ -27,13 +27,19 @@ builder.Services.AddCors(options =>
         policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader();
     });
 });
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
+    });
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-// US-8.3 (SCRUM-257): Cấu hình và nạp Singleton Anti-Bot ONNX Runtime
+// US-8.3 & US-8.4 (SCRUM-257, SCRUM-259, SCRUM-260): Cấu hình Anti-Bot, Policy Manager và Analytics Collector
 builder.Services.Configure<AntiBotScoringOptions>(
     builder.Configuration.GetSection(AntiBotScoringOptions.SectionName));
+builder.Services.AddSingleton<IAntiBotPolicyManager, AntiBotPolicyManager>();
+builder.Services.AddSingleton<IAntiBotAnalyticsCollector, AntiBotAnalyticsCollector>();
 builder.Services.AddSingleton<IAntiBotScoringService, AntiBotScoringService>();
 
 builder.Services.AddSingleton<MockOrganizer.API.Services.ISessionTokenService, MockOrganizer.API.Services.SessionTokenService>();
@@ -61,6 +67,9 @@ builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
     }
 });
 builder.Services.AddSingleton<MockOrganizer.API.Services.IRedisSlidingWindowService, MockOrganizer.API.Services.RedisSlidingWindowService>();
+
+// SCRUM-247: Chặn replay checkout bằng nonce dùng một lần (Redis SET NX, fallback In-Memory)
+builder.Services.AddSingleton<MockOrganizer.API.Services.IReplayGuardService, MockOrganizer.API.Services.ReplayGuardService>();
 
 builder.Services.AddScoped<MockOrganizer.API.Services.IServerTransactionTelemetryService, MockOrganizer.API.Services.ServerTransactionTelemetryService>();
 builder.Services.AddScoped<IAntiBotGuardService, AntiBotGuardService>();

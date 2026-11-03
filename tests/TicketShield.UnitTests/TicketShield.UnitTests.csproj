@@ -34,6 +34,7 @@
     <ProjectReference Include="..\..\src\TicketShield.Identity\TicketShield.Identity.API\TicketShield.Identity.API.csproj" />
     <ProjectReference Include="..\..\src\TicketShield.Settlement.API\TicketShield.Settlement.API.csproj" />
     <ProjectReference Include="..\..\src\MockOrganizer\MockOrganizer.API\MockOrganizer.API.csproj" />
+    <ProjectReference Include="..\..\src\TicketShield.AntiBot.Gateway\TicketShield.AntiBot.Gateway.csproj" />
   </ItemGroup>
 
   <ItemGroup>

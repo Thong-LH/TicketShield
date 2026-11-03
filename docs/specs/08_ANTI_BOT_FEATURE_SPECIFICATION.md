@@ -14,7 +14,7 @@
 | **1** | `time_to_checkout` | `TimeToCheckout` | `float` | **Giây (seconds)** | **Server** | `submit_received_utc - issued_at_utc` dựa trên timestamp của session token phát ra khi mở trang chọn vé. |
 | **2** | `action_interval_std_dev` | `ActionIntervalStdDev` | `float` | **Mili-giây (ms)** | **Client** | Độ lệch chuẩn giữa các khoảng thời gian click/tap trong phiên. Yêu cầu **tối thiểu 3 thao tác** để tính toán. |
 | **3** | `burst_rate_10s` | `BurstRate10s` | `int` | **Số request** | **Server** | Số request giữ chỗ/checkout trong cửa sổ trượt 10 giây gần nhất, **tính cả request hiện tại**. Lấy `Max(rate_by_ip, rate_by_account)`. |
-| **4** | `concurrent_hold` | `ConcurrentHold` | `int` | **Số vé** | **Server** | Tổng số vé đang ở trạng thái giữ chỗ (`HELD` / Chưa thanh toán / Chưa hết hạn) gắn với tài khoản của người dùng. |
+| **4** | `concurrent_hold` | `ConcurrentHold` | `int` | **Số vé** | **Server** | Tổng số vé đang ở trạng thái giữ chỗ (`HELD` / Chưa thanh toán / Chưa hết hạn) gắn với tài khoản/email người mua trong Pipeline Redis Cache (khóa `hold:{buyerEmail}`, TTL 10 phút). |
 | **5** | `is_webdriver` | `IsWebdriver` | `int` (0 hoặc 1) | **Boolean flag** | **Client** | Đọc cờ chuẩn `navigator.webdriver`. Giá trị `1` nếu có công cụ tự động hóa (Selenium/Puppeteer/Playwright), `0` nếu là trình duyệt thường. |
 | **6** | `device_account_overlap` | `DeviceAccountOverlap` | `int` | **Số tài khoản** | **Server** | Số lượng tài khoản người dùng khác nhau từng đăng nhập/thao tác trên cùng một `device_fingerprint` trong vòng **24 giờ qua**. |
 
@@ -30,7 +30,7 @@
 | **1** | `time_to_checkout` | Không có session token hợp lệ -> **Từ chối ngay lập tức (HTTP 400/403)**, ghi log cảnh báo, không đưa vào mô hình chấm điểm. | Session token do server tự phát ra khi mở trang; request không có token là bất thường rõ ràng của bot gọi thẳng API. |
 | **2** | `action_interval_std_dev` | Nếu client không gửi hoặc có dưới 3 thao tác -> Gán `null` (hoặc `-1.0` trong mảng vector), bật `telemetry_missing = 1`. | Không tự bịa ra nhịp bấm sinh học của người khi client không gửi. |
 | **3** | `burst_rate_10s` | Luôn có giá trị (server tự đếm qua Redis / MemoryCache). Mặc định tối thiểu là `1`. | Server luôn đếm được request hiện tại. |
-| **4** | `concurrent_hold` | Luôn có giá trị (server tự đếm trong DB / Cache). Mặc định là `0`. | Server luôn tra cứu được số vé đang giữ. |
+| **4** | `concurrent_hold` | Luôn có giá trị (server tự đếm qua Pipeline Redis Cache). Mặc định là `0`. | Server luôn tra cứu được số vé đang giữ trong cache < 0.1ms. |
 | **5** | `is_webdriver` | Nếu client không gửi trường này -> Gán `null` (hoặc `-1` trong mảng vector), bật `telemetry_missing = 1`. | **Tuyệt đối không mặc định là 0** (vì mặc định 0 sẽ biến bot gọi API thành người dùng hợp lệ). |
 | **6** | `device_account_overlap` | Nếu client không gửi `device_fingerprint` -> Gán `null` (hoặc `-1`), bật `telemetry_missing = 1`. | Thiếu dấu vân tay thiết bị là dấu hiệu đáng ngờ. |
 
@@ -58,7 +58,7 @@ Mọi bản ghi dữ liệu (huấn luyện CSV hay nhật ký thực thi server
    - Cơ chế: `Max(count_by_ip, count_by_account)`.
    - Mục đích: Khóa IP bắt mạng lưới bot gom nhiều tài khoản trên 1 máy; Khóa Account bắt bot xoay residential proxy nhưng dùng chung 1 tài khoản.
 2. **Khóa đếm `concurrent_hold`:**
-   - Đếm theo `user_id` của tài khoản đăng nhập (quy định mỗi tài khoản không được giữ đồng thời quá số vé quy định).
+   - Đếm theo tài khoản/email người mua qua key `hold:{buyerEmail}` trong Pipeline Redis Cache với TTL 10 phút, không query SQL Database của BTC.
 3. **Cửa sổ thời gian của `device_account_overlap`:**
    - Cố định cửa sổ trượt **24 giờ (Sliding Window 24H)**. Đủ để bắt trọn chiến dịch gom vé trong ngày mở bán, không gây phình dung lượng RAM của cache.
 4. **Thống nhất Thang điểm & Ngưỡng quyết định 3 tầng:**
@@ -73,16 +73,37 @@ Mọi bản ghi dữ liệu (huấn luyện CSV hay nhật ký thực thi server
 
 ## 5. Cấu Trúc Payload Trao Đổi Client-Server (REST API Contract)
 
+`POST /api/organizer/orders/checkout` (tên trường ngoài cùng theo `CheckoutRequest`, trong `telemetry` giữ snake_case):
+
 ```json
 {
-  "session_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-  "ticket_id": "TCK-VIP-2026-001",
+  "tierId": "c0000000-0000-0000-0000-000000000002",
   "quantity": 2,
+  "buyerEmail": "buyer@example.com",
+  "sessionToken": "<payloadBase64Url>.<hmacBase64Url>",
   "telemetry": {
     "is_webdriver": 0,
     "action_interval_std_dev": 285.4,
-    "device_fingerprint": "a1b2c3d4e5f67890abcdef1234567890"
+    "device_fingerprint": "a1b2c3d4e5f67890abcdef1234567890",
+    "nonce": "0360dc7d-f018-410c-bd1b-380e79bc9f2d",
+    "client_timestamp": 1792324839620
   }
 }
 ```
 *(Nếu bot gọi thẳng API và không gửi object `telemetry`, server tự động gán `telemetry_missing = 1` và áp dụng chế tài rủi ro).*
+
+- `sessionToken`: lấy từ `GET /api/organizer/orders/session?tierId=` khi mở trang chọn vé, mỗi hạng vé một token.
+- `nonce` (SCRUM-247): UUID v4 mới cho mỗi request, tối đa 64 ký tự.
+- `client_timestamp` (SCRUM-247): epoch mili-giây lúc gửi, client chỉnh theo `issuedAtUtc` của session token để bù đồng hồ máy lệch.
+
+### 5.1. Chặn phát lại trước khi chấm điểm (SCRUM-247)
+
+Kiểm tra chạy trước Anti-Bot Guard, không bị Fail-Open 20ms bỏ qua. Request bị từ chối không được chấm điểm, không tính vào Redis Sliding Window, không trừ tồn kho.
+
+| Điều kiện | HTTP | `code` |
+| :--- | :--- | :--- |
+| Session token hợp lệ nhưng cấp cho hạng vé khác `tierId` | 409 | `TIER_MISMATCH` |
+| Có `nonce` nhưng thiếu `client_timestamp`, hoặc lệch giờ server quá 5 giây | 409 | `CLOCK_SKEW` |
+| `nonce` rỗng, dài quá 64 ký tự, hoặc đã dùng trong 10 phút qua (Redis `SET NX EX 600`, dự phòng In-Memory) | 409 | `REPLAY` |
+
+Không có `nonce` thì bỏ qua kiểm tra giờ và nonce (client cũ). 409 hết vé không có trường `code`, client phân biệt bằng trường này.

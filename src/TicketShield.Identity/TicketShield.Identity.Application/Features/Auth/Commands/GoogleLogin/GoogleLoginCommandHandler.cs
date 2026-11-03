@@ -35,7 +35,7 @@ public class GoogleLoginCommandHandler : IRequestHandler<GoogleLoginCommand, Api
         var googleUser = await _googleAuthService.VerifyGoogleTokenAsync(request.IdToken, cancellationToken);
         if (googleUser == null)
         {
-            throw new UnauthorizedException("Mã xác thực Google IdToken không hợp lệ hoặc đã hết hạn.");
+            throw new UnauthorizedException("Google authentication token is invalid or has expired.");
         }
 
         var cleanEmail = googleUser.Email.Trim().ToLowerInvariant();
@@ -67,7 +67,7 @@ public class GoogleLoginCommandHandler : IRequestHandler<GoogleLoginCommand, Api
             }
             if (!user.IsActive)
             {
-                throw new UnauthorizedException("Tài khoản của bạn đã bị khóa. Vui lòng liên hệ quản trị viên.");
+                throw new UnauthorizedException("Your account has been suspended. Please contact administrator.");
             }
         }
 

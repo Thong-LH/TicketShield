@@ -36,7 +36,7 @@ public class RegisterCommandHandler : IRequestHandler<RegisterCommand, ApiRespon
 
         if (existingUser != null)
         {
-            throw new BadRequestException("Email này đã được sử dụng. Vui lòng chọn một email khác.");
+            throw new BadRequestException("This email is already in use. Please use a different email address.");
         }
 
         var passwordHash = BCrypt.Net.BCrypt.HashPassword(request.Password);
