@@ -726,18 +726,6 @@ public class TicketVerificationService : ITicketVerificationService
                 throw Error("PRICE_EXCEEDS_CEILING", 422);
             }
 
-            // A buyer whose purchase was refunded no longer owns a sellable
-            // ticket. This check is server-side so manually calling the API
-            // cannot relist a refunded pass.
-            var wasRefunded = await _db.ResaleListings
-                .AnyAsync(listing =>
-                    listing.OriginalTicketCode == s.TicketCode &&
-                    listing.EscrowTransactions.Any(escrow => escrow.Status == EscrowStatus.Refunded), ct);
-            if (wasRefunded)
-            {
-                throw Error("TICKET_REFUNDED", 422);
-            }
-
             var locked = await _gateway.Lock(new GetResaleLockRequest
             {
                 Verification = Reference(s),
