@@ -27,5 +27,6 @@ public class Event : BaseEntity
     public Organizer Organizer { get; set; } = null!;
     public ICollection<TicketTier> TicketTiers { get; set; } = new List<TicketTier>();
     public ICollection<ResaleListing> ResaleListings { get; set; } = new List<ResaleListing>();
+    public ICollection<Commission> Commissions { get; set; } = new List<Commission>();
 }
 

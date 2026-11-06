@@ -6,6 +6,7 @@ using Grpc.Core;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using TicketShield.Application.Common.Interfaces;
+using TicketShield.Application.Common.Helpers;
 using TicketShield.Application.Common.Models;
 using TicketShield.Application.Resale;
 using TicketShield.Contracts;
@@ -642,6 +643,32 @@ public class TicketVerificationService : ITicketVerificationService
             throw Error("PRICE_BELOW_MINIMUM_SELLER_FEE", 422);
         }
 
+        // A listing without a payout destination can be sold but can never be
+        // settled. Sync the Identity-owned bank account before locking the
+        // organizer ticket, then reject the publish request if it is absent.
+        ValidateUuid(seller);
+        var sellerId = Guid.Parse(seller);
+        var sellerProfile = await _db.ShadowUsers
+            .SingleOrDefaultAsync(user => user.Id == sellerId, ct);
+        if (sellerProfile == null || !sellerProfile.IsActive)
+        {
+            throw Error("SELLER_NOT_ACTIVE", 403);
+        }
+
+        if (!HasPayoutAccount(sellerProfile))
+        {
+            var synced = await IdentityBankSyncHelper.TrySyncUserBankFromIdentityAsync(_db, sellerProfile, ct);
+            if (synced)
+            {
+                await _db.SaveChangesAsync(ct);
+            }
+        }
+
+        if (!HasPayoutAccount(sellerProfile))
+        {
+            throw Error("PAYOUT_ACCOUNT_REQUIRED", 422);
+        }
+
         var (s, op) = await Begin(seller, key, "Publish", body.VerificationId, body, null, ct);
         if (op.State == "Succeeded")
         {
@@ -664,6 +691,11 @@ public class TicketVerificationService : ITicketVerificationService
 
         return await PublishClaimed(s, op, body.ResalePrice, body.IsPrivate, ct, bundleId, isBundleAllOrNothing, bundleTotalTickets);
     }
+
+    private static bool HasPayoutAccount(ShadowUser user) =>
+        PayoutAccountRules.IsPresent(user.PayoutAccountNumber) &&
+        !string.IsNullOrWhiteSpace(user.PayoutBankCode) &&
+        !string.IsNullOrWhiteSpace(user.PayoutAccountName);
 
     private async Task<VerificationResult> PublishClaimed(
         CoreSession s,
@@ -743,9 +775,36 @@ public class TicketVerificationService : ITicketVerificationService
                     ? Convert.ToHexString(RandomNumberGenerator.GetBytes(16)).ToLowerInvariant()
                     : null;
 
+                var ticket = await _db.Tickets
+                    .FirstOrDefaultAsync(t => t.TicketCode == s.TicketCode && t.EventId == mapping.EventId, ct);
+                if (ticket == null)
+                {
+                    ticket = new Ticket
+                    {
+                        Id = Guid.NewGuid(),
+                        EventId = mapping.EventId,
+                        TierId = mapping.TierId,
+                        CurrentOwnerId = seller,
+                        TicketCode = s.TicketCode,
+                        OriginalPrice = original,
+                        SeatZone = receipt.Ticket?.SeatZone,
+                        Status = TicketStatus.LockedForResale,
+                        CreatedAt = now,
+                        UpdatedAt = now
+                    };
+                    await _db.Tickets.AddAsync(ticket, ct);
+                }
+                else
+                {
+                    ticket.Status = TicketStatus.LockedForResale;
+                    ticket.UpdatedAt = now;
+                }
+
                 var listing = new ResaleListing
                 {
                     Id = id,
+                    TicketId = ticket.Id,
+                    Ticket = ticket,
                     EventId = mapping.EventId,
                     TierId = mapping.TierId,
                     SellerId = seller,

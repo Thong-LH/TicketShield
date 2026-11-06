@@ -392,7 +392,8 @@ public class ProcessSePayWebhookCommandHandlerTests
             before,
             listing.Event.EventStartAt,
             TimeSpan.FromSeconds(86400),
-            TimeSpan.FromSeconds(7200));
+            TimeSpan.FromSeconds(7200),
+            listing.Event.EventEndAt);
         Assert.True(result.Success);
         Assert.Equal(EscrowStatus.Locked, dbEscrow!.Status);
         Assert.True(dbEscrow.InSettlementBuffer);
@@ -403,7 +404,7 @@ public class ProcessSePayWebhookCommandHandlerTests
     }
 
     [Fact]
-    public void ComputeSettlementUnlockAt_UsesMinOfBufferAndEventCutoff()
+    public void ComputeSettlementUnlockAt_UsesMinOfBufferAndEventCutoff_WhenEventEndAtNull()
     {
         var buffer = TimeSpan.FromHours(24);
         var cutoff = TimeSpan.FromHours(2);
@@ -415,6 +416,23 @@ public class ProcessSePayWebhookCommandHandlerTests
         var nearEvent = now.AddHours(5);
         var near = EscrowTransaction.ComputeSettlementUnlockAt(now, nearEvent, buffer, cutoff);
         Assert.Equal(nearEvent.AddHours(-2), near);
+    }
+
+    [Fact]
+    public void ComputeSettlementUnlockAt_WithEventEndAt_UnlocksAfterEventEndPlusBuffer()
+    {
+        var buffer = TimeSpan.FromHours(24);
+        var cutoff = TimeSpan.FromHours(2);
+        var now = new DateTimeOffset(2026, 9, 18, 8, 0, 0, TimeSpan.Zero);
+        var eventStart = now.AddDays(10);
+        var eventEnd = eventStart.AddHours(4); // Concert ends 4 hours after start
+
+        var actual = EscrowTransaction.ComputeSettlementUnlockAt(now, eventStart, buffer, cutoff, eventEnd);
+
+        // Paradox T+24h resolved: Funds are held until AFTER the event ends (eventEnd + buffer), not now + buffer
+        Assert.Equal(eventEnd.Add(buffer), actual);
+        Assert.True(actual > eventEnd);
+        Assert.True(actual > now.Add(buffer));
     }
 
     [Fact]
@@ -808,7 +826,9 @@ public class ProcessSePayWebhookCommandHandlerTests
     {
         var (context, listing, escrow) = CreateTestFixture();
         var eventStart = DateTimeOffset.UtcNow.AddHours(1);
+        var eventEnd = eventStart.AddHours(3);
         listing.Event.EventStartAt = eventStart;
+        listing.Event.EventEndAt = eventEnd;
         await context.SaveChangesAsync();
 
         var before = DateTimeOffset.UtcNow;
@@ -827,7 +847,7 @@ public class ProcessSePayWebhookCommandHandlerTests
         var stored = await context.EscrowTransactions.FindAsync(escrow.Id);
         Assert.NotNull(stored!.TransferredAt);
         Assert.InRange(stored.TransferredAt.Value, before, after);
-        Assert.Equal(eventStart.AddHours(-2), stored.UnlockAt);
+        Assert.Equal(eventEnd.AddSeconds(86400), stored.UnlockAt);
         Assert.NotEqual(stored.UnlockAt, stored.TransferredAt);
     }
 
@@ -866,12 +886,11 @@ public class ProcessSePayWebhookCommandHandlerTests
     [Fact]
     public async Task Handle_ValidPaymentWebhook_UsesConfiguredBufferSeconds()
     {
-        var (context, _, escrow) = CreateTestFixture();
+        var (context, listing, escrow) = CreateTestFixture();
         var settings = new Mock<IEscrowBufferSettings>();
         settings.Setup(s => s.GetAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new EscrowBufferConfig { BufferSeconds = 30, CutoffSeconds = 7200 });
 
-        var before = DateTimeOffset.UtcNow;
         var handler = new ProcessSePayWebhookCommandHandler(context, bufferSettings: settings.Object);
         var result = await handler.Handle(new ProcessSePayWebhookCommand(new SePayWebhookRequest
         {
@@ -881,10 +900,10 @@ public class ProcessSePayWebhookCommandHandlerTests
             Content = "TS1A2B3C4D demo buffer",
             ReferenceCode = "FTBUFFER30"
         }), CancellationToken.None);
-        var after = DateTimeOffset.UtcNow;
 
         Assert.True(result.Success);
         var stored = await context.EscrowTransactions.FindAsync(escrow.Id);
-        Assert.InRange(stored!.UnlockAt!.Value, before.AddSeconds(28), after.AddSeconds(32));
+        var expectedUnlock = listing.Event.EventEndAt.AddSeconds(30);
+        Assert.InRange(stored!.UnlockAt!.Value, expectedUnlock.AddSeconds(-2), expectedUnlock.AddSeconds(2));
     }
 }

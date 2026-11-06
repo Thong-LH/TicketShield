@@ -95,6 +95,8 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
                 .ThenInclude(l => l.Event)
             .Include(e => e.Listing)
                 .ThenInclude(l => l.Tier)
+            .Include(e => e.Listing)
+                .ThenInclude(l => l.Ticket)
             .Include(e => e.Buyer)
             .Include(e => e.Seller)
             .FirstOrDefaultAsync(e => e.PaymentReference == paymentReference, cancellationToken);
@@ -230,6 +232,7 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
         if (escrow.BundleId.HasValue)
         {
             var bundleListings = await _dbContext.ResaleListings
+                .Include(l => l.Ticket)
                 .Where(l => l.BundleId == escrow.BundleId)
                 .OrderBy(l => l.CreatedAt)
                 .ThenBy(l => l.Id)
@@ -306,6 +309,28 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
 
                 issuedTickets.Add(new IssuedTicket(listing.Id, currentNewCode, currentQrCode ?? currentNewCode, listing.SeatZone));
                 listing.ListingStatus = ListingStatus.Sold;
+
+                if (listing.Ticket != null)
+                {
+                    listing.Ticket.Status = TicketStatus.Transferred;
+                    listing.Ticket.UpdatedAt = now;
+                }
+
+                var buyerTicket = new Ticket
+                {
+                    Id = Guid.NewGuid(),
+                    EventId = listing.EventId,
+                    TierId = listing.TierId,
+                    CurrentOwnerId = escrow.BuyerId,
+                    TicketCode = currentNewCode,
+                    OriginalPrice = listing.OriginalPrice,
+                    SeatZone = listing.SeatZone,
+                    Status = TicketStatus.Valid,
+                    PreviousTicketId = listing.TicketId,
+                    CreatedAt = now,
+                    UpdatedAt = now
+                };
+                await _dbContext.Tickets.AddAsync(buyerTicket, cancellationToken);
             }
         }
         catch (Exception ex)
@@ -351,7 +376,8 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
             now,
             eventStartAt,
             TimeSpan.FromSeconds(clocks.BufferSeconds),
-            TimeSpan.FromSeconds(clocks.CutoffSeconds));
+            TimeSpan.FromSeconds(clocks.CutoffSeconds),
+            escrow.Listing.Event?.EventEndAt);
         escrow.TransferredAt = now;
         escrow.NewTicketCode = string.Join(",", issuedTickets.Select(t => t.NewCode));
         escrow.QrCodeData = string.Join(",", issuedTickets.Select(t => t.QrCodeData));
