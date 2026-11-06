@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using MockOrganizer.API.Data;
 using MockOrganizer.API.Resale;
 using MockOrganizer.API.AntiBotScoring;
+using MockOrganizer.API.Gate;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using StackExchange.Redis;
 
@@ -73,6 +74,14 @@ builder.Services.AddSingleton<MockOrganizer.API.Services.IReplayGuardService, Mo
 
 builder.Services.AddScoped<MockOrganizer.API.Services.IServerTransactionTelemetryService, MockOrganizer.API.Services.ServerTransactionTelemetryService>();
 builder.Services.AddScoped<IAntiBotGuardService, AntiBotGuardService>();
+
+builder.Services.AddScoped<GateScanService>();
+builder.Services.AddHttpClient<ITicketUsedNotifier, HttpTicketUsedNotifier>(client =>
+{
+    var coreBaseUrl = builder.Configuration["CoreWebhook:BaseUrl"] ?? "http://localhost:5003";
+    client.BaseAddress = new Uri(coreBaseUrl.TrimEnd('/') + "/");
+    client.Timeout = TimeSpan.FromSeconds(2);
+});
 
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
     ?? "Host=localhost;Port=5432;Database=organizer_db;Username=postgres;Password=12345";

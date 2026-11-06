@@ -38,6 +38,10 @@ namespace MockOrganizer.API.Data.Migrations
                         .HasColumnType("text")
                         .HasColumnName("notes");
 
+                    b.Property<string>("ScanId")
+                        .HasColumnType("text")
+                        .HasColumnName("scan_id");
+
                     b.Property<string>("ScanResult")
                         .IsRequired()
                         .HasColumnType("text")
@@ -58,6 +62,10 @@ namespace MockOrganizer.API.Data.Migrations
 
                     b.HasKey("Id")
                         .HasName("pk_gate_access_logs");
+
+                    b.HasIndex("ScanId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_gate_access_logs_scan_id");
 
                     b.HasIndex("TicketCode", "ScannedAt")
                         .HasDatabaseName("ix_gate_access_logs_ticket_code_scanned_at");
@@ -118,6 +126,9 @@ namespace MockOrganizer.API.Data.Migrations
 
                     b.HasIndex("TierId")
                         .HasDatabaseName("ix_mock_orders_tier_id");
+
+                    b.HasIndex("BuyerEmail", "Status", "CreatedAt")
+                        .HasDatabaseName("ix_mock_orders_buyer_email_status_created_at");
 
                     b.ToTable("mock_orders");
                 });

@@ -9,4 +9,5 @@ public class GateAccessLog
     public string ScanResult { get; set; } = "SUCCESS"; // SUCCESS, DUPLICATE_ENTRY, INVALID_TICKET, REVOKED
     public string? ScannerDeviceId { get; set; }
     public string? Notes { get; set; }
+    public string? ScanId { get; set; }
 }
