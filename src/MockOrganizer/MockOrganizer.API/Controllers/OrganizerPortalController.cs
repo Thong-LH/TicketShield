@@ -133,7 +133,7 @@ public class OrganizerPortalController(
     [HttpPost("reset-all")]
     public async Task<IActionResult> ResetAllData()
     {
-        await OrganizerDatabaseSeeder.SeedOrganizerAsync(db);
+        await OrganizerDatabaseSeeder.SeedOrganizerAsync(db, resetOperationalData: true);
         return Ok(new { message = "Mock organizer database reset to seed data successfully." });
     }
 }

@@ -37,6 +37,7 @@ public class OrganizerDbContext : DbContext
         {
             entity.HasKey(e => e.Id);
             entity.HasIndex(e => new { e.TicketCode, e.ScannedAt });
+            entity.HasIndex(e => e.ScanId).IsUnique();
         });
 
         modelBuilder.Entity<TicketTier>(entity =>

@@ -47,8 +47,8 @@ public class AutomaticSettlementWorker : BackgroundService
 
         // FIX Lỗi 03: Non-blocking Distributed Advisory Lock (Leader Election)
         var lockKey = ComputeWorkerLockKey(nameof(AutomaticSettlementWorker));
-        await using var lockTx = await dbContext.TryBeginAdvisoryLockTransactionAsync(lockKey, ct);
-        if (lockTx == null)
+        await using var workerLock = await dbContext.TryAcquireWorkerLockAsync(lockKey, ct);
+        if (workerLock == null)
         {
             _logger.LogDebug("Another instance is already processing automatic settlements. Skipping cycle.");
             return 0;
