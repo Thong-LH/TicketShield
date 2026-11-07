@@ -23,6 +23,7 @@ public class PurchasedTicketDto
 
     // Chỉ có giá trị khi người xem là người trả tiền và giao dịch có khiếu nại.
     public Guid? DisputeId { get; set; }
+    public bool DisputeWaived { get; set; }
 
     public Guid? BundleId { get; set; }
     public int? BundleTotalTickets { get; set; }

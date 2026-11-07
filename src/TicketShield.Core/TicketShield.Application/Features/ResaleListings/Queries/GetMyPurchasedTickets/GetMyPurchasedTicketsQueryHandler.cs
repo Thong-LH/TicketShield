@@ -172,6 +172,7 @@ public class GetMyPurchasedTicketsQueryHandler : IRequestHandler<GetMyPurchasedT
                 PurchasedAt = e.CreatedAt,
                 // Người nhận vé theo email thấy trạng thái nhưng không có mã để mở tiến độ.
                 DisputeId = buyerId != Guid.Empty && e.BuyerId == buyerId ? e.Dispute?.Id : null,
+                DisputeWaived = e.DisputeWaived,
                 BundleId = bundleId,
                 BundleTotalTickets = effectiveBundleTotal >= 2 ? effectiveBundleTotal : null,
                 BundleItems = bundleItems

@@ -205,6 +205,24 @@ public class CreateDisputeCommandHandlerTests
         Assert.Empty(await db.Disputes.AsNoTracking().ToListAsync());
     }
 
+    [Fact]
+    public async Task Handle_WhenDisputeWaived_ThrowsBusinessRuleViolationException()
+    {
+        await using var db = CreateDb();
+        var seeded = await SeedEscrowAsync(db, EscrowStatus.Locked, inSettlementBuffer: true, disputeWaived: true);
+        var handler = new CreateDisputeCommandHandler(db, new StubUser(seeded.BuyerId));
+
+        var ex = await Assert.ThrowsAsync<BusinessRuleViolationException>(() => handler.Handle(new CreateDisputeCommand
+        {
+            EscrowId = seeded.EscrowId,
+            Reason = "Vé lỗi"
+        }, CancellationToken.None));
+
+        Assert.Equal("Vé này đã được đăng bán lại, quyền khiếu nại đã chấm dứt.", ex.Message);
+        Assert.Equal(422, await StatusCodeOf(ex));
+        Assert.Empty(await db.Disputes.AsNoTracking().ToListAsync());
+    }
+
     private static async Task<int> StatusCodeOf(Exception exception)
     {
         var context = new DefaultHttpContext();
@@ -244,7 +262,8 @@ public class CreateDisputeCommandHandlerTests
         TicketShieldDbContext db,
         EscrowStatus status,
         bool inSettlementBuffer,
-        string buyerAccountNumber = "123456789")
+        string buyerAccountNumber = "123456789",
+        bool disputeWaived = false)
     {
         var suffix = Guid.NewGuid().ToString("N")[..8];
         var organizer = new Organizer
@@ -302,7 +321,8 @@ public class CreateDisputeCommandHandlerTests
             BuyerId = buyer.Id,
             SellerId = seller.Id,
             Status = status,
-            InSettlementBuffer = inSettlementBuffer
+            InSettlementBuffer = inSettlementBuffer,
+            DisputeWaived = disputeWaived
         };
 
         db.Organizers.Add(organizer);

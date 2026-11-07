@@ -281,6 +281,17 @@ public class TicketVerificationService : ITicketVerificationService
                 {
                     throw Error("INVALID_TICKET_CODE", 400);
                 }
+
+                // Chiều ngược lại (BR-L06 / Phương án C): Nếu vé đang trong quá trình khiếu nại (Disputed), cấm yêu cầu OTP đăng bán lại
+                var hasActiveDispute = await _db.EscrowTransactions
+                    .Where(e => (e.NewTicketCode != null && e.NewTicketCode.Contains(ticket))
+                             || (e.Listing != null && e.Listing.OriginalTicketCode == ticket))
+                    .AnyAsync(e => e.Status == EscrowStatus.Disputed || _db.Disputes.Any(d => d.EscrowId == e.Id && d.Status == DisputeStatus.Open), ct);
+
+                if (hasActiveDispute)
+                {
+                    throw Error("TICKET_DISPUTED", 409);
+                }
                 session = new CoreSession
                 {
                     Id = Guid.NewGuid().ToString("D"),
@@ -825,6 +836,27 @@ public class TicketVerificationService : ITicketVerificationService
                 };
 
                 _db.ResaleListings.Add(listing);
+
+                // Chiều 1 (BR-L06 / Phương án C): Nếu vé này từng được người bán hiện tại mua trên sàn,
+                // việc đăng bán lại cấu thành hành vi xác nhận vé hợp lệ -> Phong tỏa vĩnh viễn quyền Dispute của Escrow trước.
+                var upstreamEscrows = await _db.EscrowTransactions
+                    .Where(e => e.BuyerId == seller
+                             && e.NewTicketCode != null
+                             && e.NewTicketCode.Contains(s.TicketCode)
+                             && e.Status == EscrowStatus.Locked
+                             && !e.DisputeWaived)
+                    .ToListAsync(ct);
+
+                foreach (var upstream in upstreamEscrows)
+                {
+                    var tokens = (upstream.NewTicketCode ?? "")
+                        .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                    if (tokens.Contains(s.TicketCode, StringComparer.OrdinalIgnoreCase))
+                    {
+                        upstream.DisputeWaived = true;
+                        upstream.UpdatedAt = now;
+                    }
+                }
 
                 fresh.State = "Published";
                 fresh.ListingId = id;

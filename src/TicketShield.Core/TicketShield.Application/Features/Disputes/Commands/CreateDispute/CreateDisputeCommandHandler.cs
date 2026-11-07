@@ -42,6 +42,11 @@ public class CreateDisputeCommandHandler : IRequestHandler<CreateDisputeCommand,
             throw new ForbiddenAccessException("Bạn không có quyền gửi khiếu nại cho giao dịch này.");
         }
 
+        if (escrow.DisputeWaived)
+        {
+            throw new BusinessRuleViolationException("Vé này đã được đăng bán lại, quyền khiếu nại đã chấm dứt.");
+        }
+
         var buyer = await _db.ShadowUsers.FirstOrDefaultAsync(u => u.Id == buyerId, cancellationToken);
         if (buyer == null)
         {
@@ -76,7 +81,7 @@ public class CreateDisputeCommandHandler : IRequestHandler<CreateDisputeCommand,
 
         await using var transaction = await _db.Database.BeginTransactionAsync(cancellationToken);
         var updated = await _db.EscrowTransactions
-            .Where(row => row.Id == escrow.Id && row.Status == EscrowStatus.Locked)
+            .Where(row => row.Id == escrow.Id && row.Status == EscrowStatus.Locked && !row.DisputeWaived)
             .ExecuteUpdateAsync(
                 setters => setters
                     .SetProperty(row => row.Status, EscrowStatus.Disputed)
