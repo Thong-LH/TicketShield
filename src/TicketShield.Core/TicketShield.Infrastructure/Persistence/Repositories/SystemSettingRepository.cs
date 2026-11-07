@@ -127,7 +127,7 @@ public class SystemSettingRepository : ISystemSettingRepository
         var items = new (string Key, string Value, string Description)[]
         {
             (SettlementSecondsKey, config.BufferSeconds.ToString(CultureInfo.InvariantCulture), "Số giây đệm trước khi trả tiền người bán"),
-            (CutoffSecondsKey, config.CutoffSeconds.ToString(CultureInfo.InvariantCulture), "Số giây trước giờ diễn dùng làm mốc trả tiền")
+            (CutoffSecondsKey, config.CutoffSeconds.ToString(CultureInfo.InvariantCulture), "Số giây trước giờ diễn đóng sàn giao dịch vé")
         };
 
         foreach (var item in items)

@@ -39,18 +39,8 @@ public class EscrowTransaction : BaseEntity
 
     public static DateTimeOffset ComputeSettlementUnlockAt(
         DateTimeOffset utcNow,
-        DateTimeOffset eventStartAt,
-        TimeSpan buffer,
-        TimeSpan cutoff,
-        DateTimeOffset? eventEndAt = null)
+        TimeSpan buffer)
     {
-        if (eventEndAt.HasValue && eventEndAt.Value > eventStartAt)
-        {
-            return eventEndAt.Value.Add(buffer);
-        }
-
-        var unlockTime = utcNow.Add(buffer);
-        var eventCutoff = eventStartAt.Subtract(cutoff);
-        return unlockTime <= eventCutoff ? unlockTime : eventCutoff;
+        return utcNow.Add(buffer);
     }
 }

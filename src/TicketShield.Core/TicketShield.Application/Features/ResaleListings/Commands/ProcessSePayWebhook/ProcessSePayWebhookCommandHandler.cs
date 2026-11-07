@@ -223,9 +223,6 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
                 "Thanh toán đến sau khi hết hạn giữ chỗ. Giao dịch đã đưa vào hàng đợi hoàn tiền.");
         }
 
-        var eventStartAt = escrow.Listing.Event?.EventStartAt
-            ?? throw new BusinessRuleViolationException("Thiếu EventStartAt để tính UnlockAt giải ngân.");
-
         var issuedTickets = new List<IssuedTicket>();
 
         var listingsToTransfer = new List<ResaleListing> { escrow.Listing };
@@ -374,10 +371,7 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
             : await _bufferSettings.GetAsync(cancellationToken);
         escrow.UnlockAt = EscrowTransaction.ComputeSettlementUnlockAt(
             now,
-            eventStartAt,
-            TimeSpan.FromSeconds(clocks.BufferSeconds),
-            TimeSpan.FromSeconds(clocks.CutoffSeconds),
-            escrow.Listing.Event?.EventEndAt);
+            TimeSpan.FromSeconds(clocks.BufferSeconds));
         escrow.TransferredAt = now;
         escrow.NewTicketCode = string.Join(",", issuedTickets.Select(t => t.NewCode));
         escrow.QrCodeData = string.Join(",", issuedTickets.Select(t => t.QrCodeData));
