@@ -330,6 +330,10 @@ namespace TicketShield.Infrastructure.Persistence.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("dispute_waived");
 
+                    b.Property<DateTimeOffset?>("DisputeWaivedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("dispute_waived_at");
+
                     b.Property<bool>("InSettlementBuffer")
                         .HasColumnType("boolean")
                         .HasColumnName("in_settlement_buffer");

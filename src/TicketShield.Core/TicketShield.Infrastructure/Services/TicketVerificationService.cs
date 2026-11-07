@@ -854,6 +854,7 @@ public class TicketVerificationService : ITicketVerificationService
                     if (tokens.Contains(s.TicketCode, StringComparer.OrdinalIgnoreCase))
                     {
                         upstream.DisputeWaived = true;
+                        upstream.DisputeWaivedAt = now; // BR-L06: Recorded Consent Waiver timestamp
                         upstream.UpdatedAt = now;
                     }
                 }
