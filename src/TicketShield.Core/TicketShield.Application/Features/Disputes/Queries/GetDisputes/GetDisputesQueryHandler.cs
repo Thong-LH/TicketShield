@@ -117,7 +117,8 @@ public class GetDisputesQueryHandler : IRequestHandler<GetDisputesQuery, ApiResp
                 Evidences = d.Evidences.Select(e => new DisputeEvidenceDto
                 {
                     EvidenceId = e.Id,
-                    FileUrl = e.FileUrl,
+                    // file_url có thể là secure_url Cloudinary mở được mãi; FE lấy ảnh qua API evidence.
+                    FileUrl = string.Empty,
                     CreatedAt = e.CreatedAt
                 }).ToList(),
                 Scans = scans

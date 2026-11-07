@@ -5,7 +5,27 @@ namespace MockOrganizer.API.Data;
 
 public static class OrganizerDatabaseSeeder
 {
-    public static async Task SeedOrganizerAsync(OrganizerDbContext context)
+    // Dispute evidence reads gate logs, so a plain restart keeps them. Only an explicit reset clears history.
+    public static async Task CleanGateHistoryAsync(
+        OrganizerDbContext context,
+        IReadOnlySet<Guid> seedIds,
+        bool resetOperationalData)
+    {
+        if (resetOperationalData)
+        {
+            context.GateAccessLogs.RemoveRange(await context.GateAccessLogs.ToListAsync());
+        }
+
+        var extraTickets = await context.MockTickets
+            .Where(t => !seedIds.Contains(t.Id) && t.Status != "VALID" && (resetOperationalData || t.Status != "USED"))
+            .ToListAsync();
+        if (extraTickets.Any())
+        {
+            context.MockTickets.RemoveRange(extraTickets);
+        }
+    }
+
+    public static async Task SeedOrganizerAsync(OrganizerDbContext context, bool resetOperationalData = false)
     {
         // 1. Auto-apply any pending migrations on startup (code-first auto-init)
         await context.Database.MigrateAsync();
@@ -38,19 +58,10 @@ public static class OrganizerDatabaseSeeder
         var spaceSpeakersId = Guid.Parse("b0000000-0000-0000-0000-000000000002"); // SpaceSpeakers
         var liveNationVnId  = Guid.Parse("b0000000-0000-0000-0000-000000000003"); // Live Nation VN
 
-        // Clean operational logs, OTPs, and leftover resale locks so cancelled tickets can request OTP again
+        // Clean OTPs and leftover resale locks so cancelled tickets can request OTP again
         context.MockOtps.RemoveRange(await context.MockOtps.ToListAsync());
-        context.GateAccessLogs.RemoveRange(await context.GateAccessLogs.ToListAsync());
         await context.Database.ExecuteSqlRawAsync("DELETE FROM organizer_resale_records");
-
-        // Drop leftover non-seed tickets, but keep VALID ones so a transferred buyer ticket survives restart.
-        var extraTickets = await context.MockTickets
-            .Where(t => !seedIds.Contains(t.Id) && t.Status != "VALID")
-            .ToListAsync();
-        if (extraTickets.Any())
-        {
-            context.MockTickets.RemoveRange(extraTickets);
-        }
+        await CleanGateHistoryAsync(context, seedIds, resetOperationalData);
 
         // =====================================================================
         // BTC 1: VieON — Anh Trai Say Hi Concert 2026

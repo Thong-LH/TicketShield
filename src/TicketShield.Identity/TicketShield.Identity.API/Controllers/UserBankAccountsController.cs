@@ -4,6 +4,7 @@ using TicketShield.Identity.Application.Common.Models;
 using TicketShield.Identity.Application.Features.UserBankAccounts.Commands.CreateUserBankAccount;
 using TicketShield.Identity.Application.Features.UserBankAccounts.Dtos;
 using TicketShield.Identity.Application.Features.UserBankAccounts.Queries.GetUserBankAccounts;
+using TicketShield.Identity.Application.Features.UserBankAccounts.Queries.GetSupportedBanks;
 using TicketShield.Identity.Application.Features.UserBankAccounts.Queries.LookupAccountHolderName;
 
 namespace TicketShield.Identity.API.Controllers;
@@ -12,6 +13,16 @@ namespace TicketShield.Identity.API.Controllers;
 [Route("api/v1/user-bank-accounts")]
 public class UserBankAccountsController : ApiControllerBase
 {
+    /// <summary>Returns the live directory supplied by BankLookup.net.</summary>
+    [AllowAnonymous]
+    [HttpGet("banks")]
+    [ProducesResponseType(typeof(ApiResponse<List<BankDirectoryItem>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetBanks(CancellationToken ct)
+    {
+        var result = await Mediator.Send(new GetSupportedBanksQuery(), ct);
+        return Ok(result);
+    }
+
     /// <summary>
     /// BE-CORE-3.1.4: Add / Link a new seller beneficiary bank account (UserBankAccount)
     /// </summary>
