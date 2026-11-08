@@ -70,6 +70,21 @@ public class GetMyPurchasedTicketsQueryHandler : IRequestHandler<GetMyPurchasedT
             .OrderByDescending(e => e.CreatedAt)
             .ToListAsync(cancellationToken);
 
+        // Escrow state is about payment protection, not gate admission. Read the
+        // organizer-synchronised ticket state too, so a scanned pass is shown as USED.
+        var purchasedTicketCodes = purchases
+            .SelectMany(e => SplitIssuedCodes(e.NewTicketCode))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var usedTicketCodes = purchasedTicketCodes.Count == 0
+            ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            : (await _dbContext.Tickets
+                .AsNoTracking()
+                .Where(t => purchasedTicketCodes.Contains(t.TicketCode) && t.Status == TicketStatus.Used)
+                .Select(t => t.TicketCode)
+                .ToListAsync(cancellationToken))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
         var dtos = new List<PurchasedTicketDto>();
 
         foreach (var e in purchases)
@@ -131,11 +146,15 @@ public class GetMyPurchasedTicketsQueryHandler : IRequestHandler<GetMyPurchasedT
                 var itemSeat = !string.IsNullOrWhiteSpace(bl.SeatZone) ? bl.SeatZone : itemTier;
                 var itemCode = index < issuedCodes.Count ? issuedCodes[index] : string.Empty;
                 var itemQr = index < issuedQrCodes.Count ? issuedQrCodes[index] : itemCode;
+                var itemStatus = !string.IsNullOrWhiteSpace(itemCode) && usedTicketCodes.Contains(itemCode)
+                    ? "USED"
+                    : status;
 
                 bundleItems.Add(new PurchasedTicketItemDto
                 {
                     ListingId = bl.Id,
                     TicketCode = itemCode,
+                    Status = itemStatus,
                     SeatZone = itemSeat,
                     QrCodeData = itemQr,
                     QrCodeImageUrl = BuildQrImageUrl(itemQr)
@@ -149,6 +168,9 @@ public class GetMyPurchasedTicketsQueryHandler : IRequestHandler<GetMyPurchasedT
             var primaryQrPayload = bundleItems.Count > 0 && bundleItems[0].QrCodeData.Length > 0
                 ? bundleItems[0].QrCodeData
                 : qrPayload;
+            var primaryStatus = !string.IsNullOrWhiteSpace(primaryPassCode) && usedTicketCodes.Contains(primaryPassCode)
+                ? "USED"
+                : status;
 
             dtos.Add(new PurchasedTicketDto
             {
@@ -162,7 +184,7 @@ public class GetMyPurchasedTicketsQueryHandler : IRequestHandler<GetMyPurchasedT
                 SeatZone = bundleItems.Count > 0 ? bundleItems[0].SeatZone : rawSeatZone,
                 TicketPassCode = primaryPassCode,
                 TotalAmountPaid = e.TotalBuyerPaid,
-                Status = status,
+                Status = primaryStatus,
                 PaymentReference = e.PaymentReference,
                 HoldExpiresAt = null,
                 RecipientName = e.RecipientName ?? e.Buyer?.FullName ?? "Buyer",
