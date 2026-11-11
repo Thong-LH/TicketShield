@@ -85,7 +85,13 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
             throw new NotFoundException("Tin đăng bán vé", request.ListingId);
         }
 
-        if (routingListing.BundleId != null || routingListing.BundleTotalTickets >= 2)
+        var isBundle = routingListing.BundleId != null || routingListing.BundleTotalTickets >= 2;
+        var isAllOrNothing = routingListing.IsBundleAllOrNothing;
+        // Nếu là bundle nhưng cho phép bán lẻ (IsBundleAllOrNothing = false), và buyer yêu cầu mua lẻ (BuyAsBundle == false)
+        // thì không route sang HandleBundleHoldAsync mà đi tiếp xuống luồng giữ vé đơn lẻ (single listing).
+        var shouldHoldAsBundle = isBundle && (isAllOrNothing || request.BuyAsBundle != false);
+
+        if (shouldHoldAsBundle)
         {
             return await HandleBundleHoldAsync(routingListing, buyer, request, cancellationToken);
         }

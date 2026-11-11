@@ -213,7 +213,8 @@ public class ResaleListingsController(
             PrivateAccessToken = request?.PrivateAccessToken,
             RecipientName = request?.RecipientName,
             RecipientEmail = request?.RecipientEmail,
-            RecipientIdCard = request?.RecipientIdCard
+            RecipientIdCard = request?.RecipientIdCard,
+            BuyAsBundle = request?.BuyAsBundle
         };
 
         var result = await Mediator.Send(command, ct);

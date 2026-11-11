@@ -59,7 +59,7 @@ switch ($choice) {
     }
     "2" {
         Write-Host "`nStopping any existing microservice processes..." -ForegroundColor Yellow
-        Stop-Process -Name "MockOrganizer.API", "TicketShield.Identity.API", "TicketShield.API", "TicketShield.Gateway", "dotnet", "ngrok" -Force -ErrorAction SilentlyContinue
+        Stop-Process -Name "MockOrganizer.API", "TicketShield.Identity.API", "TicketShield.API", "TicketShield.Gateway", "TicketShield.AntiBot.Gateway", "TicketShield.Settlement.API", "dotnet", "ngrok" -Force -ErrorAction SilentlyContinue
         Start-Sleep -Seconds 1
 
         Write-Host "`nBuilding solution first to prevent simultaneous compile file locks..." -ForegroundColor Cyan
@@ -76,29 +76,35 @@ switch ($choice) {
                       else { "" }
 
         $services = @(
-            @{ Name = "MockOrganizer.API";         Path = "src/MockOrganizer/MockOrganizer.API";                 UseDoppler = $true },
-            @{ Name = "TicketShield.Identity.API"; Path = "src/TicketShield.Identity/TicketShield.Identity.API"; UseDoppler = $true },
-            @{ Name = "TicketShield.API (Core)";   Path = "src/TicketShield.Core/TicketShield.API";             UseDoppler = $true },
-            @{ Name = "TicketShield.Gateway";      Path = "src/TicketShield.Gateway";                          UseDoppler = $false },
-            @{ Name = "TicketShield.Settlement.API"; Path = "src/TicketShield.Settlement.API";                 UseDoppler = $false }
+            @{ Name = "MockOrganizer.API";           Path = "src/MockOrganizer/MockOrganizer.API";                 UseDoppler = $true },
+            @{ Name = "TicketShield.Identity.API";   Path = "src/TicketShield.Identity/TicketShield.Identity.API"; UseDoppler = $true },
+            @{ Name = "TicketShield.API (Core)";     Path = "src/TicketShield.Core/TicketShield.API";             UseDoppler = $true },
+            @{ Name = "TicketShield.Settlement.API"; Path = "src/TicketShield.Settlement.API";                 UseDoppler = $false },
+            @{ Name = "TicketShield.Gateway";        Path = "src/TicketShield.Gateway";                          UseDoppler = $false },
+            @{ Name = "TicketShield.AntiBot.Gateway";Path = "src/TicketShield.AntiBot.Gateway";                  UseDoppler = $false },
+            @{ Name = "Frontend Web App (Vite)";    Path = "d:/FE_CapstoneProject/apps/web";                     IsNpm = $true }
         )
 
         foreach ($svc in $services) {
             Write-Host "  -> Launching $($svc.Name)..." -ForegroundColor Cyan
             $svcName = $svc.Name
             $svcPath = $svc.Path
-            $runCmd = if ($svc.UseDoppler -and $dopplerBin) {
-                "& `"$dopplerBin`" run -- dotnet run --no-build --project `"$svcPath`""
+            if ($svc.IsNpm) {
+                $psCmd = "Set-Location '$svcPath'; Write-Host '=== $svcName ===' -ForegroundColor Yellow; npm run dev"
             } else {
-                "dotnet run --no-build --project `"$svcPath`""
+                $runCmd = if ($svc.UseDoppler -and $dopplerBin) {
+                    "& `"$dopplerBin`" run -- dotnet run --no-build --project `"$svcPath`""
+                } else {
+                    "dotnet run --no-build --project `"$svcPath`""
+                }
+                $psCmd = "Set-Location '$ProjectRoot'; Write-Host '=== $svcName ===' -ForegroundColor Yellow; $runCmd"
             }
-            $psCmd = "Set-Location '$ProjectRoot'; Write-Host '=== $svcName ===' -ForegroundColor Yellow; $runCmd"
             Start-Process powershell -ArgumentList "-NoExit", "-Command", $psCmd
         }
 
         Start-NgrokTunnel
 
-        Write-Host "`n[Success] All 4 microservices and Ngrok tunnel opened in separate windows!" -ForegroundColor Green
+        Write-Host "`n[Success] All microservices, Frontend Web App and Ngrok tunnel opened in separate windows!" -ForegroundColor Green
     }
     "3" {
         Write-Host "Exiting..." -ForegroundColor Gray

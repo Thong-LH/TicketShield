@@ -6,4 +6,5 @@ public class HoldListingForPurchaseRequest
     public string? RecipientName { get; set; }
     public string? RecipientEmail { get; set; }
     public string? RecipientIdCard { get; set; }
+    public bool? BuyAsBundle { get; set; }
 }
