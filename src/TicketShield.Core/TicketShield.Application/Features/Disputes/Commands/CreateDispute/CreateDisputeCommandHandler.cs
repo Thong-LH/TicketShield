@@ -31,6 +31,7 @@ public class CreateDisputeCommandHandler : IRequestHandler<CreateDisputeCommand,
 
         var escrow = await _db.EscrowTransactions
             .AsNoTracking()
+            .Include(row => row.Listing)
             .FirstOrDefaultAsync(row => row.Id == request.EscrowId, cancellationToken);
         if (escrow == null)
         {
@@ -45,6 +46,50 @@ public class CreateDisputeCommandHandler : IRequestHandler<CreateDisputeCommand,
         if (escrow.DisputeWaived)
         {
             throw new BusinessRuleViolationException("Vé này đã được đăng bán lại, quyền khiếu nại đã chấm dứt.");
+        }
+
+        // BE-11.3.1 (SCRUM-343 / SCRUM-344): Enforce Dispute Prevention on Used Gate Tickets
+        // Kiểm tra nếu vé liên kết với giao dịch đã qua cổng soát vé (TicketStatus.Used) thì từ chối khiếu nại
+        var ticketTokens = (escrow.NewTicketCode ?? "")
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .ToList();
+
+        if (ticketTokens.Count == 0 && escrow.Listing != null && !string.IsNullOrWhiteSpace(escrow.Listing.OriginalTicketCode))
+        {
+            ticketTokens.Add(escrow.Listing.OriginalTicketCode.Trim());
+        }
+
+        var isTicketUsed = false;
+        string? usedCode = null;
+
+        if (escrow.Listing?.TicketId.HasValue == true)
+        {
+            var listingTicket = await _db.Tickets
+                .AsNoTracking()
+                .FirstOrDefaultAsync(t => t.Id == escrow.Listing.TicketId.Value && t.Status == TicketStatus.Used, cancellationToken);
+            if (listingTicket != null)
+            {
+                isTicketUsed = true;
+                usedCode = listingTicket.TicketCode;
+            }
+        }
+
+        if (!isTicketUsed && ticketTokens.Count > 0)
+        {
+            var matchedTicket = await _db.Tickets
+                .AsNoTracking()
+                .FirstOrDefaultAsync(t => ticketTokens.Contains(t.TicketCode) && t.Status == TicketStatus.Used, cancellationToken);
+            if (matchedTicket != null)
+            {
+                isTicketUsed = true;
+                usedCode = matchedTicket.TicketCode;
+            }
+        }
+
+        if (isTicketUsed)
+        {
+            var codeDetail = !string.IsNullOrWhiteSpace(usedCode) ? $" [{usedCode}]" : "";
+            throw new BusinessRuleViolationException($"Vé{codeDetail} đã qua cửa soát vé tại sự kiện (đã sử dụng), không thể gửi khiếu nại.");
         }
 
         var buyer = await _db.ShadowUsers.FirstOrDefaultAsync(u => u.Id == buyerId, cancellationToken);

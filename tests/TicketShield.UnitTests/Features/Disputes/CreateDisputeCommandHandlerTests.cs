@@ -223,6 +223,137 @@ public class CreateDisputeCommandHandlerTests
         Assert.Empty(await db.Disputes.AsNoTracking().ToListAsync());
     }
 
+    [Fact]
+    public async Task Handle_WhenTicketStatusIsUsed_ByTicketId_ThrowsBusinessRuleViolationException()
+    {
+        await using var db = CreateDb();
+        var seeded = await SeedEscrowAsync(db, EscrowStatus.Locked, inSettlementBuffer: true, ticketStatus: TicketStatus.Used);
+        var handler = new CreateDisputeCommandHandler(db, new StubUser(seeded.BuyerId));
+
+        var ex = await Assert.ThrowsAsync<BusinessRuleViolationException>(() => handler.Handle(new CreateDisputeCommand
+        {
+            EscrowId = seeded.EscrowId,
+            Reason = "Vé không vào được cổng"
+        }, CancellationToken.None));
+
+        Assert.Contains("đã qua cửa soát vé tại sự kiện (đã sử dụng), không thể gửi khiếu nại.", ex.Message);
+        Assert.Contains(seeded.TicketCode, ex.Message);
+        Assert.Equal(422, await StatusCodeOf(ex));
+
+        db.ChangeTracker.Clear();
+        var escrow = await db.EscrowTransactions.AsNoTracking().SingleAsync(e => e.Id == seeded.EscrowId);
+        Assert.Equal(EscrowStatus.Locked, escrow.Status);
+        Assert.Empty(await db.Disputes.AsNoTracking().ToListAsync());
+    }
+
+    [Fact]
+    public async Task Handle_WhenTicketStatusIsUsed_ByNewTicketCode_ThrowsBusinessRuleViolationException()
+    {
+        await using var db = CreateDb();
+        var newCode = "TCK-VIP-SCAN-01";
+        var seeded = await SeedEscrowAsync(db, EscrowStatus.Locked, inSettlementBuffer: true, newTicketCode: newCode);
+        
+        // Tạo Ticket mới cấp cho buyer đã bị quét cổng
+        var concert = await db.Events.FirstAsync();
+        var tier = await db.TicketTiers.FirstAsync();
+        db.Tickets.Add(new Ticket
+        {
+            Id = Guid.NewGuid(),
+            EventId = concert.Id,
+            TierId = tier.Id,
+            CurrentOwnerId = seeded.BuyerId,
+            TicketCode = newCode,
+            OriginalPrice = 100_000m,
+            Status = TicketStatus.Used
+        });
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var handler = new CreateDisputeCommandHandler(db, new StubUser(seeded.BuyerId));
+
+        var ex = await Assert.ThrowsAsync<BusinessRuleViolationException>(() => handler.Handle(new CreateDisputeCommand
+        {
+            EscrowId = seeded.EscrowId,
+            Reason = "Khiếu nại sau khi đã quét vé"
+        }, CancellationToken.None));
+
+        Assert.Contains("đã qua cửa soát vé tại sự kiện (đã sử dụng), không thể gửi khiếu nại.", ex.Message);
+        Assert.Contains(newCode, ex.Message);
+        Assert.Equal(422, await StatusCodeOf(ex));
+        Assert.Empty(await db.Disputes.AsNoTracking().ToListAsync());
+    }
+
+    [Fact]
+    public async Task Handle_WhenTicketStatusIsUsed_InComboBundle_ThrowsBusinessRuleViolationException()
+    {
+        await using var db = CreateDb();
+        var comboCodes = "TCK-COMBO-01, TCK-COMBO-02";
+        var seeded = await SeedEscrowAsync(db, EscrowStatus.Locked, inSettlementBuffer: true, newTicketCode: comboCodes);
+        
+        var concert = await db.Events.FirstAsync();
+        var tier = await db.TicketTiers.FirstAsync();
+        // 1 vé trong combo đã bị quét cửa (Used)
+        db.Tickets.AddRange(
+            new Ticket
+            {
+                Id = Guid.NewGuid(),
+                EventId = concert.Id,
+                TierId = tier.Id,
+                CurrentOwnerId = seeded.BuyerId,
+                TicketCode = "TCK-COMBO-01",
+                OriginalPrice = 100_000m,
+                Status = TicketStatus.Valid
+            },
+            new Ticket
+            {
+                Id = Guid.NewGuid(),
+                EventId = concert.Id,
+                TierId = tier.Id,
+                CurrentOwnerId = seeded.BuyerId,
+                TicketCode = "TCK-COMBO-02",
+                OriginalPrice = 100_000m,
+                Status = TicketStatus.Used
+            }
+        );
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var handler = new CreateDisputeCommandHandler(db, new StubUser(seeded.BuyerId));
+
+        var ex = await Assert.ThrowsAsync<BusinessRuleViolationException>(() => handler.Handle(new CreateDisputeCommand
+        {
+            EscrowId = seeded.EscrowId,
+            Reason = "Gói combo có vấn đề"
+        }, CancellationToken.None));
+
+        Assert.Contains("đã qua cửa soát vé tại sự kiện (đã sử dụng), không thể gửi khiếu nại.", ex.Message);
+        Assert.Contains("TCK-COMBO-02", ex.Message);
+        Assert.Equal(422, await StatusCodeOf(ex));
+        Assert.Empty(await db.Disputes.AsNoTracking().ToListAsync());
+    }
+
+    [Fact]
+    public async Task Handle_WhenTicketStatusIsValid_AllowsDisputeCreation()
+    {
+        await using var db = CreateDb();
+        var seeded = await SeedEscrowAsync(db, EscrowStatus.Locked, inSettlementBuffer: true, ticketStatus: TicketStatus.Valid);
+        var handler = new CreateDisputeCommandHandler(db, new StubUser(seeded.BuyerId));
+
+        var result = await handler.Handle(new CreateDisputeCommand
+        {
+            EscrowId = seeded.EscrowId,
+            Reason = "Vé hợp lệ nhưng chỗ ngồi bị trùng"
+        }, CancellationToken.None);
+
+        Assert.NotNull(result.Data);
+        Assert.NotEqual(Guid.Empty, result.Data.DisputeId);
+
+        db.ChangeTracker.Clear();
+        var escrow = await db.EscrowTransactions.AsNoTracking().SingleAsync(e => e.Id == seeded.EscrowId);
+        Assert.Equal(EscrowStatus.Disputed, escrow.Status);
+        Assert.Single(await db.Disputes.AsNoTracking().ToListAsync());
+    }
+
     private static async Task<int> StatusCodeOf(Exception exception)
     {
         var context = new DefaultHttpContext();
@@ -258,12 +389,14 @@ public class CreateDisputeCommandHandlerTests
         return db;
     }
 
-    private static async Task<(Guid EscrowId, Guid BuyerId)> SeedEscrowAsync(
+    private static async Task<(Guid EscrowId, Guid BuyerId, string TicketCode)> SeedEscrowAsync(
         TicketShieldDbContext db,
         EscrowStatus status,
         bool inSettlementBuffer,
         string buyerAccountNumber = "123456789",
-        bool disputeWaived = false)
+        bool disputeWaived = false,
+        TicketStatus? ticketStatus = null,
+        string? newTicketCode = null)
     {
         var suffix = Guid.NewGuid().ToString("N")[..8];
         var organizer = new Organizer
@@ -303,17 +436,35 @@ public class CreateDisputeCommandHandlerTests
             TierName = "GA",
             OriginalPrice = 100_000m
         };
+        var originalCode = $"TCK-{suffix}";
         var listing = new ResaleListing
         {
             Id = Guid.NewGuid(),
             EventId = concert.Id,
             TierId = tier.Id,
             SellerId = seller.Id,
-            OriginalTicketCode = $"TCK-{suffix}",
+            OriginalTicketCode = originalCode,
             OriginalPrice = 100_000m,
             ResalePrice = 100_000m,
             ListingStatus = ListingStatus.Sold
         };
+
+        if (ticketStatus.HasValue)
+        {
+            var ticket = new Ticket
+            {
+                Id = Guid.NewGuid(),
+                EventId = concert.Id,
+                TierId = tier.Id,
+                CurrentOwnerId = buyer.Id,
+                TicketCode = originalCode,
+                OriginalPrice = 100_000m,
+                Status = ticketStatus.Value
+            };
+            db.Tickets.Add(ticket);
+            listing.TicketId = ticket.Id;
+        }
+
         var escrow = new EscrowTransaction
         {
             Id = Guid.NewGuid(),
@@ -322,7 +473,8 @@ public class CreateDisputeCommandHandlerTests
             SellerId = seller.Id,
             Status = status,
             InSettlementBuffer = inSettlementBuffer,
-            DisputeWaived = disputeWaived
+            DisputeWaived = disputeWaived,
+            NewTicketCode = newTicketCode
         };
 
         db.Organizers.Add(organizer);
@@ -333,7 +485,7 @@ public class CreateDisputeCommandHandlerTests
         db.EscrowTransactions.Add(escrow);
         await db.SaveChangesAsync();
         db.ChangeTracker.Clear();
-        return (escrow.Id, buyer.Id);
+        return (escrow.Id, buyer.Id, originalCode);
     }
 
     private sealed class DisputeInsertFailingContext : TicketShieldDbContext
