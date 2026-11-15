@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using TicketShield.Application.Common.Interfaces;
 using TicketShield.Application.Common.Models;
 using TicketShield.Application.Features.Orders.Models;
+using TicketShield.Domain.Entities;
 using TicketShield.Domain.Enums;
 using TicketShield.Domain.Exceptions;
 
@@ -95,6 +96,20 @@ public class GetBuyerOrderHistoryQueryHandler : IRequestHandler<GetBuyerOrderHis
             .Take(size)
             .ToListAsync(cancellationToken);
 
+        // Vé con của các đơn Combo trên trang này. Sắp CreatedAt rồi Id ngay trong SQL,
+        // đúng thứ tự webhook SePay dùng khi cấp mã vé mới cho từng vé trong gói.
+        var pageBundleIds = items.Where(e => e.BundleId.HasValue).Select(e => e.BundleId!.Value).Distinct().ToList();
+        var bundleListings = pageBundleIds.Count == 0
+            ? new Dictionary<Guid, List<ResaleListing>>()
+            : (await _dbContext.ResaleListings
+                    .AsNoTracking()
+                    .Where(l => l.BundleId != null && pageBundleIds.Contains(l.BundleId.Value))
+                    .OrderBy(l => l.CreatedAt)
+                    .ThenBy(l => l.Id)
+                    .ToListAsync(cancellationToken))
+                .GroupBy(l => l.BundleId!.Value)
+                .ToDictionary(g => g.Key, g => g.ToList());
+
         // 3. Map sang DTO chi tiết
         var dtos = items.Select(e =>
         {
@@ -142,6 +157,7 @@ public class GetBuyerOrderHistoryQueryHandler : IRequestHandler<GetBuyerOrderHis
                 // Chưa phát vé mới (Pending/Expired/Cancelled, hoặc chuyển vé lỗi) thì chỉ được xem mã đã che:
                 // mã gốc vẫn là vé của người bán.
                 TicketCode = !string.IsNullOrWhiteSpace(e.NewTicketCode) ? e.NewTicketCode : e.Listing?.MaskedTicketCode,
+                Tickets = BuildTickets(e, bundleListings),
                 OriginalTicketPrice = e.OriginalTicketPrice,
                 BuyerFee = e.BuyerFee,
                 TotalBuyerPaid = e.TotalBuyerPaid,
@@ -179,6 +195,39 @@ public class GetBuyerOrderHistoryQueryHandler : IRequestHandler<GetBuyerOrderHis
         };
 
         return ApiResponse<BuyerOrderHistoryResponseDto>.SuccessResponse(response, "Lấy lịch sử đơn hàng của người mua thành công.");
+    }
+
+    /// <summary>
+    /// Liệt kê từng vé trong đơn kèm khu ghế. Đơn đã phát vé: tách NewTicketCode (webhook nối các mã
+    /// mới bằng dấu phẩy theo thứ tự vé trong gói). Đơn chưa phát vé: chỉ trả mã đã che.
+    /// </summary>
+    private static List<BuyerOrderTicketDto> BuildTickets(
+        EscrowTransaction escrow,
+        IReadOnlyDictionary<Guid, List<ResaleListing>> bundleListings)
+    {
+        var listings = escrow.BundleId.HasValue
+                       && bundleListings.TryGetValue(escrow.BundleId.Value, out var bundle)
+                       && bundle.Count > 0
+            ? bundle
+            : escrow.Listing != null ? new List<ResaleListing> { escrow.Listing } : new List<ResaleListing>();
+
+        if (string.IsNullOrWhiteSpace(escrow.NewTicketCode))
+        {
+            return listings
+                .Select(l => new BuyerOrderTicketDto { TicketCode = l.MaskedTicketCode, SeatZone = l.SeatZone })
+                .ToList();
+        }
+
+        var codes = escrow.NewTicketCode.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        // Số mã lệch số vé (dữ liệu cũ) thì không đoán khu ghế, tránh gán nhầm ghế cho vé.
+        var sameOrder = codes.Length == listings.Count;
+        return codes
+            .Select((code, i) => new BuyerOrderTicketDto
+            {
+                TicketCode = code,
+                SeatZone = sameOrder ? listings[i].SeatZone : null
+            })
+            .ToList();
     }
 }
 

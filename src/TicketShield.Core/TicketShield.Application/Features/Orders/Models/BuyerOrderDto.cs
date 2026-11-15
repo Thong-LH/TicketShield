@@ -26,6 +26,8 @@ public class BuyerOrderDto
     public string TierName { get; set; } = string.Empty;
     public string? SeatZone { get; set; }
     public string? TicketCode { get; set; }
+    /// <summary>Từng vé trong đơn kèm khu ghế (Combo có nhiều vé). TicketCode ở trên giữ nguyên cho FE cũ.</summary>
+    public List<BuyerOrderTicketDto> Tickets { get; set; } = new();
 
     // Financial Ledger (Số tiền đã chuyển khoản qua VietQR & Mã tham chiếu SePay)
     public decimal OriginalTicketPrice { get; set; }

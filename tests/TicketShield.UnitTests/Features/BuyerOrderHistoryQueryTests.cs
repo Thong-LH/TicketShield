@@ -138,6 +138,46 @@ public class BuyerOrderHistoryQueryTests
 
         var order = Assert.Single(result.Data!.Orders.Items);
         Assert.Equal("NEW-TICK-CP-01", order.TicketCode);
+        var ticket = Assert.Single(order.Tickets);
+        Assert.Equal("NEW-TICK-CP-01", ticket.TicketCode);
+    }
+
+    [Fact]
+    public async Task Handle_PaidComboOrder_ListsEachIssuedTicketWithItsOwnSeatZone()
+    {
+        await using var db = CreateDb();
+        var buyerId = Guid.NewGuid();
+        await SeedSampleOrdersAsync(db, buyerId, Guid.NewGuid());
+        await SeedComboOrderAsync(db, buyerId, issuedCodes: "NEW-CB-1,NEW-CB-2,NEW-CB-3", EscrowStatus.Locked);
+
+        var handler = new GetBuyerOrderHistoryQueryHandler(db, new MockCurrentUserService(buyerId));
+        var result = await handler.Handle(new GetBuyerOrderHistoryQuery { Keyword = "PAY-COMBO" }, CancellationToken.None);
+
+        var order = Assert.Single(result.Data!.Orders.Items);
+        Assert.Equal(
+            new (string, string?)[] { ("NEW-CB-1", "A1"), ("NEW-CB-2", "A2"), ("NEW-CB-3", "B1") },
+            order.Tickets.Select(t => (t.TicketCode, t.SeatZone)).ToArray());
+    }
+
+    [Fact]
+    public async Task Handle_UnpaidComboOrder_ListsEachTicketMaskedWithSeatZone()
+    {
+        await using var db = CreateDb();
+        var buyerId = Guid.NewGuid();
+        await SeedSampleOrdersAsync(db, buyerId, Guid.NewGuid());
+        await SeedComboOrderAsync(db, buyerId, issuedCodes: null, EscrowStatus.Pending);
+
+        var handler = new GetBuyerOrderHistoryQueryHandler(db, new MockCurrentUserService(buyerId));
+        var result = await handler.Handle(new GetBuyerOrderHistoryQuery { Keyword = "PAY-COMBO" }, CancellationToken.None);
+
+        var order = Assert.Single(result.Data!.Orders.Items);
+        Assert.Equal(
+            new (string, string?)[] { ("TC******01", "A1"), ("TC******02", "A2"), ("TC******03", "B1") },
+            order.Tickets.Select(t => (t.TicketCode, t.SeatZone)).ToArray());
+        var json = JsonSerializer.Serialize(result);
+        Assert.DoesNotContain("TCK-CB-001", json);
+        Assert.DoesNotContain("TCK-CB-002", json);
+        Assert.DoesNotContain("TCK-CB-003", json);
     }
 
     [Fact]
@@ -386,6 +426,56 @@ public class BuyerOrderHistoryQueryTests
         db.EscrowTransactions.AddRange(order1, order2, order3, order4);
         db.Disputes.Add(dispute3);
 
+        await db.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// Combo 3 vé khác khu ghế, đăng lần lượt A1 → A2 → B1. Tin đầu gói là tin gắn giao dịch,
+    /// giống HoldListingForPurchase; webhook SePay cấp mã mới theo đúng thứ tự đăng đó.
+    /// </summary>
+    private static async Task SeedComboOrderAsync(TicketShieldDbContext db, Guid buyerId, string? issuedCodes, EscrowStatus status)
+    {
+        var anyEvent = await db.Events.FirstAsync();
+        var anyTier = await db.TicketTiers.FirstAsync(t => t.EventId == anyEvent.Id);
+        var sellerId = Guid.NewGuid();
+        var bundleId = Guid.NewGuid();
+        var baseTime = DateTimeOffset.UtcNow.AddDays(-1);
+
+        var listings = new[] { ("TCK-CB-001", "A1"), ("TCK-CB-002", "A2"), ("TCK-CB-003", "B1") }
+            .Select((t, i) => new ResaleListing
+            {
+                Id = Guid.NewGuid(),
+                BundleId = bundleId,
+                BundleTotalTickets = 3,
+                IsBundleAllOrNothing = true,
+                EventId = anyEvent.Id,
+                TierId = anyTier.Id,
+                SellerId = sellerId,
+                OriginalTicketCode = t.Item1,
+                SeatZone = t.Item2,
+                OriginalPrice = 100_000m,
+                ResalePrice = 100_000m,
+                ListingStatus = issuedCodes is null ? ListingStatus.Transacting : ListingStatus.Sold,
+                CreatedAt = baseTime.AddMinutes(i)
+            })
+            .ToList();
+
+        db.ResaleListings.AddRange(listings);
+        db.EscrowTransactions.Add(new EscrowTransaction
+        {
+            Id = Guid.NewGuid(),
+            ListingId = listings[0].Id,
+            BundleId = bundleId,
+            BuyerId = buyerId,
+            SellerId = sellerId,
+            OriginalTicketPrice = 300_000m,
+            BuyerFee = 15_000m,
+            TotalBuyerPaid = 315_000m,
+            PaymentReference = "PAY-COMBO-01",
+            NewTicketCode = issuedCodes,
+            Status = status,
+            CreatedAt = baseTime.AddMinutes(10)
+        });
         await db.SaveChangesAsync();
     }
 
