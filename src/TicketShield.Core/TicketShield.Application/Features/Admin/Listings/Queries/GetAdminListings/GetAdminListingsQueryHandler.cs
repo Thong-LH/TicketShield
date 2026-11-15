@@ -31,7 +31,12 @@ public class GetAdminListingsQueryHandler : IRequestHandler<GetAdminListingsQuer
 
         var totalListings = await baseAllQuery.CountAsync(cancellationToken);
         var totalSingleTickets = await baseAllQuery.CountAsync(l => l.BundleId == null, cancellationToken);
-        var totalBundles = await baseAllQuery.CountAsync(l => l.BundleId != null, cancellationToken);
+        // Đếm số gói Combo (mỗi BundleId một gói), không đếm số vé nằm trong gói.
+        var totalBundles = await baseAllQuery
+            .Where(l => l.BundleId != null)
+            .Select(l => l.BundleId)
+            .Distinct()
+            .CountAsync(cancellationToken);
         var totalActiveListings = await baseAllQuery.CountAsync(l => l.ListingStatus == ListingStatus.Verified, cancellationToken);
         var totalSoldListings = await baseAllQuery.CountAsync(l => l.ListingStatus == ListingStatus.Sold, cancellationToken);
 
@@ -66,6 +71,12 @@ public class GetAdminListingsQueryHandler : IRequestHandler<GetAdminListingsQuer
         else if (request.IsSingleOnly.HasValue && request.IsSingleOnly.Value)
         {
             query = query.Where(l => l.BundleId == null);
+        }
+
+        // Lọc đủ các vé con của một gói Combo
+        if (request.BundleId.HasValue && request.BundleId.Value != Guid.Empty)
+        {
+            query = query.Where(l => l.BundleId == request.BundleId.Value);
         }
 
         // Lọc theo sự kiện

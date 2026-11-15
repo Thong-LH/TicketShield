@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using TicketShield.Domain.Enums;
 
 namespace TicketShield.Application.Features.Orders.Models;
@@ -33,7 +34,8 @@ public class BuyerOrderDto
     public string? PaymentReference { get; set; }
     public string? BankTransactionReference { get; set; }
 
-    // Status & Milestones
+    // Status & Milestones (enum trả dạng chữ, giống các API cũ)
+    [JsonConverter(typeof(JsonStringEnumConverter))]
     public EscrowStatus Status { get; set; }
     public string StatusDescription { get; set; } = string.Empty;
     public DateTimeOffset? TransferredAt { get; set; }
@@ -50,6 +52,7 @@ public class BuyerOrderDto
 
     // Dispute reference
     public Guid? DisputeId { get; set; }
+    [JsonConverter(typeof(JsonStringEnumConverter))]
     public DisputeStatus? DisputeStatus { get; set; }
     public bool DisputeWaived { get; set; }
 }

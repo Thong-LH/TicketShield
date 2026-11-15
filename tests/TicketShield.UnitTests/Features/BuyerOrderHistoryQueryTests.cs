@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using TicketShield.Application.Common.Interfaces;
 using TicketShield.Application.Features.Orders.Queries.GetBuyerOrderHistory;
@@ -77,6 +78,66 @@ public class BuyerOrderHistoryQueryTests
         Assert.NotNull(order.RefundedAt);
         Assert.Contains("Vé không hợp lệ", order.RefundReason);
         Assert.Equal("Đã hoàn tiền cho người mua", order.StatusDescription);
+    }
+
+    [Fact]
+    public async Task Handle_OrderWithoutIssuedTicket_ShowsMaskedCodeAndNeverOriginal()
+    {
+        await using var db = CreateDb();
+        var buyerId = Guid.NewGuid();
+        await SeedSampleOrdersAsync(db, buyerId, Guid.NewGuid());
+
+        // Người mua chỉ bấm giữ vé (HoldListingForPurchase) rồi bỏ, chưa trả tiền → chưa có NewTicketCode.
+        var anyEvent = await db.Events.FirstAsync();
+        var anyTier = await db.TicketTiers.FirstAsync(t => t.EventId == anyEvent.Id);
+        var heldListing = new ResaleListing
+        {
+            Id = Guid.NewGuid(),
+            EventId = anyEvent.Id,
+            TierId = anyTier.Id,
+            SellerId = Guid.NewGuid(),
+            OriginalTicketCode = "TCK-HOLD-01",
+            OriginalPrice = 100_000m,
+            ResalePrice = 100_000m,
+            ListingStatus = ListingStatus.Transacting,
+            CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-10)
+        };
+        db.ResaleListings.Add(heldListing);
+        db.EscrowTransactions.Add(new EscrowTransaction
+        {
+            Id = Guid.NewGuid(),
+            ListingId = heldListing.Id,
+            BuyerId = buyerId,
+            SellerId = heldListing.SellerId,
+            OriginalTicketPrice = 100_000m,
+            BuyerFee = 5_000m,
+            TotalBuyerPaid = 105_000m,
+            PaymentReference = "PAY-HOLD-01",
+            Status = EscrowStatus.Pending,
+            CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-10)
+        });
+        await db.SaveChangesAsync();
+
+        var handler = new GetBuyerOrderHistoryQueryHandler(db, new MockCurrentUserService(buyerId));
+        var result = await handler.Handle(new GetBuyerOrderHistoryQuery { Status = EscrowStatus.Pending }, CancellationToken.None);
+
+        var order = Assert.Single(result.Data!.Orders.Items);
+        Assert.Equal("TC*******01", order.TicketCode);
+        Assert.DoesNotContain("TCK-HOLD-01", JsonSerializer.Serialize(result));
+    }
+
+    [Fact]
+    public async Task Handle_OrderWithIssuedTicket_ShowsBuyersNewTicketCode()
+    {
+        await using var db = CreateDb();
+        var buyerId = Guid.NewGuid();
+        await SeedSampleOrdersAsync(db, buyerId, Guid.NewGuid());
+
+        var handler = new GetBuyerOrderHistoryQueryHandler(db, new MockCurrentUserService(buyerId));
+        var result = await handler.Handle(new GetBuyerOrderHistoryQuery { Status = EscrowStatus.Released }, CancellationToken.None);
+
+        var order = Assert.Single(result.Data!.Orders.Items);
+        Assert.Equal("NEW-TICK-CP-01", order.TicketCode);
     }
 
     [Fact]

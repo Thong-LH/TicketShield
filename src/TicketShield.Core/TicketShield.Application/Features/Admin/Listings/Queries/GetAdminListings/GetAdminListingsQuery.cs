@@ -20,6 +20,8 @@ public class GetAdminListingsQuery : IRequest<ApiResponse<AdminListingsResponseD
     public bool? IsAtPriceCeilingOnly { get; set; }
     public Guid? EventId { get; set; }
     public Guid? SellerId { get; set; }
+    /// <summary>Lấy đủ các vé con của một gói Combo (phân trang có thể cắt combo ra nhiều trang).</summary>
+    public Guid? BundleId { get; set; }
     public string? Keyword { get; set; }
     public DateTimeOffset? FromDate { get; set; }
     public DateTimeOffset? ToDate { get; set; }
@@ -38,7 +40,8 @@ public class GetAdminListingsQuery : IRequest<ApiResponse<AdminListingsResponseD
         Guid? sellerId = null,
         string? keyword = null,
         DateTimeOffset? fromDate = null,
-        DateTimeOffset? toDate = null)
+        DateTimeOffset? toDate = null,
+        Guid? bundleId = null)
     {
         Page = page > 0 ? page : 1;
         Size = size > 0 ? size : 20;
@@ -52,6 +55,7 @@ public class GetAdminListingsQuery : IRequest<ApiResponse<AdminListingsResponseD
         Keyword = keyword;
         FromDate = fromDate;
         ToDate = toDate;
+        BundleId = bundleId;
     }
 }
 

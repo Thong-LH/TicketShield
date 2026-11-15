@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using TicketShield.Domain.Enums;
 
 namespace TicketShield.Application.Features.Admin.Transactions.Models;
@@ -40,7 +41,8 @@ public class AdminTransactionDto
     public string? PaymentReference { get; set; }
     public string? BankTransactionReference { get; set; }
 
-    // Status & Milestones
+    // Status & Milestones (enum trả dạng chữ, giống các API cũ)
+    [JsonConverter(typeof(JsonStringEnumConverter))]
     public EscrowStatus Status { get; set; }
     public bool InSettlementBuffer { get; set; }
     public DateTimeOffset? TransferredAt { get; set; }
@@ -55,6 +57,7 @@ public class AdminTransactionDto
     // Payout Ledger info
     public Guid? PayoutId { get; set; }
     public string? PayoutCode { get; set; }
+    [JsonConverter(typeof(JsonStringEnumConverter))]
     public PayoutStatus? PayoutStatus { get; set; }
     public decimal? PayoutAmount { get; set; }
     public string? RecipientBankCode { get; set; }
@@ -67,6 +70,7 @@ public class AdminTransactionDto
 
     // Dispute reference
     public Guid? DisputeId { get; set; }
+    [JsonConverter(typeof(JsonStringEnumConverter))]
     public DisputeStatus? DisputeStatus { get; set; }
 }
 

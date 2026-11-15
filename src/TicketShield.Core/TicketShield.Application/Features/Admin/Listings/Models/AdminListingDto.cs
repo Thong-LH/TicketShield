@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using TicketShield.Domain.Enums;
 
 namespace TicketShield.Application.Features.Admin.Listings.Models;
@@ -44,8 +45,10 @@ public class AdminListingDto
     public decimal DiscountAmount { get; set; }
     public decimal DiscountPercentage { get; set; }
 
-    // Status & Milestones
+    // Status & Milestones (enum trả dạng chữ, giống các API cũ)
+    [JsonConverter(typeof(JsonStringEnumConverter))]
     public ListingStatus ListingStatus { get; set; }
+    [JsonConverter(typeof(JsonStringEnumConverter))]
     public VerificationStatus VerificationStatus { get; set; }
     public bool IsPrivate { get; set; }
     public DateTimeOffset CreatedAt { get; set; }

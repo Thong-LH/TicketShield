@@ -28,7 +28,7 @@ public class AdminListingsQueryTests
         // Check Summary metrics
         Assert.Equal(5, result.Data.Summary.TotalListings);
         Assert.Equal(3, result.Data.Summary.TotalSingleTickets); // 3 single tickets
-        Assert.Equal(2, result.Data.Summary.TotalBundles);       // 2 combo tickets in 1 bundle
+        Assert.Equal(1, result.Data.Summary.TotalBundles);       // 1 combo (chứa 2 vé) → đếm số combo, không đếm số vé
         Assert.Equal(3, result.Data.Summary.TotalActiveListings); // 3 Verified
         Assert.Equal(2, result.Data.Summary.TotalSoldListings);   // 2 Sold
         Assert.Equal(2, result.Data.Summary.TotalAtCeilingListings); // 2 listings priced at max ceiling
@@ -53,6 +53,46 @@ public class AdminListingsQueryTests
             Assert.NotNull(item.BundleId);
             Assert.Equal(2, item.BundleTotalTickets);
         });
+    }
+
+    [Fact]
+    public async Task Handle_FilterByBundleId_ReturnsEveryTicketOfThatComboOnly()
+    {
+        await using var db = CreateDb();
+        await SeedSampleListingsAsync(db);
+
+        // Thêm combo thứ hai để chắc chắn lọc đúng combo, không trả lẫn mọi combo.
+        var template = await db.ResaleListings.FirstAsync(l => l.OriginalTicketCode == "TCK-BDL-01");
+        var targetBundleId = template.BundleId!.Value;
+        var otherBundleId = Guid.NewGuid();
+        foreach (var code in new[] { "TCK-OTHER-01", "TCK-OTHER-02" })
+        {
+            db.ResaleListings.Add(new ResaleListing
+            {
+                Id = Guid.NewGuid(),
+                BundleId = otherBundleId,
+                BundleTotalTickets = 2,
+                EventId = template.EventId,
+                TierId = template.TierId,
+                SellerId = template.SellerId,
+                OriginalTicketCode = code,
+                OriginalPrice = 100_000m,
+                ResalePrice = 100_000m,
+                AppliedMarkupPercentage = 10m,
+                ListingStatus = ListingStatus.Verified,
+                CreatedAt = DateTimeOffset.UtcNow.AddHours(-6)
+            });
+        }
+        await db.SaveChangesAsync();
+
+        var handler = new GetAdminListingsQueryHandler(db);
+        var result = await handler.Handle(new GetAdminListingsQuery { BundleId = targetBundleId }, CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.Equal(2, result.Data!.Listings.TotalCount);
+        Assert.Equal(
+            new[] { "TCK-BDL-01", "TCK-BDL-02" },
+            result.Data.Listings.Items.Select(i => i.OriginalTicketCode).OrderBy(c => c).ToArray());
     }
 
     [Fact]

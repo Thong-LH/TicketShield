@@ -139,7 +139,9 @@ public class GetBuyerOrderHistoryQueryHandler : IRequestHandler<GetBuyerOrderHis
                 EventStartAt = e.Listing?.Event?.EventStartAt ?? DateTimeOffset.MinValue,
                 TierName = e.Listing?.Tier?.TierName ?? string.Empty,
                 SeatZone = e.Listing?.SeatZone,
-                TicketCode = !string.IsNullOrWhiteSpace(e.NewTicketCode) ? e.NewTicketCode : e.Listing?.OriginalTicketCode,
+                // Chưa phát vé mới (Pending/Expired/Cancelled, hoặc chuyển vé lỗi) thì chỉ được xem mã đã che:
+                // mã gốc vẫn là vé của người bán.
+                TicketCode = !string.IsNullOrWhiteSpace(e.NewTicketCode) ? e.NewTicketCode : e.Listing?.MaskedTicketCode,
                 OriginalTicketPrice = e.OriginalTicketPrice,
                 BuyerFee = e.BuyerFee,
                 TotalBuyerPaid = e.TotalBuyerPaid,
