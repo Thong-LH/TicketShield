@@ -11,7 +11,7 @@ public sealed class SmtpCapture : IAsyncDisposable
     private readonly TcpListener listener = new(IPAddress.Loopback, 0);
     private readonly CancellationTokenSource stop = new();
     private Task? loop;
-    public ConcurrentQueue<(string Recipient, string Otp)> Messages { get; } = new();
+    public ConcurrentQueue<(string Recipient, string Otp, string Body)> Messages { get; } = new();
     public bool Reject { get; set; }
     public int Port => ((IPEndPoint)listener.LocalEndpoint).Port;
     public void Start() { listener.Start(); loop = Accept(); }
@@ -56,7 +56,7 @@ public sealed class SmtpCapture : IAsyncDisposable
                                 } catch { }
                             }
                         }
-                        if (match.Success) Messages.Enqueue((recipient, match.Groups[1].Value));
+                        if (match.Success) Messages.Enqueue((recipient, match.Groups[1].Value, textToSearch));
                         await writer.WriteLineAsync("250 accepted");
                     } else if (line == "QUIT") { await writer.WriteLineAsync("221 bye"); break; }
                     else await writer.WriteLineAsync("250 OK");

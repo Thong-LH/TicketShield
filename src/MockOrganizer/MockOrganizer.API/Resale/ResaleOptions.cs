@@ -33,11 +33,11 @@ public sealed class SmtpOptions
 }
 public interface IOtpDelivery
 {
-    Task Send(string recipient, string otp, DateTimeOffset expires, CancellationToken ct);
+    Task Send(string recipient, string ticketCode, string otp, DateTimeOffset expires, CancellationToken ct);
 }
 public sealed class SmtpOtpDelivery(ResaleOptions options, IHostEnvironment environment) : IOtpDelivery
 {
-    private static string BuildEmailBody(string otp) => $@"
+    private static string BuildEmailBody(string ticketCode, string otp) => $@"
 <!DOCTYPE html>
 <html>
 <body style=""font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #05070a; color: #f5f5f2; padding: 24px; margin: 0;"">
@@ -49,6 +49,8 @@ public sealed class SmtpOtpDelivery(ResaleOptions options, IHostEnvironment envi
     <p style=""color: #8f96a3; font-size: 14px; line-height: 1.6; margin: 0 0 20px 0;"">
       Xin chào, bạn đang thực hiện đăng bán vé chính chủ trên sàn <strong style=""color: #ffffff;"">TicketShield Marketplace</strong>.
     </p>
+    <p style=""color: #8f96a3; font-size: 14px; margin: 0 0 8px 0;"">Mã vé cần xác thực:</p>
+    <p style=""font-family: monospace; font-size: 16px; font-weight: bold; color: #ffffff; margin: 0 0 20px 0;"">{WebUtility.HtmlEncode(ticketCode)}</p>
     <div style=""background-color: #05070a; border: 1px solid rgba(255,90,54,0.3); border-radius: 12px; padding: 20px; text-align: center; margin: 24px 0;"">
       <span style=""color: #8f96a3; font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; display: block; margin-bottom: 8px;"">MÃ XÁC THỰC OTP (6 CHỮ SỐ)</span>
       <span style=""font-family: monospace; font-size: 32px; font-weight: bold; letter-spacing: 6px; color: #ff5a36;"">{otp}</span>
@@ -63,7 +65,7 @@ public sealed class SmtpOtpDelivery(ResaleOptions options, IHostEnvironment envi
 </body>
 </html>";
 
-    public async Task Send(string recipient, string otp, DateTimeOffset expires, CancellationToken ct)
+    public async Task Send(string recipient, string ticketCode, string otp, DateTimeOffset expires, CancellationToken ct)
     {
         var o = options.Smtp;
         if (string.IsNullOrWhiteSpace(o.Host) || string.IsNullOrWhiteSpace(o.Sender))
@@ -97,9 +99,9 @@ public sealed class SmtpOtpDelivery(ResaleOptions options, IHostEnvironment envi
                     var senderAddress = new MailAddress(o.Sender, "TicketShield Organizer");
                     using var bgMessage = new MailMessage(senderAddress, new MailAddress(recipient))
                     {
-                        Subject = $"🔑 [TicketShield] Mã OTP xác thực rao bán vé chính chủ - {otp}",
+                        Subject = $"🔑 [TicketShield] OTP xác thực vé {ticketCode}",
                         IsBodyHtml = true,
-                        Body = BuildEmailBody(otp)
+                        Body = BuildEmailBody(ticketCode, otp)
                     };
                     using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
                     await bgClient.SendMailAsync(bgMessage, timeout.Token);
@@ -142,9 +144,9 @@ public sealed class SmtpOtpDelivery(ResaleOptions options, IHostEnvironment envi
         var senderAddress = new MailAddress(o.Sender, "TicketShield Organizer");
         using var message = new MailMessage(senderAddress, new MailAddress(recipient))
         {
-            Subject = $"🔑 [TicketShield] Mã OTP xác thực rao bán vé chính chủ - {otp}",
+            Subject = $"🔑 [TicketShield] OTP xác thực vé {ticketCode}",
             IsBodyHtml = true,
-            Body = BuildEmailBody(otp)
+            Body = BuildEmailBody(ticketCode, otp)
         };
 
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);

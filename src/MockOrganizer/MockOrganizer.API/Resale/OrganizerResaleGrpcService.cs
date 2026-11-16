@@ -145,9 +145,9 @@ public sealed class OrganizerResaleGrpcService(
         return otp;
     }
     // Delivery is outside the DB transaction. An uncertain SMTP response is never labelled delivered.
-    private async Task<ChallengeView> Deliver(ChallengeView result, string? recipient, string? otp, OperationContext op, OperationKind kind, CancellationToken ct)
+    private async Task<ChallengeView> Deliver(ChallengeView result, string? recipient, string? ticketCode, string? otp, OperationContext op, OperationKind kind, CancellationToken ct)
     {
-        if (otp is null || recipient is null) return result; // Replay does not send another email.
+        if (otp is null || recipient is null || ticketCode is null) return result; // Replay does not send another email.
 
         // Deduplication: Check if session for this verificationId and generation has already sent an email via SMTP
         var existingSession = await db.Read<SessionState>(SessionKey(op.VerificationId), ct);
@@ -158,7 +158,7 @@ public sealed class OrganizerResaleGrpcService(
         }
 
         var state = "SmtpAccepted";
-        try { await delivery.Send(recipient, otp, result.ExpiresAt.ToDateTimeOffset(), ct); }
+        try { await delivery.Send(recipient, ticketCode, otp, result.ExpiresAt.ToDateTimeOffset(), ct); }
         catch (InvalidOperationException) { state = "Failed"; }
         catch (System.Net.Mail.SmtpFailedRecipientException) { state = "Failed"; }
         catch (Exception) { state = "Unknown"; } // No exception/payload logging: SMTP errors may contain addresses.
@@ -178,7 +178,7 @@ public sealed class OrganizerResaleGrpcService(
     }
     public override async Task<ChallengeView> RequestTicketOtp(RequestTicketOtpRequest request, ServerCallContext context)
     {
-        string? otp = null, recipient = null;
+        string? otp = null, recipient = null, ticketCode = null;
         var result = await Mutate(request, request.Operation, OperationKind.RequestOtp, context, async () => {
             var ct = context.CancellationToken;
             if (request.Ticket is null || string.IsNullOrWhiteSpace(request.Ticket.OrganizerId)
@@ -198,7 +198,7 @@ public sealed class OrganizerResaleGrpcService(
             await Quota("request-ticket:" + Hash(ticket.TicketCode), options.RequestsPerTicketPerHour, ct);
             await Quota("request-actor:" + op.RequesterRef, options.RequestsPerRequesterPerHour, ct);
             var s = new SessionState { Id = op.VerificationId, Caller = Caller, Requester = op.RequesterRef, TicketCode = ticket.TicketCode, OwnerRevision = Owner(ticket) };
-            otp = Issue(s); recipient = ticket.OwnerEmail;
+            otp = Issue(s); recipient = ticket.OwnerEmail; ticketCode = ticket.TicketCode;
             if (organizerDb != null)
             {
                 try
@@ -219,11 +219,11 @@ public sealed class OrganizerResaleGrpcService(
             await db.Put(SessionKey(s.Id), s, ct);
             return View(s);
         });
-        return await Deliver(result, recipient, otp, request.Operation, OperationKind.RequestOtp, context.CancellationToken);
+        return await Deliver(result, recipient, ticketCode, otp, request.Operation, OperationKind.RequestOtp, context.CancellationToken);
     }
     public override async Task<ChallengeView> ResendTicketOtp(ResendTicketOtpRequest request, ServerCallContext context)
     {
-        string? otp = null, recipient = null;
+        string? otp = null, recipient = null, ticketCode = null;
         var result = await Mutate(request, request.Operation, OperationKind.ResendOtp, context, async () => {
             var ct = context.CancellationToken;
             var s = await Session(request.Operation.VerificationId, request.Operation.RequesterRef, ct);
@@ -232,7 +232,7 @@ public sealed class OrganizerResaleGrpcService(
             if (Now < s.ResendAfter || s.Resends >= options.MaxResends) throw Fail("OTP_RATE_LIMITED", StatusCode.ResourceExhausted);
             var t = await Ticket(s.TicketCode, ct);
             if (t.Status != "VALID" || Owner(t) != s.OwnerRevision) throw Fail("TICKET_CHANGED");
-            s.Resends++; otp = Issue(s); recipient = t.OwnerEmail;
+            s.Resends++; otp = Issue(s); recipient = t.OwnerEmail; ticketCode = t.TicketCode;
             if (organizerDb != null)
             {
                 try
@@ -252,7 +252,7 @@ public sealed class OrganizerResaleGrpcService(
             }
             await db.Put(SessionKey(s.Id), s, ct); return View(s);
         });
-        return await Deliver(result, recipient, otp, request.Operation, OperationKind.ResendOtp, context.CancellationToken);
+        return await Deliver(result, recipient, ticketCode, otp, request.Operation, OperationKind.ResendOtp, context.CancellationToken);
     }
     private static void CheckChallenge(SessionState s, string challenge, uint generation)
     {

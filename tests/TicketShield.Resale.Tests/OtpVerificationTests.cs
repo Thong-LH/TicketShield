@@ -35,7 +35,7 @@ public sealed class OtpVerificationTests(ResaleFixture f) : IClassFixture<Resale
     // ───────────────────────── Happy path ─────────────────────────
 
     [Fact]
-    public async Task Otp_email_is_sent_to_the_ticket_owner_with_a_6_digit_code()
+    public async Task Otp_email_is_sent_to_the_ticket_owner_with_a_6_digit_code_and_ticket_code()
     {
         var ticket = await f.Ticket();
 
@@ -43,6 +43,7 @@ public sealed class OtpVerificationTests(ResaleFixture f) : IClassFixture<Resale
 
         Assert.Matches(new Regex(@"^\d{6}$"), otp);
         Assert.Contains("seller@example.invalid", f.Mail.Messages.Last().Recipient);
+        Assert.Contains(ticket, f.Mail.Messages.Last().Body);
     }
 
     [Fact]
