@@ -211,7 +211,6 @@ public class ConcurrencyVerificationAndRegressionTestSuite
 
         mock.Setup(c => c.CalculateFeeAsync(It.IsAny<decimal>(), It.IsAny<bool>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
             .Returns((decimal price, bool isPrivate, Guid? eventId, CancellationToken ct) => calcFunc(price, isPrivate, ct));
-
         return mock;
     }
 
