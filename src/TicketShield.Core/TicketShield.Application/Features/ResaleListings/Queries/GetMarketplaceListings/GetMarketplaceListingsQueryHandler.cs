@@ -63,10 +63,30 @@ public class GetMarketplaceListingsQueryHandler : IRequestHandler<GetMarketplace
             .Take(size)
             .ToListAsync(cancellationToken);
 
+        // A combo creates one escrow row against its anchor listing. Supply
+        // that exact hold expiry to every listing in the bundle so all clients
+        // see the same server-side countdown.
+        var bundleIds = listings
+            .Where(l => l.BundleId.HasValue)
+            .Select(l => l.BundleId!.Value)
+            .Distinct()
+            .ToList();
+        var bundleUnlocks = bundleIds.Count == 0
+            ? new Dictionary<Guid, DateTimeOffset>()
+            : await _dbContext.EscrowTransactions
+                .AsNoTracking()
+                .Where(e => e.BundleId.HasValue && bundleIds.Contains(e.BundleId.Value)
+                    && e.Status == EscrowStatus.Pending && e.UnlockAt.HasValue && e.UnlockAt.Value > now)
+                .GroupBy(e => e.BundleId!.Value)
+                .Select(group => new { BundleId = group.Key, UnlockAt = group.Max(e => e.UnlockAt!.Value) })
+                .ToDictionaryAsync(item => item.BundleId, item => item.UnlockAt, cancellationToken);
+
         // NOTE: Không áp dụng .Select() DTO projection ở SQL vì ResaleListing có computed properties
         // (DiscountAmount, DiscountPercentage, MaskedTicketCode) không thể translate sang SQL.
         // Entity được load đầy đủ, DTO mapping thực hiện in-memory qua ToDetailDto().
-        var dtos = listings.Select(l => l.ToDetailDto()).ToList();
+        var dtos = listings
+            .Select(l => l.ToDetailDto(l.BundleId.HasValue && bundleUnlocks.TryGetValue(l.BundleId.Value, out var unlockAt) ? unlockAt : null))
+            .ToList();
         var paginatedList = new PaginatedList<ResaleListingDetailDto>(dtos, totalCount, page, size);
 
         return ApiResponse<PaginatedList<ResaleListingDetailDto>>.SuccessResponse(paginatedList, "Lấy danh sách vé thị trường thành công.");

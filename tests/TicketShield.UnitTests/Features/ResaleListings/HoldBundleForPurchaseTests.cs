@@ -387,6 +387,33 @@ public class HoldBundleForPurchaseTests
     }
 
     [Fact]
+    public async Task ReleaseBundle_WhenFlexibleBundleWasHeldAsBundle_ShouldReleaseEveryListing()
+    {
+        var (dbContext, seller, buyer1, _, _) = CreateInMemoryDbContextWithServices();
+        var feeCalculator = new MockResaleFeeCalculator();
+        var currentUserService = new MockCurrentUserService(buyer1.Id);
+        var eventId = (await dbContext.Events.FirstAsync()).Id;
+        var tierId = (await dbContext.TicketTiers.FirstAsync()).Id;
+        var bundleId = Guid.NewGuid();
+        var listings = CreateBundleListings(bundleId, eventId, tierId, seller.Id, 2);
+        listings.ForEach(listing => listing.IsBundleAllOrNothing = false);
+        dbContext.ResaleListings.AddRange(listings);
+        await dbContext.SaveChangesAsync();
+
+        // Explicitly select bundle purchase for a flexible bundle.
+        await new HoldListingForPurchaseCommandHandler(dbContext, feeCalculator, currentUserService)
+            .Handle(new HoldListingForPurchaseCommand(listings[0].Id, buyAsBundle: true), CancellationToken.None);
+
+        await new ReleaseListingHoldCommandHandler(dbContext, currentUserService)
+            .Handle(new ReleaseListingHoldCommand(listings[0].Id), CancellationToken.None);
+
+        var released = await dbContext.ResaleListings.Where(l => l.BundleId == bundleId).ToListAsync();
+        Assert.All(released, listing => Assert.Equal(ListingStatus.Verified, listing.ListingStatus));
+        Assert.Equal(EscrowStatus.Cancelled,
+            (await dbContext.EscrowTransactions.SingleAsync(escrow => escrow.BundleId == bundleId)).Status);
+    }
+
+    [Fact]
     public async Task ExpireBundle_WhenEscrowExpires_ShouldReleaseAllListings()
     {
         // Arrange

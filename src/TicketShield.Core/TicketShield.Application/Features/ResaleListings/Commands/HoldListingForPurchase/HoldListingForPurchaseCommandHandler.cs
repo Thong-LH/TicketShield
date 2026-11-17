@@ -17,19 +17,21 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
     private readonly IResaleFeeCalculator _feeCalculator;
     private readonly IVietQrService? _vietQrService;
     private readonly IMessageSchedulerService? _messageSchedulerService;
+    private readonly IPaymentRealtimeNotifier? _paymentNotifier;
 
     public HoldListingForPurchaseCommandHandler(
         ITicketShieldDbContext dbContext,
         IResaleFeeCalculator feeCalculator,
         ICurrentUserService? currentUserService = null,
         IVietQrService? vietQrService = null,
-        IMessageSchedulerService? messageSchedulerService = null)
+        IMessageSchedulerService? messageSchedulerService = null, IPaymentRealtimeNotifier? paymentNotifier = null)
     {
         _dbContext = dbContext;
         _feeCalculator = feeCalculator;
         _currentUserService = currentUserService;
         _vietQrService = vietQrService;
         _messageSchedulerService = messageSchedulerService;
+        _paymentNotifier = paymentNotifier;
     }
 
     public async Task<ApiResponse<HoldListingForPurchaseResponse>> Handle(HoldListingForPurchaseCommand request, CancellationToken cancellationToken)
@@ -235,6 +237,7 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
             {
                 await _messageSchedulerService.ScheduleHoldExpiryAsync(escrow.Id, listing.Id, unlockAt, cancellationToken);
             }
+            if (_paymentNotifier != null) await _paymentNotifier.NotifyMarketplaceListingChangedAsync(new { listingId = listing.Id }, cancellationToken);
 
             var response = new HoldListingForPurchaseResponse
             {
@@ -253,7 +256,8 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
                 TotalBuyerPaid = feeResult.TotalBuyerPaid,
                 NetSellerPayout = feeResult.NetSellerPayout,
                 UnlockAt = unlockAt,
-                HoldDurationSeconds = (int)Math.Max(0, (unlockAt - DateTimeOffset.UtcNow).TotalSeconds)
+                HoldDurationSeconds = (int)Math.Max(0, (unlockAt - DateTimeOffset.UtcNow).TotalSeconds),
+                ServerNow = now
             };
 
             return ApiResponse<HoldListingForPurchaseResponse>.SuccessResponse(
@@ -509,6 +513,7 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
             {
                 await _messageSchedulerService.ScheduleHoldExpiryAsync(escrow.Id, anchorListing.Id, unlockAt, cancellationToken);
             }
+            if (_paymentNotifier != null) await _paymentNotifier.NotifyMarketplaceListingChangedAsync(new { bundleId }, cancellationToken);
 
             // 9. Build response
             var response = new HoldListingForPurchaseResponse
@@ -529,6 +534,7 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
                 NetSellerPayout = totalNetSellerPayout,
                 UnlockAt = unlockAt,
                 HoldDurationSeconds = (int)Math.Max(0, (unlockAt - DateTimeOffset.UtcNow).TotalSeconds),
+                ServerNow = now,
                 BundleId = bundleId,
                 BundleTotalTickets = effectiveBundleTotal,
                 BundleItems = bundleItems

@@ -18,6 +18,8 @@ public class HoldListingForPurchaseResponse
     public decimal NetSellerPayout { get; set; }
     public DateTimeOffset UnlockAt { get; set; }
     public int HoldDurationSeconds { get; set; }
+    /// <summary>Server clock captured with the hold response for client countdown synchronization.</summary>
+    public DateTimeOffset ServerNow { get; set; }
 
     // Bundle-specific fields (null when holding a single listing) — BE-CORE-5.2.3
     public Guid? BundleId { get; set; }

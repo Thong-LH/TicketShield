@@ -23,6 +23,8 @@ public class ResaleListingDetailDto
     public Guid SellerId { get; set; }
     public string SellerFullName { get; set; } = string.Empty;
     public DateTimeOffset? UnlockAt { get; set; }
+    /// <summary>Server clock captured with this listing response for countdown synchronization.</summary>
+    public DateTimeOffset ServerNow { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public Guid? BundleId { get; set; }
     public bool IsBundleAllOrNothing { get; set; }

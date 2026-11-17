@@ -188,6 +188,47 @@ public class GetMarketplaceListingsQueryHandlerTests
     }
 
     [Fact]
+    public async Task Handle_UsesTheLatestActiveEscrowExpiry_ForTheMarketplaceCountdown()
+    {
+        var (context, _, secondEvent) = CreateInMemoryDbContext();
+        var listing = context.ResaleListings.Single(l => l.EventId == secondEvent.Id);
+        var seller = context.ShadowUsers.Single();
+        var buyer = new ShadowUser { Id = Guid.NewGuid(), Email = "buyer@test.com", FullName = "Buyer" };
+        var now = DateTimeOffset.UtcNow;
+
+        // The later-created row has the shorter stale expiry. The UI must use
+        // the active hold that actually expires last, matching checkout.
+        context.ShadowUsers.Add(buyer);
+        context.EscrowTransactions.AddRange(
+            new EscrowTransaction
+            {
+                ListingId = listing.Id,
+                BuyerId = buyer.Id,
+                SellerId = seller.Id,
+                Status = EscrowStatus.Pending,
+                UnlockAt = now.AddMinutes(10),
+                CreatedAt = now.AddMinutes(-2)
+            },
+            new EscrowTransaction
+            {
+                ListingId = listing.Id,
+                BuyerId = buyer.Id,
+                SellerId = seller.Id,
+                Status = EscrowStatus.Pending,
+                UnlockAt = now.AddMinutes(4),
+                CreatedAt = now.AddMinutes(-1)
+            });
+        await context.SaveChangesAsync();
+
+        var result = await new GetMarketplaceListingsQueryHandler(context)
+            .Handle(new GetMarketplaceListingsQuery(page: 1, size: 10), CancellationToken.None);
+
+        var dto = Assert.Single(result.Data!.Items, item => item.ListingId == listing.Id);
+        Assert.NotNull(dto.UnlockAt);
+        Assert.True(dto.UnlockAt.Value > now.AddMinutes(9));
+    }
+
+    [Fact]
     public async Task Handle_WithEventIdFilter_ReturnsMatchingListings()
     {
         var (context, testEvent, _) = CreateInMemoryDbContext();

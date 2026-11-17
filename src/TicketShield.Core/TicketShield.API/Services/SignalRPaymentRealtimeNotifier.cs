@@ -70,6 +70,9 @@ public class SignalRPaymentRealtimeNotifier : IPaymentRealtimeNotifier
         }
     }
 
+    public Task NotifyMarketplaceListingChangedAsync(object payload, CancellationToken cancellationToken = default)
+        => _hubContext.Clients.Group("marketplace").SendAsync("MarketplaceListingChanged", payload, cancellationToken);
+
     private static string? ExtractPaymentReference(object? payload)
     {
         if (payload == null)

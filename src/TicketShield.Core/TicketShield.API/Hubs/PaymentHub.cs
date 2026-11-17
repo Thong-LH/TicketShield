@@ -4,6 +4,8 @@ namespace TicketShield.API.Hubs;
 
 public class PaymentHub : Hub
 {
+    public Task JoinMarketplace() => Groups.AddToGroupAsync(Context.ConnectionId, "marketplace");
+    public Task LeaveMarketplace() => Groups.RemoveFromGroupAsync(Context.ConnectionId, "marketplace");
     public async Task JoinListing(string listingId)
     {
         if (!string.IsNullOrWhiteSpace(listingId))

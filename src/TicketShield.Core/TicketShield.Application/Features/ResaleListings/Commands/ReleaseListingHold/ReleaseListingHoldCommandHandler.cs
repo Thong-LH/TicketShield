@@ -14,13 +14,15 @@ public class ReleaseListingHoldCommandHandler : IRequestHandler<ReleaseListingHo
 {
     private readonly ITicketShieldDbContext _dbContext;
     private readonly ICurrentUserService? _currentUserService;
+    private readonly IPaymentRealtimeNotifier? _paymentNotifier;
 
     public ReleaseListingHoldCommandHandler(
         ITicketShieldDbContext dbContext,
-        ICurrentUserService? currentUserService = null)
+        ICurrentUserService? currentUserService = null, IPaymentRealtimeNotifier? paymentNotifier = null)
     {
         _dbContext = dbContext;
         _currentUserService = currentUserService;
+        _paymentNotifier = paymentNotifier;
     }
 
     public async Task<ApiResponse<ReleaseListingHoldResponse>> Handle(ReleaseListingHoldCommand request, CancellationToken cancellationToken)
@@ -42,8 +44,16 @@ public class ReleaseListingHoldCommandHandler : IRequestHandler<ReleaseListingHo
             throw new NotFoundException("Tin đăng bán vé", request.ListingId);
         }
 
-        // BE-CORE-5.2.3: Bundle-aware release
-        if (routingListing.BundleId != null && routingListing.IsBundleAllOrNothing)
+        // A flexible bundle can still be held as one bundle when the buyer
+        // selects "buy bundle". Route its release by the active bundle escrow,
+        // not just IsBundleAllOrNothing; otherwise only the clicked ticket is
+        // reopened and its siblings remain orphaned in Transacting.
+        var hasActiveBundleHold = routingListing.BundleId.HasValue && await _dbContext.EscrowTransactions
+            .AnyAsync(e => e.BundleId.HasValue && e.BundleId.Value == routingListing.BundleId.Value
+                && e.Status == EscrowStatus.Pending
+                && e.UnlockAt.HasValue
+                && e.UnlockAt.Value > DateTimeOffset.UtcNow, cancellationToken);
+        if (hasActiveBundleHold)
         {
             return await ReleaseBundleHoldAsync(routingListing, buyerId, cancellationToken);
         }
@@ -117,6 +127,7 @@ public class ReleaseListingHoldCommandHandler : IRequestHandler<ReleaseListingHo
             {
                 await tx.CommitAsync(cancellationToken);
             }
+            if (_paymentNotifier != null) await _paymentNotifier.NotifyMarketplaceListingChangedAsync(new { listingId = listing.Id }, cancellationToken);
 
             var response = new ReleaseListingHoldResponse
             {
@@ -215,6 +226,7 @@ public class ReleaseListingHoldCommandHandler : IRequestHandler<ReleaseListingHo
             {
                 await bundleTx.CommitAsync(cancellationToken);
             }
+            if (_paymentNotifier != null) await _paymentNotifier.NotifyMarketplaceListingChangedAsync(new { bundleId }, cancellationToken);
 
             var response = new ReleaseListingHoldResponse
             {
