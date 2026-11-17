@@ -432,6 +432,9 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
                 await _paymentNotifier.NotifyPaymentApprovedAsync(listing.Id, notificationPayload, cancellationToken);
                 await _paymentNotifier.NotifyOrderSettledAsync(listing.Id, notificationPayload, cancellationToken);
             }
+            await _paymentNotifier.NotifyMarketplaceListingChangedAsync(
+                new { listingId = escrow.ListingId, bundleId = escrow.BundleId, listingStatus = ListingStatus.Sold.ToString() },
+                cancellationToken);
         }
 
         var response = new ProcessSePayWebhookResponse

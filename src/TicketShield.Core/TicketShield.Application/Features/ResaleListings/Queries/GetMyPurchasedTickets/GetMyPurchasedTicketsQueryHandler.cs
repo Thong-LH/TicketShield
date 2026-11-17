@@ -116,7 +116,10 @@ public class GetMyPurchasedTicketsQueryHandler : IRequestHandler<GetMyPurchasedT
                 _ => e.Status.ToString()
             };
 
-            var bundleId = e.BundleId ?? e.Listing?.BundleId;
+            // Only a bundle-scoped escrow represents a combo purchase. A
+            // listing may belong to a sell-separately bundle, but a single
+            // purchase of that listing must never expand into its siblings.
+            var bundleId = e.BundleId;
 
             // Chỉ dựng combo từ listing THẬT trong DB. Không bao giờ suy diễn mã vé
             // bằng cách nối hậu tố (ví dụ "-T1") khi thiếu vé thật.
