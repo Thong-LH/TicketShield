@@ -70,6 +70,22 @@ public class GetMyPurchasedTicketsQueryHandler : IRequestHandler<GetMyPurchasedT
             .OrderByDescending(e => e.CreatedAt)
             .ToListAsync(cancellationToken);
 
+        // New combo purchases persist the exact listings selected by the buyer.
+        // Do not infer them from BundleId: a sell-separately bundle can contain
+        // listings that were deliberately left behind in the marketplace.
+        var purchaseIds = purchases.Select(e => e.Id).ToList();
+        var selectedListingLinks = purchaseIds.Count == 0
+            ? new List<EscrowTransactionListing>()
+            : await _dbContext.EscrowTransactionListings
+                .AsNoTracking()
+                .Where(link => purchaseIds.Contains(link.EscrowId))
+                .ToListAsync(cancellationToken);
+        var selectedListingIdsByEscrow = selectedListingLinks
+            .GroupBy(link => link.EscrowId)
+            .ToDictionary(
+                group => group.Key,
+                group => group.Select(link => link.ListingId).ToList());
+
         // Escrow state is about payment protection, not gate admission. Read the
         // organizer-synchronised ticket state too, so a scanned pass is shown as USED.
         var purchasedTicketCodes = purchases
@@ -124,7 +140,19 @@ public class GetMyPurchasedTicketsQueryHandler : IRequestHandler<GetMyPurchasedT
             // Chỉ dựng combo từ listing THẬT trong DB. Không bao giờ suy diễn mã vé
             // bằng cách nối hậu tố (ví dụ "-T1") khi thiếu vé thật.
             List<ResaleListing> bundleListings = new();
-            if (bundleId != null)
+            if (selectedListingIdsByEscrow.TryGetValue(e.Id, out var selectedListingIds))
+            {
+                bundleListings = await _dbContext.ResaleListings
+                    .AsNoTracking()
+                    .Include(l => l.Tier)
+                    .Where(l => selectedListingIds.Contains(l.Id))
+                    .OrderBy(l => l.CreatedAt)
+                    .ThenBy(l => l.Id)
+                    .ToListAsync(cancellationToken);
+            }
+            // Existing paid escrows created before the link table have no rows;
+            // retain their old bundle behaviour so their passes remain visible.
+            else if (bundleId != null)
             {
                 bundleListings = await _dbContext.ResaleListings
                     .AsNoTracking()

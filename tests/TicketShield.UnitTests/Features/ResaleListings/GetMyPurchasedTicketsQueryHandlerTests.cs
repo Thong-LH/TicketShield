@@ -385,6 +385,70 @@ public class GetMyPurchasedTicketsQueryHandlerTests
         Assert.Equal("BTC-REAL-PASS-1", ticket.TicketPassCode);
     }
 
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    public async Task Handle_WhenBuyerPurchasedSelectedAmountOfThree_ShouldReturnExactlySelectedListings(int selectedCount)
+    {
+        var (context, buyerId, buyerEmail) = CreateTestFixture();
+        var escrow = context.EscrowTransactions.Single();
+        var first = context.ResaleListings.Single();
+        var bundleId = Guid.NewGuid();
+        var createdAt = DateTimeOffset.UtcNow.AddMinutes(-3);
+
+        first.BundleId = bundleId;
+        first.BundleTotalTickets = 3;
+        first.IsBundleAllOrNothing = false;
+        first.CreatedAt = createdAt;
+
+        var listings = new List<ResaleListing> { first };
+        for (var index = 2; index <= 3; index++)
+        {
+            listings.Add(new ResaleListing
+            {
+                Id = Guid.NewGuid(),
+                EventId = first.EventId,
+                TierId = first.TierId,
+                SellerId = first.SellerId,
+                OriginalTicketCode = $"OLD-SELLER-TICKET-00{index}",
+                ResalePrice = 1_500_000m,
+                ListingStatus = index <= selectedCount ? ListingStatus.Sold : ListingStatus.Verified,
+                BundleId = bundleId,
+                BundleTotalTickets = 3,
+                IsBundleAllOrNothing = false,
+                CreatedAt = createdAt.AddMinutes(index - 1)
+            });
+        }
+        context.ResaleListings.AddRange(listings.Skip(1));
+
+        escrow.BundleId = bundleId;
+        escrow.NewTicketCode = string.Join(",", Enumerable.Range(1, selectedCount).Select(index => $"BTC-SELECTED-PASS-{index}"));
+        escrow.QrCodeData = string.Join(",", Enumerable.Range(1, selectedCount).Select(index => $"https://organizer.ticket/selected-{index}"));
+        context.EscrowTransactionListings.AddRange(listings.Take(selectedCount).Select(listing =>
+            new EscrowTransactionListing { Id = Guid.NewGuid(), EscrowId = escrow.Id, ListingId = listing.Id }));
+        context.SaveChanges();
+
+        var handler = new GetMyPurchasedTicketsQueryHandler(context, CurrentUser(buyerId, buyerEmail));
+        var result = await handler.Handle(new GetMyPurchasedTicketsQuery(), CancellationToken.None);
+
+        var ticket = Assert.Single(result.Data!);
+        Assert.Equal(selectedCount, ticket.BundleItems!.Count);
+        if (selectedCount == 1)
+        {
+            Assert.Null(ticket.BundleTotalTickets);
+        }
+        else
+        {
+            Assert.Equal(selectedCount, ticket.BundleTotalTickets);
+        }
+        Assert.Equal(listings.Take(selectedCount).Select(listing => listing.Id),
+            ticket.BundleItems.Select(item => item.ListingId));
+        Assert.Equal(Enumerable.Range(1, selectedCount).Select(index => $"BTC-SELECTED-PASS-{index}"),
+            ticket.BundleItems.Select(item => item.TicketCode));
+        Assert.DoesNotContain(ticket.BundleItems, item => listings.Skip(selectedCount).Any(listing => listing.Id == item.ListingId));
+    }
+
     [Fact]
     public async Task Handle_WhenBundleHasNoRealListings_ShouldNotFabricateTicketCodes()
     {
