@@ -53,6 +53,25 @@ public class CreateUserBankAccountCommandHandler : IRequestHandler<CreateUserBan
             .Where(b => b.UserId == userId)
             .ToListAsync(cancellationToken);
 
+        // Guard 1: Giới hạn tối đa 5 tài khoản ngân hàng / user
+        if (existingAccounts.Count >= 5)
+        {
+            throw new BadRequestException("Bạn chỉ có thể liên kết tối đa 5 tài khoản ngân hàng.");
+        }
+
+        // Guard 2: Chặn trùng lặp cùng BankCode + AccountNumber của cùng user
+        var normalizedAccountNumber = request.BankAccountNumber.Trim();
+        var normalizedBankCode = request.BankCode.Trim();
+
+        var isDuplicate = existingAccounts.Any(b =>
+            string.Equals(b.BankCode, normalizedBankCode, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(b.BankAccountNumber, normalizedAccountNumber, StringComparison.OrdinalIgnoreCase));
+
+        if (isDuplicate)
+        {
+            throw new BadRequestException("Tài khoản ngân hàng này đã được liên kết trước đó.");
+        }
+
         // If this is the user's first bank account, force it to be default
         var isDefault = !existingAccounts.Any() || request.IsDefault;
 
