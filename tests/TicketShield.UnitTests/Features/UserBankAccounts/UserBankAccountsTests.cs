@@ -4,6 +4,8 @@ using Moq;
 using TicketShield.Contracts.Events;
 using TicketShield.Identity.Application.Common.Interfaces;
 using TicketShield.Identity.Application.Features.UserBankAccounts.Commands.CreateUserBankAccount;
+using TicketShield.Identity.Application.Features.UserBankAccounts.Commands.DeleteUserBankAccount;
+using TicketShield.Identity.Application.Features.UserBankAccounts.Commands.SetDefaultUserBankAccount;
 using TicketShield.Identity.Application.Features.UserBankAccounts.Queries.GetUserBankAccounts;
 using TicketShield.Identity.Domain.Entities;
 using TicketShield.Identity.Domain.Exceptions;
@@ -174,5 +176,277 @@ public class UserBankAccountsTests
         Assert.Equal(testUser.Id, published.UserId);
         Assert.Equal("MB", published.BankCode);
         Assert.Equal("0938434102", published.AccountNumber);
+    }
+
+    private static DeleteUserBankAccountCommandHandler CreateDeleteHandler(
+        IdentityDbContext dbContext,
+        MockCurrentUserService currentUserService,
+        Mock<IPublishEndpoint>? publish = null)
+    {
+        publish ??= new Mock<IPublishEndpoint>();
+        return new DeleteUserBankAccountCommandHandler(dbContext, currentUserService, publish.Object);
+    }
+
+    private static SetDefaultUserBankAccountCommandHandler CreateSetDefaultHandler(
+        IdentityDbContext dbContext,
+        MockCurrentUserService currentUserService,
+        Mock<IPublishEndpoint>? publish = null)
+    {
+        publish ??= new Mock<IPublishEndpoint>();
+        return new SetDefaultUserBankAccountCommandHandler(dbContext, currentUserService, publish.Object);
+    }
+
+    [Fact]
+    public async Task CreateUserBankAccount_DuplicateAccount_ShouldThrowBadRequestException()
+    {
+        // Arrange
+        var (dbContext, testUser) = CreateInMemoryIdentityDbContext();
+        var currentUserService = new MockCurrentUserService(testUser.Id);
+        var handler = CreateHandler(dbContext, currentUserService);
+
+        await handler.Handle(new CreateUserBankAccountCommand("MB", "0938434102", "NGUYEN VAN SELLER BANK"), CancellationToken.None);
+
+        // Act & Assert (Same BankCode & AccountNumber with case & whitespace variations)
+        var duplicateCommand = new CreateUserBankAccountCommand(" mb ", " 0938434102 ", "NGUYEN VAN SELLER BANK");
+        var ex = await Assert.ThrowsAsync<BadRequestException>(() => handler.Handle(duplicateCommand, CancellationToken.None));
+        Assert.Contains("đã được liên kết trước đó", ex.Message);
+    }
+
+    [Fact]
+    public async Task CreateUserBankAccount_ExceedMaximumLimitOf5_ShouldThrowBadRequestException()
+    {
+        // Arrange
+        var (dbContext, testUser) = CreateInMemoryIdentityDbContext();
+        var currentUserService = new MockCurrentUserService(testUser.Id);
+        var handler = CreateHandler(dbContext, currentUserService);
+
+        for (int i = 1; i <= 5; i++)
+        {
+            await handler.Handle(new CreateUserBankAccountCommand($"BANK{i}", $"ACC{i:D6}", "NGUYEN VAN SELLER BANK"), CancellationToken.None);
+        }
+
+        // Act & Assert (6th account attempt)
+        var sixthCommand = new CreateUserBankAccountCommand("BANK6", "ACC000006", "NGUYEN VAN SELLER BANK");
+        var ex = await Assert.ThrowsAsync<BadRequestException>(() => handler.Handle(sixthCommand, CancellationToken.None));
+        Assert.Contains("tối đa 5", ex.Message);
+    }
+
+    [Fact]
+    public async Task DeleteUserBankAccount_WhenNotAuthenticated_ShouldThrowUnauthorizedException()
+    {
+        // Arrange
+        var (dbContext, _) = CreateInMemoryIdentityDbContext();
+        var currentUserService = new MockCurrentUserService(null);
+        var handler = CreateDeleteHandler(dbContext, currentUserService);
+
+        // Act & Assert
+        await Assert.ThrowsAsync<UnauthorizedException>(() => handler.Handle(new DeleteUserBankAccountCommand(Guid.NewGuid()), CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task DeleteUserBankAccount_NonExistentAccount_ShouldThrowNotFoundException()
+    {
+        // Arrange
+        var (dbContext, testUser) = CreateInMemoryIdentityDbContext();
+        var currentUserService = new MockCurrentUserService(testUser.Id);
+        var handler = CreateDeleteHandler(dbContext, currentUserService);
+
+        // Act & Assert
+        await Assert.ThrowsAsync<NotFoundException>(() => handler.Handle(new DeleteUserBankAccountCommand(Guid.NewGuid()), CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task DeleteUserBankAccount_OnlyDefaultAccountRemaining_ShouldThrowBadRequestException()
+    {
+        // Arrange
+        var (dbContext, testUser) = CreateInMemoryIdentityDbContext();
+        var currentUserService = new MockCurrentUserService(testUser.Id);
+        var createHandler = CreateHandler(dbContext, currentUserService);
+        var deleteHandler = CreateDeleteHandler(dbContext, currentUserService);
+
+        var created = await createHandler.Handle(new CreateUserBankAccountCommand("MB", "0938434102", "NGUYEN VAN SELLER BANK"), CancellationToken.None);
+
+        // Act & Assert (Cannot delete the only default bank account)
+        var ex = await Assert.ThrowsAsync<BadRequestException>(() => deleteHandler.Handle(new DeleteUserBankAccountCommand(created.Data.Id), CancellationToken.None));
+        Assert.Contains("Không thể xóa tài khoản mặc định duy nhất", ex.Message);
+    }
+
+    [Fact]
+    public async Task DeleteUserBankAccount_NonDefaultAccount_ShouldDeleteSuccessfullyWithoutPublishingEvent()
+    {
+        // Arrange
+        var (dbContext, testUser) = CreateInMemoryIdentityDbContext();
+        var currentUserService = new MockCurrentUserService(testUser.Id);
+        var createHandler = CreateHandler(dbContext, currentUserService);
+
+        var publishMock = new Mock<IPublishEndpoint>();
+        var deleteHandler = CreateDeleteHandler(dbContext, currentUserService, publishMock);
+
+        var defaultAcc = await createHandler.Handle(new CreateUserBankAccountCommand("MB", "0938434102", "NGUYEN VAN SELLER BANK"), CancellationToken.None);
+        var nonDefaultAcc = await createHandler.Handle(new CreateUserBankAccountCommand("VCB", "1011121314", "NGUYEN VAN SELLER BANK", isDefault: false), CancellationToken.None);
+
+        publishMock.Invocations.Clear();
+
+        // Act
+        var result = await deleteHandler.Handle(new DeleteUserBankAccountCommand(nonDefaultAcc.Data.Id), CancellationToken.None);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.True(result.Success);
+
+        var remainingAccounts = await dbContext.UserBankAccounts.Where(b => b.UserId == testUser.Id).ToListAsync();
+        Assert.Single(remainingAccounts);
+        Assert.Equal(defaultAcc.Data.Id, remainingAccounts[0].Id);
+        Assert.True(remainingAccounts[0].IsDefault);
+
+        // Non-default deletion should not trigger IUserBankAccountLinkedEvent
+        publishMock.Verify(p => p.Publish<IUserBankAccountLinkedEvent>(It.IsAny<IUserBankAccountLinkedEvent>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task DeleteUserBankAccount_DefaultAccountWithRemainingAccounts_ShouldElevateOldestToDefaultAndPublishEvent()
+    {
+        // Arrange
+        var (dbContext, testUser) = CreateInMemoryIdentityDbContext();
+        var currentUserService = new MockCurrentUserService(testUser.Id);
+        var createHandler = CreateHandler(dbContext, currentUserService);
+
+        var publishMock = new Mock<IPublishEndpoint>();
+        IUserBankAccountLinkedEvent? publishedEvent = null;
+        publishMock
+            .Setup(p => p.Publish<IUserBankAccountLinkedEvent>(It.IsAny<IUserBankAccountLinkedEvent>(), It.IsAny<CancellationToken>()))
+            .Callback<IUserBankAccountLinkedEvent, CancellationToken>((msg, _) => publishedEvent = msg)
+            .Returns(Task.CompletedTask);
+
+        var deleteHandler = CreateDeleteHandler(dbContext, currentUserService, publishMock);
+
+        var defaultAcc = await createHandler.Handle(new CreateUserBankAccountCommand("MB", "0938434102", "NGUYEN VAN SELLER BANK"), CancellationToken.None);
+        var secondAcc = await createHandler.Handle(new CreateUserBankAccountCommand("VCB", "1011121314", "NGUYEN VAN SELLER BANK", isDefault: false), CancellationToken.None);
+        var thirdAcc = await createHandler.Handle(new CreateUserBankAccountCommand("TCB", "1900000001", "NGUYEN VAN SELLER BANK", isDefault: false), CancellationToken.None);
+
+        publishMock.Invocations.Clear();
+        publishedEvent = null;
+
+        // Act: Delete default account (MB)
+        var result = await deleteHandler.Handle(new DeleteUserBankAccountCommand(defaultAcc.Data.Id), CancellationToken.None);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.True(result.Success);
+
+        var remainingAccounts = await dbContext.UserBankAccounts.Where(b => b.UserId == testUser.Id).OrderBy(b => b.CreatedAt).ToListAsync();
+        Assert.Equal(2, remainingAccounts.Count);
+
+        // Second account (VCB, oldest remaining) should be elevated to default
+        var newDefault = remainingAccounts.First(b => b.Id == secondAcc.Data.Id);
+        Assert.True(newDefault.IsDefault);
+        Assert.Equal("VCB", newDefault.BankCode);
+
+        // Third account should remain non-default
+        var thirdInDb = remainingAccounts.First(b => b.Id == thirdAcc.Data.Id);
+        Assert.False(thirdInDb.IsDefault);
+
+        // Event should be published with new default details (VCB)
+        Assert.NotNull(publishedEvent);
+        Assert.Equal(testUser.Id, publishedEvent.UserId);
+        Assert.Equal("VCB", publishedEvent.BankCode);
+        Assert.Equal("1011121314", publishedEvent.AccountNumber);
+    }
+
+    [Fact]
+    public async Task SetDefaultUserBankAccount_WhenNotAuthenticated_ShouldThrowUnauthorizedException()
+    {
+        // Arrange
+        var (dbContext, _) = CreateInMemoryIdentityDbContext();
+        var currentUserService = new MockCurrentUserService(null);
+        var handler = CreateSetDefaultHandler(dbContext, currentUserService);
+
+        // Act & Assert
+        await Assert.ThrowsAsync<UnauthorizedException>(() => handler.Handle(new SetDefaultUserBankAccountCommand(Guid.NewGuid()), CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task SetDefaultUserBankAccount_NonExistentAccount_ShouldThrowNotFoundException()
+    {
+        // Arrange
+        var (dbContext, testUser) = CreateInMemoryIdentityDbContext();
+        var currentUserService = new MockCurrentUserService(testUser.Id);
+        var handler = CreateSetDefaultHandler(dbContext, currentUserService);
+
+        // Act & Assert
+        await Assert.ThrowsAsync<NotFoundException>(() => handler.Handle(new SetDefaultUserBankAccountCommand(Guid.NewGuid()), CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task SetDefaultUserBankAccount_AlreadyDefault_ShouldBeIdempotentWithoutRePublishingEvent()
+    {
+        // Arrange
+        var (dbContext, testUser) = CreateInMemoryIdentityDbContext();
+        var currentUserService = new MockCurrentUserService(testUser.Id);
+        var createHandler = CreateHandler(dbContext, currentUserService);
+
+        var publishMock = new Mock<IPublishEndpoint>();
+        var setDefaultHandler = CreateSetDefaultHandler(dbContext, currentUserService, publishMock);
+
+        var defaultAcc = await createHandler.Handle(new CreateUserBankAccountCommand("MB", "0938434102", "NGUYEN VAN SELLER BANK"), CancellationToken.None);
+
+        publishMock.Invocations.Clear();
+
+        // Act (Set default on an account that is already default)
+        var result = await setDefaultHandler.Handle(new SetDefaultUserBankAccountCommand(defaultAcc.Data.Id), CancellationToken.None);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.True(result.Success);
+        Assert.True(result.Data.IsDefault);
+
+        // Idempotent: Should not publish new event
+        publishMock.Verify(p => p.Publish<IUserBankAccountLinkedEvent>(It.IsAny<IUserBankAccountLinkedEvent>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task SetDefaultUserBankAccount_ValidDifferentAccount_ShouldSetNewDefaultAndPublishEvent()
+    {
+        // Arrange
+        var (dbContext, testUser) = CreateInMemoryIdentityDbContext();
+        var currentUserService = new MockCurrentUserService(testUser.Id);
+        var createHandler = CreateHandler(dbContext, currentUserService);
+
+        var publishMock = new Mock<IPublishEndpoint>();
+        IUserBankAccountLinkedEvent? publishedEvent = null;
+        publishMock
+            .Setup(p => p.Publish<IUserBankAccountLinkedEvent>(It.IsAny<IUserBankAccountLinkedEvent>(), It.IsAny<CancellationToken>()))
+            .Callback<IUserBankAccountLinkedEvent, CancellationToken>((msg, _) => publishedEvent = msg)
+            .Returns(Task.CompletedTask);
+
+        var setDefaultHandler = CreateSetDefaultHandler(dbContext, currentUserService, publishMock);
+
+        var firstAcc = await createHandler.Handle(new CreateUserBankAccountCommand("MB", "0938434102", "NGUYEN VAN SELLER BANK"), CancellationToken.None);
+        var secondAcc = await createHandler.Handle(new CreateUserBankAccountCommand("VCB", "1011121314", "NGUYEN VAN SELLER BANK", isDefault: false), CancellationToken.None);
+
+        publishMock.Invocations.Clear();
+        publishedEvent = null;
+
+        // Act: Set second account as default
+        var result = await setDefaultHandler.Handle(new SetDefaultUserBankAccountCommand(secondAcc.Data.Id), CancellationToken.None);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.True(result.Success);
+        Assert.True(result.Data.IsDefault);
+        Assert.Equal(secondAcc.Data.Id, result.Data.Id);
+
+        var accountsInDb = await dbContext.UserBankAccounts.Where(b => b.UserId == testUser.Id).ToListAsync();
+        var firstInDb = accountsInDb.First(b => b.Id == firstAcc.Data.Id);
+        var secondInDb = accountsInDb.First(b => b.Id == secondAcc.Data.Id);
+
+        Assert.False(firstInDb.IsDefault);
+        Assert.True(secondInDb.IsDefault);
+
+        // Event should be published with second account details
+        Assert.NotNull(publishedEvent);
+        Assert.Equal(testUser.Id, publishedEvent.UserId);
+        Assert.Equal("VCB", publishedEvent.BankCode);
+        Assert.Equal("1011121314", publishedEvent.AccountNumber);
     }
 }
