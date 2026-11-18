@@ -424,6 +424,25 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
 
             // 3. Per-listing validation
             var now = DateTimeOffset.UtcNow;
+
+            // Holding any subset of a flexible bundle temporarily locks the
+            // complete bundle. The escrow is only linked to the tickets the
+            // buyer selected, so checking a child listing alone would allow a
+            // second buyer to create a competing checkout for an unselected
+            // sibling while the first payment is still pending.
+            var otherActiveBundleHold = await _dbContext.EscrowTransactions
+                .AnyAsync(e => e.BundleId == bundleId &&
+                               e.Status == EscrowStatus.Pending &&
+                               e.UnlockAt.HasValue &&
+                               e.UnlockAt.Value > now &&
+                               e.BuyerId != buyerId,
+                    cancellationToken);
+            if (otherActiveBundleHold)
+            {
+                throw new BusinessRuleViolationException(
+                    "Gói vé này đang được giữ chỗ bởi người mua khác. Vui lòng thử lại sau.");
+            }
+
             if (bundleListings.Any(l => l.SellerId == buyerId))
             {
                 throw new BadRequestException("Bạn không thể tự mua vé của chính mình.");

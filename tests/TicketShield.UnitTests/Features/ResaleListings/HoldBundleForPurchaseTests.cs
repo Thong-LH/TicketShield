@@ -966,4 +966,44 @@ public class HoldBundleForPurchaseTests
         dbListing3 = await dbContext.ResaleListings.FindAsync(listing3.Id);
         Assert.Equal(ListingStatus.Verified, dbListing3!.ListingStatus);
     }
+
+    [Fact]
+    public async Task HoldBundle_WhileAnotherBuyerHasPendingPartialHold_RejectsAnySiblingPurchase()
+    {
+        var (dbContext, seller, buyer1, buyer2, _) = CreateInMemoryDbContextWithServices();
+        var feeCalculator = new MockResaleFeeCalculator();
+        var eventId = (await dbContext.Events.FirstAsync()).Id;
+        var tierId = (await dbContext.TicketTiers.FirstAsync()).Id;
+        var bundleId = Guid.NewGuid();
+        var listings = CreateBundleListings(bundleId, eventId, tierId, seller.Id, 3);
+        listings.ForEach(listing => listing.IsBundleAllOrNothing = false);
+        dbContext.ResaleListings.AddRange(listings);
+        await dbContext.SaveChangesAsync();
+
+        // Buyer 1 selects two tickets. This deliberately locks all three
+        // siblings while payment is pending.
+        var buyerOneHandler = new HoldListingForPurchaseCommandHandler(
+            dbContext, feeCalculator, new MockCurrentUserService(buyer1.Id));
+        var firstHold = await buyerOneHandler.Handle(
+            new HoldListingForPurchaseCommand(
+                listings[0].Id,
+                selectedListingIds: new List<Guid> { listings[0].Id, listings[1].Id }),
+            CancellationToken.None);
+        Assert.True(firstHold.Success);
+
+        // Buyer 2 must not be able to start checkout for the remaining third
+        // ticket until Buyer 1 pays, cancels, or the hold expires.
+        var buyerTwoHandler = new HoldListingForPurchaseCommandHandler(
+            dbContext, feeCalculator, new MockCurrentUserService(buyer2.Id));
+        var error = await Assert.ThrowsAsync<BusinessRuleViolationException>(() =>
+            buyerTwoHandler.Handle(
+                new HoldListingForPurchaseCommand(
+                    listings[2].Id,
+                    selectedListingIds: new List<Guid> { listings[2].Id }),
+                CancellationToken.None));
+
+        Assert.Contains("đang được giữ chỗ", error.Message);
+        Assert.Equal(1, await dbContext.EscrowTransactions.CountAsync(e => e.BundleId == bundleId && e.Status == EscrowStatus.Pending));
+        Assert.Equal(ListingStatus.Transacting, (await dbContext.ResaleListings.FindAsync(listings[2].Id))!.ListingStatus);
+    }
 }
