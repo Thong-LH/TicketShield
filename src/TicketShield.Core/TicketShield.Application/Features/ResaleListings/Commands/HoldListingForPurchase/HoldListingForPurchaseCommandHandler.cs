@@ -145,8 +145,11 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
             }
 
             // BE-12.1.6: Chặn đặt mua mới nếu vé có Escrow đang đối soát hoặc đã khóa thanh toán
-            var hasBlockingEscrow = listing.EscrowTransactions
-                .Any(e => e.Status == EscrowStatus.TransferNeedsReview || e.Status == EscrowStatus.Locked);
+            var hasBlockingEscrow = await _dbContext.EscrowTransactionListings
+                .AnyAsync(etl => etl.ListingId == listing.Id &&
+                                 (etl.Escrow.Status == EscrowStatus.TransferNeedsReview || etl.Escrow.Status == EscrowStatus.Locked), cancellationToken)
+                || listing.EscrowTransactions
+                    .Any(e => e.Status == EscrowStatus.TransferNeedsReview || e.Status == EscrowStatus.Locked);
             if (hasBlockingEscrow)
             {
                 throw new BusinessRuleViolationException("Vé này đang trong quá trình thanh toán hoặc đối soát, không thể đặt mua.");
@@ -363,15 +366,6 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
 
             var effectiveBundleTotal = bundleListings.Count;
 
-            // BE-12.1.6: Chặn đặt mua mới nếu gói vé có Escrow đang đối soát hoặc đã khóa thanh toán
-            var hasBlockingBundleEscrow = await _dbContext.EscrowTransactions
-                .AnyAsync(e => (e.BundleId == bundleId || bundleListings.Select(b => b.Id).Contains(e.ListingId)) &&
-                               (e.Status == EscrowStatus.TransferNeedsReview || e.Status == EscrowStatus.Locked), cancellationToken);
-            if (hasBlockingBundleEscrow)
-            {
-                throw new BusinessRuleViolationException("Gói vé này đang trong quá trình thanh toán hoặc đối soát, không thể đặt mua.");
-            }
-
             // 2.1 Determine selected listings to hold
             List<ResaleListing> selectedListings;
 
@@ -408,6 +402,24 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
                 {
                     selectedListings = bundleListings;
                 }
+            }
+
+            // BE-12.1.6: Chặn đặt mua mới nếu vé người mua đang chọn nằm trong Escrow đang đối soát hoặc đã khóa thanh toán
+            var selectedListingIds = selectedListings.Select(s => s.Id).ToList();
+            var hasBlockingSelectedEscrow = await _dbContext.EscrowTransactionListings
+                .AnyAsync(etl => selectedListingIds.Contains(etl.ListingId) &&
+                               (etl.Escrow.Status == EscrowStatus.TransferNeedsReview || etl.Escrow.Status == EscrowStatus.Locked), cancellationToken);
+
+            if (!hasBlockingSelectedEscrow)
+            {
+                hasBlockingSelectedEscrow = await _dbContext.EscrowTransactions
+                    .AnyAsync(e => selectedListingIds.Contains(e.ListingId) &&
+                                   (e.Status == EscrowStatus.TransferNeedsReview || e.Status == EscrowStatus.Locked), cancellationToken);
+            }
+
+            if (hasBlockingSelectedEscrow)
+            {
+                throw new BusinessRuleViolationException("Vé này đang trong quá trình thanh toán hoặc đối soát, không thể đặt mua.");
             }
 
             // 3. Per-listing validation
