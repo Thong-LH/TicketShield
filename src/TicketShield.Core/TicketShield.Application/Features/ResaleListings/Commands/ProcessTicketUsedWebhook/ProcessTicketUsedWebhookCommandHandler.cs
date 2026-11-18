@@ -145,15 +145,26 @@ public class ProcessTicketUsedWebhookCommandHandler : IRequestHandler<ProcessTic
     {
         var candidates = await _dbContext.EscrowTransactions.AsNoTracking()
             .Where(row => row.NewTicketCode != null && row.NewTicketCode.Contains(ticketCode))
+            .OrderByDescending(row => row.CreatedAt)
             .ToListAsync(cancellationToken);
 
-        foreach (var c in candidates)
+        var matchingEscrows = candidates
+            .Where(c => (c.NewTicketCode ?? "")
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Contains(ticketCode, StringComparer.OrdinalIgnoreCase))
+            .ToList();
+
+        // Prefer the current payable transaction when historical records reuse a code;
+        // otherwise a check-in could acknowledge an old cancelled escrow instead.
+        var activeEscrow = matchingEscrows.FirstOrDefault(c => c.Status == EscrowStatus.Locked);
+        if (activeEscrow != null)
         {
-            var tokens = (c.NewTicketCode ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            if (tokens.Contains(ticketCode, StringComparer.OrdinalIgnoreCase))
-            {
-                return c;
-            }
+            return activeEscrow;
+        }
+
+        if (matchingEscrows.Count > 0)
+        {
+            return matchingEscrows[0];
         }
 
         return await _dbContext.EscrowTransactions.AsNoTracking()
