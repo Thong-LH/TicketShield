@@ -512,4 +512,242 @@ public class HoldBundleForPurchaseTests
         Assert.Null(escrow.BundleId);
         Assert.Equal(1_050_000m, escrow.TotalBuyerPaid);
     }
+
+    [Fact]
+    public async Task HoldBundle_WhenFlexibleAndBuyerSelectsTwoOfThree_CalculatesPriceForTwoAndLocksAllThree()
+    {
+        // Arrange
+        var (dbContext, seller, buyer1, _, _) = CreateInMemoryDbContextWithServices();
+        var feeCalculator = new MockResaleFeeCalculator();
+        var currentUserService = new MockCurrentUserService(buyer1.Id);
+
+        var eventId = (await dbContext.Events.FirstAsync()).Id;
+        var tierId = (await dbContext.TicketTiers.FirstAsync()).Id;
+        var bundleId = Guid.NewGuid();
+
+        var listings = new List<ResaleListing>
+        {
+            new()
+            {
+                Id = Guid.NewGuid(),
+                EventId = eventId,
+                TierId = tierId,
+                SellerId = seller.Id,
+                OriginalTicketCode = "TCK-BND-001",
+                OriginalPrice = 1_000_000m,
+                ResalePrice = 1_000_000m,
+                ListingStatus = ListingStatus.Verified,
+                BundleId = bundleId,
+                BundleTotalTickets = 3,
+                IsBundleAllOrNothing = false,
+                CreatedAt = DateTimeOffset.UtcNow
+            },
+            new()
+            {
+                Id = Guid.NewGuid(),
+                EventId = eventId,
+                TierId = tierId,
+                SellerId = seller.Id,
+                OriginalTicketCode = "TCK-BND-002",
+                OriginalPrice = 1_000_000m,
+                ResalePrice = 1_000_000m,
+                ListingStatus = ListingStatus.Verified,
+                BundleId = bundleId,
+                BundleTotalTickets = 3,
+                IsBundleAllOrNothing = false,
+                CreatedAt = DateTimeOffset.UtcNow
+            },
+            new()
+            {
+                Id = Guid.NewGuid(),
+                EventId = eventId,
+                TierId = tierId,
+                SellerId = seller.Id,
+                OriginalTicketCode = "TCK-BND-003",
+                OriginalPrice = 1_000_000m,
+                ResalePrice = 1_000_000m,
+                ListingStatus = ListingStatus.Verified,
+                BundleId = bundleId,
+                BundleTotalTickets = 3,
+                IsBundleAllOrNothing = false,
+                CreatedAt = DateTimeOffset.UtcNow
+            }
+        };
+        dbContext.ResaleListings.AddRange(listings);
+        await dbContext.SaveChangesAsync();
+
+        var selectedIds = new List<Guid> { listings[0].Id, listings[1].Id };
+        var handler = new HoldListingForPurchaseCommandHandler(dbContext, feeCalculator, currentUserService);
+        var command = new HoldListingForPurchaseCommand(listings[0].Id, selectedListingIds: selectedIds);
+
+        // Act
+        var result = await handler.Handle(command, CancellationToken.None);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.True(result.Success);
+        Assert.Equal(bundleId, result.Data.BundleId);
+        Assert.Equal(2, result.Data.BundleTotalTickets);
+        Assert.Equal(2, result.Data.BundleItems!.Count);
+        Assert.Equal(2_000_000m, result.Data.ResalePrice);
+        Assert.Equal(100_000m, result.Data.BuyerFee);
+        Assert.Equal(2_100_000m, result.Data.TotalBuyerPaid);
+
+        // All 3 listings in bundle must be locked to Transacting during hold
+        var dbListings = await dbContext.ResaleListings.Where(l => l.BundleId == bundleId).ToListAsync();
+        Assert.All(dbListings, l => Assert.Equal(ListingStatus.Transacting, l.ListingStatus));
+
+        // Escrow must record the 2 selected listings
+        var escrow = await dbContext.EscrowTransactions
+            .Include(e => e.EscrowListings)
+            .FirstAsync(e => e.BundleId == bundleId);
+        Assert.Equal(2_000_000m, escrow.OriginalTicketPrice);
+        Assert.Equal(2_100_000m, escrow.TotalBuyerPaid);
+        Assert.Equal(2, escrow.EscrowListings.Count);
+        var escrowListingIds = escrow.EscrowListings.Select(el => el.ListingId).ToHashSet();
+        Assert.Contains(listings[0].Id, escrowListingIds);
+        Assert.Contains(listings[1].Id, escrowListingIds);
+        Assert.DoesNotContain(listings[2].Id, escrowListingIds);
+    }
+
+    [Fact]
+    public async Task HoldBundle_WhenAllOrNothingAndBuyerSelectsTwoOfThree_ThrowsBusinessRuleViolationException()
+    {
+        // Arrange
+        var (dbContext, seller, buyer1, _, _) = CreateInMemoryDbContextWithServices();
+        var feeCalculator = new MockResaleFeeCalculator();
+        var currentUserService = new MockCurrentUserService(buyer1.Id);
+
+        var eventId = (await dbContext.Events.FirstAsync()).Id;
+        var tierId = (await dbContext.TicketTiers.FirstAsync()).Id;
+        var bundleId = Guid.NewGuid();
+
+        var listings = new List<ResaleListing>
+        {
+            new()
+            {
+                Id = Guid.NewGuid(),
+                EventId = eventId,
+                TierId = tierId,
+                SellerId = seller.Id,
+                OriginalTicketCode = "TCK-ALL-001",
+                OriginalPrice = 1_000_000m,
+                ResalePrice = 1_000_000m,
+                ListingStatus = ListingStatus.Verified,
+                BundleId = bundleId,
+                BundleTotalTickets = 3,
+                IsBundleAllOrNothing = true,
+                CreatedAt = DateTimeOffset.UtcNow
+            },
+            new()
+            {
+                Id = Guid.NewGuid(),
+                EventId = eventId,
+                TierId = tierId,
+                SellerId = seller.Id,
+                OriginalTicketCode = "TCK-ALL-002",
+                OriginalPrice = 1_000_000m,
+                ResalePrice = 1_000_000m,
+                ListingStatus = ListingStatus.Verified,
+                BundleId = bundleId,
+                BundleTotalTickets = 3,
+                IsBundleAllOrNothing = true,
+                CreatedAt = DateTimeOffset.UtcNow
+            },
+            new()
+            {
+                Id = Guid.NewGuid(),
+                EventId = eventId,
+                TierId = tierId,
+                SellerId = seller.Id,
+                OriginalTicketCode = "TCK-ALL-003",
+                OriginalPrice = 1_000_000m,
+                ResalePrice = 1_000_000m,
+                ListingStatus = ListingStatus.Verified,
+                BundleId = bundleId,
+                BundleTotalTickets = 3,
+                IsBundleAllOrNothing = true,
+                CreatedAt = DateTimeOffset.UtcNow
+            }
+        };
+        dbContext.ResaleListings.AddRange(listings);
+        await dbContext.SaveChangesAsync();
+
+        var selectedIds = new List<Guid> { listings[0].Id, listings[1].Id };
+        var handler = new HoldListingForPurchaseCommandHandler(dbContext, feeCalculator, currentUserService);
+        var command = new HoldListingForPurchaseCommand(listings[0].Id, selectedListingIds: selectedIds);
+
+        // Act & Assert
+        var ex = await Assert.ThrowsAsync<BusinessRuleViolationException>(() => handler.Handle(command, CancellationToken.None));
+        Assert.Contains("toàn bộ", ex.Message);
+    }
+
+    [Fact]
+    public async Task HoldBundle_WhenSelectedListingIdsContainsForeignId_ThrowsBusinessRuleViolationException()
+    {
+        // Arrange
+        var (dbContext, seller, buyer1, _, _) = CreateInMemoryDbContextWithServices();
+        var feeCalculator = new MockResaleFeeCalculator();
+        var currentUserService = new MockCurrentUserService(buyer1.Id);
+
+        var eventId = (await dbContext.Events.FirstAsync()).Id;
+        var tierId = (await dbContext.TicketTiers.FirstAsync()).Id;
+        var bundleId = Guid.NewGuid();
+
+        var listing1 = new ResaleListing
+        {
+            Id = Guid.NewGuid(),
+            EventId = eventId,
+            TierId = tierId,
+            SellerId = seller.Id,
+            OriginalTicketCode = "TCK-BND-010",
+            OriginalPrice = 1_000_000m,
+            ResalePrice = 1_000_000m,
+            ListingStatus = ListingStatus.Verified,
+            BundleId = bundleId,
+            BundleTotalTickets = 2,
+            IsBundleAllOrNothing = false,
+            CreatedAt = DateTimeOffset.UtcNow
+        };
+        var listing2 = new ResaleListing
+        {
+            Id = Guid.NewGuid(),
+            EventId = eventId,
+            TierId = tierId,
+            SellerId = seller.Id,
+            OriginalTicketCode = "TCK-BND-011",
+            OriginalPrice = 1_000_000m,
+            ResalePrice = 1_000_000m,
+            ListingStatus = ListingStatus.Verified,
+            BundleId = bundleId,
+            BundleTotalTickets = 2,
+            IsBundleAllOrNothing = false,
+            CreatedAt = DateTimeOffset.UtcNow
+        };
+        var foreignListing = new ResaleListing
+        {
+            Id = Guid.NewGuid(),
+            EventId = eventId,
+            TierId = tierId,
+            SellerId = seller.Id,
+            OriginalTicketCode = "TCK-FOREIGN",
+            OriginalPrice = 1_000_000m,
+            ResalePrice = 1_000_000m,
+            ListingStatus = ListingStatus.Verified,
+            BundleId = Guid.NewGuid(),
+            BundleTotalTickets = 1,
+            IsBundleAllOrNothing = false,
+            CreatedAt = DateTimeOffset.UtcNow
+        };
+        dbContext.ResaleListings.AddRange(listing1, listing2, foreignListing);
+        await dbContext.SaveChangesAsync();
+
+        var selectedIds = new List<Guid> { listing1.Id, foreignListing.Id };
+        var handler = new HoldListingForPurchaseCommandHandler(dbContext, feeCalculator, currentUserService);
+        var command = new HoldListingForPurchaseCommand(listing1.Id, selectedListingIds: selectedIds);
+
+        // Act & Assert
+        var ex = await Assert.ThrowsAsync<BusinessRuleViolationException>(() => handler.Handle(command, CancellationToken.None));
+        Assert.Contains("không thuộc gói", ex.Message);
+    }
 }

@@ -1062,4 +1062,115 @@ public class ProcessSePayWebhookCommandHandlerTests
         var stored = await context.EscrowTransactions.FindAsync(escrow.Id);
         Assert.InRange(stored!.UnlockAt!.Value, before.AddSeconds(28), after.AddSeconds(32));
     }
+
+    [Fact]
+    public async Task Handle_WhenBuyerPaidForTwoOfThreeTicketsInBundle_MarksTwoSoldAndRevertsThirdToVerified()
+    {
+        // Arrange: 3-ticket flexible bundle where buyer held 2 tickets (listing1 + listing2)
+        var (context, listing1, escrow) = CreateTestFixture("TSFLEX0001", 1_100_000m);
+        var bundleId = Guid.NewGuid();
+        listing1.BundleId = bundleId;
+        listing1.BundleTotalTickets = 3;
+        listing1.IsBundleAllOrNothing = false;
+        escrow.BundleId = bundleId;
+
+        var ticket2 = new Ticket
+        {
+            Id = Guid.NewGuid(),
+            TicketCode = "TCK-BND-002",
+            EventId = listing1.EventId,
+            TierId = listing1.TierId,
+            CurrentOwnerId = listing1.SellerId,
+            OriginalPrice = 500_000m,
+            Status = TicketStatus.LockedForResale
+        };
+        var listing2 = new ResaleListing
+        {
+            Id = Guid.NewGuid(),
+            EventId = listing1.EventId,
+            TierId = listing1.TierId,
+            SellerId = listing1.SellerId,
+            TicketId = ticket2.Id,
+            Ticket = ticket2,
+            OriginalTicketCode = "TCK-BND-002",
+            OriginalPrice = 500_000m,
+            ResalePrice = 500_000m,
+            ListingStatus = ListingStatus.Transacting,
+            BundleId = bundleId,
+            BundleTotalTickets = 3,
+            IsBundleAllOrNothing = false
+        };
+
+        var ticket3 = new Ticket
+        {
+            Id = Guid.NewGuid(),
+            TicketCode = "TCK-BND-003",
+            EventId = listing1.EventId,
+            TierId = listing1.TierId,
+            CurrentOwnerId = listing1.SellerId,
+            OriginalPrice = 500_000m,
+            Status = TicketStatus.LockedForResale
+        };
+        var listing3 = new ResaleListing
+        {
+            Id = Guid.NewGuid(),
+            EventId = listing1.EventId,
+            TierId = listing1.TierId,
+            SellerId = listing1.SellerId,
+            TicketId = ticket3.Id,
+            Ticket = ticket3,
+            OriginalTicketCode = "TCK-BND-003",
+            OriginalPrice = 500_000m,
+            ResalePrice = 500_000m,
+            ListingStatus = ListingStatus.Transacting,
+            BundleId = bundleId,
+            BundleTotalTickets = 3,
+            IsBundleAllOrNothing = false
+        };
+
+        context.Tickets.AddRange(ticket2, ticket3);
+        context.ResaleListings.AddRange(listing2, listing3);
+
+        // Buyer selected listing1 and listing2
+        context.EscrowTransactionListings.AddRange(
+            new EscrowTransactionListing { EscrowId = escrow.Id, ListingId = listing1.Id },
+            new EscrowTransactionListing { EscrowId = escrow.Id, ListingId = listing2.Id }
+        );
+        await context.SaveChangesAsync();
+
+        var handler = new ProcessSePayWebhookCommandHandler(context);
+        var request = new SePayWebhookRequest
+        {
+            Id = 10099,
+            TransferType = "in",
+            TransferAmount = 1_100_000m,
+            Content = "TSFLEX0001 thanh toan mua 2 ve",
+            ReferenceCode = "FTFLEX01"
+        };
+
+        // Act
+        var result = await handler.Handle(new ProcessSePayWebhookCommand(request), CancellationToken.None);
+
+        // Assert
+        Assert.True(result.Success);
+
+        var dbEscrow = await context.EscrowTransactions.FindAsync(escrow.Id);
+        Assert.Equal(EscrowStatus.Locked, dbEscrow!.Status);
+
+        // The 2 purchased tickets must be Sold and new tickets created for buyer
+        var dbListing1 = await context.ResaleListings.FindAsync(listing1.Id);
+        var dbListing2 = await context.ResaleListings.FindAsync(listing2.Id);
+        Assert.Equal(ListingStatus.Sold, dbListing1!.ListingStatus);
+        Assert.Equal(ListingStatus.Sold, dbListing2!.ListingStatus);
+
+        var buyerTickets = await context.Tickets.Where(t => t.CurrentOwnerId == escrow.BuyerId).ToListAsync();
+        Assert.Equal(2, buyerTickets.Count);
+        Assert.All(buyerTickets, t => Assert.Equal(TicketStatus.Valid, t.Status));
+
+        // The 3rd ticket (unpurchased) must revert to Verified and remain with seller!
+        var dbListing3 = await context.ResaleListings.FindAsync(listing3.Id);
+        var dbTicket3 = await context.Tickets.FindAsync(ticket3.Id);
+        Assert.Equal(ListingStatus.Verified, dbListing3!.ListingStatus);
+        Assert.Equal(listing1.SellerId, dbTicket3!.CurrentOwnerId);
+    }
 }

@@ -226,7 +226,15 @@ public class ReleaseListingHoldCommandHandler : IRequestHandler<ReleaseListingHo
             {
                 await bundleTx.CommitAsync(cancellationToken);
             }
-            if (_paymentNotifier != null) await _paymentNotifier.NotifyMarketplaceListingChangedAsync(new { bundleId }, cancellationToken);
+            if (_paymentNotifier != null)
+            {
+                await _paymentNotifier.NotifyMarketplaceListingChangedAsync(new { bundleId }, cancellationToken);
+                foreach (var l in bundleListings)
+                {
+                    await _paymentNotifier.NotifyMarketplaceListingChangedAsync(
+                        new { listingId = l.Id, bundleId, listingStatus = l.ListingStatus.ToString() }, cancellationToken);
+                }
+            }
 
             var response = new ReleaseListingHoldResponse
             {
