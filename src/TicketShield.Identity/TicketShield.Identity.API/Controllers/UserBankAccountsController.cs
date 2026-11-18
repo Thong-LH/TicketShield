@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using TicketShield.Identity.Application.Common.Models;
 using TicketShield.Identity.Application.Features.UserBankAccounts.Commands.CreateUserBankAccount;
 using TicketShield.Identity.Application.Features.UserBankAccounts.Commands.DeleteUserBankAccount;
+using TicketShield.Identity.Application.Features.UserBankAccounts.Commands.SetDefaultUserBankAccount;
 using TicketShield.Identity.Application.Features.UserBankAccounts.Dtos;
 using TicketShield.Identity.Application.Features.UserBankAccounts.Queries.GetUserBankAccounts;
 using TicketShield.Identity.Application.Features.UserBankAccounts.Queries.GetSupportedBanks;
@@ -78,6 +79,22 @@ public class UserBankAccountsController : ApiControllerBase
     public async Task<IActionResult> DeleteBankAccount(Guid id, CancellationToken ct)
     {
         var command = new DeleteUserBankAccountCommand(id);
+        var result = await Mediator.Send(command, ct);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Đặt một tài khoản ngân hàng bất kỳ của user thành tài khoản mặc định (nhận giải ngân).
+    /// - Hạ IsDefault của các tài khoản khác xuống false.
+    /// - Publish event IUserBankAccountLinkedEvent để Core cập nhật snapshot payout.
+    /// </summary>
+    [HttpPut("{id:guid}/set-default")]
+    [ProducesResponseType(typeof(ApiResponse<UserBankAccountDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> SetDefaultBankAccount(Guid id, CancellationToken ct)
+    {
+        var command = new SetDefaultUserBankAccountCommand(id);
         var result = await Mediator.Send(command, ct);
         return Ok(result);
     }
