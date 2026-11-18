@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -179,20 +179,26 @@ public class ConcurrencyVerificationAndRegressionTestSuite
     private static Mock<IResaleFeeCalculator> CreateDeterministicFeeCalculator()
     {
         var mock = new Mock<IResaleFeeCalculator>();
-        mock.Setup(c => c.CalculateFeeAsync(It.IsAny<decimal>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((decimal price, bool isPrivate, CancellationToken ct) =>
+        Func<decimal, bool, CancellationToken, Task<ResaleFeeCalculationResult>> calcFunc = (price, isPrivate, ct) =>
+        {
+            var buyerFee = Math.Round(price * 0.05m, 0); // 5% buyer fee
+            var sellerFee = Math.Round(price * 0.03m, 0); // 3% seller fee
+            return Task.FromResult(new ResaleFeeCalculationResult
             {
-                var buyerFee = Math.Round(price * 0.05m, 0); // 5% buyer fee
-                var sellerFee = Math.Round(price * 0.03m, 0); // 3% seller fee
-                return new ResaleFeeCalculationResult
-                {
-                    OriginalPrice = price,
-                    BuyerFee = buyerFee,
-                    SellerFee = sellerFee,
-                    TotalBuyerPaid = price + buyerFee,
-                    NetSellerPayout = price - sellerFee
-                };
+                OriginalPrice = price,
+                BuyerFee = buyerFee,
+                SellerFee = sellerFee,
+                TotalBuyerPaid = price + buyerFee,
+                NetSellerPayout = price - sellerFee
             });
+        };
+
+        mock.Setup(c => c.CalculateFeeAsync(It.IsAny<decimal>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+            .Returns(calcFunc);
+
+        mock.Setup(c => c.CalculateFeeAsync(It.IsAny<decimal>(), It.IsAny<bool>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .Returns((decimal price, bool isPrivate, Guid? eventId, CancellationToken ct) => calcFunc(price, isPrivate, ct));
+
         return mock;
     }
 
