@@ -24,20 +24,43 @@ public class Http2ConsistencyService(
             // Bóc tách dữ liệu từ 2 bộ inspector
             var pseudoHeaderOrder = pseudoHeaderInspector.ExtractPseudoHeaderOrder(context);
             var settings = settingsInspector.ExtractSettings(context);
-
             var hasProxyFingerprint = !string.IsNullOrEmpty(pseudoHeaderOrder) || settings.IsValid;
 
             // =========================================================================
-            // BƯỚC 1: LOCALHOST / DEV GRACE PERIOD
+            // BƯỚC 1: PHÁT HIỆN TẤN CÔNG PROTOCOL DOWNGRADE (TLS ALPN h2 -> HTTP/1.1)
             // =========================================================================
-            // Nếu là HTTP/1.1 thông thường và không có header fingerprint từ proxy -> Bỏ qua
+            if (context.Items.TryGetValue("TlsProfile", out var tlsObj) && tlsObj is TlsProfile tlsProfile)
+            {
+                if (tlsProfile.IsSecureConnection &&
+                    tlsProfile.Alpn == "h2" &&
+                    HttpProtocol.IsHttp11(context.Request.Protocol))
+                {
+                    const string downgradeReason = "Protocol Downgrade detected: TLS ALPN negotiated 'h2' but client sent HTTP/1.1 request (Bypassing HTTP/2 Inspection).";
+                    logger.LogWarning("{Reason}", downgradeReason);
+                    return new Http2Profile
+                    {
+                        IsHttp2Connection = false,
+                        PseudoHeaderOrder = pseudoHeaderOrder,
+                        Settings = settings,
+                        Status = Http2InspectionStatus.Inconsistent,
+                        NetworkInconsistencyScore = 1.0f,
+                        AnomalyReason = downgradeReason,
+                        InspectedAtUtc = DateTime.UtcNow
+                    };
+                }
+            }
+
+            // =========================================================================
+            // BƯỚC 2: LOCALHOST / DEV GRACE PERIOD
+            // =========================================================================
+            // Nếu là HTTP/1.1 thông thường (không có TLS ALPN h2) và không có header fingerprint từ proxy -> Bỏ qua
             if (!isHttp2 && !hasProxyFingerprint)
             {
                 return Http2Profile.DefaultNotApplicable;
             }
 
             // =========================================================================
-            // BƯỚC 2: KIỂM TRA THỨ TỰ PSEUDO-HEADERS
+            // BƯỚC 3: KIỂM TRA THỨ TỰ PSEUDO-HEADERS
             // =========================================================================
             if (!string.IsNullOrEmpty(pseudoHeaderOrder))
             {
@@ -58,7 +81,7 @@ public class Http2ConsistencyService(
             }
 
             // =========================================================================
-            // BƯỚC 3: KIỂM TRA HTTP/2 SETTINGS FRAME
+            // BƯỚC 4: KIỂM TRA HTTP/2 SETTINGS FRAME
             // =========================================================================
             if (settings.IsValid)
             {
@@ -73,32 +96,6 @@ public class Http2ConsistencyService(
                         Status = Http2InspectionStatus.Inconsistent,
                         NetworkInconsistencyScore = 1.0f,
                         AnomalyReason = settingsAnomaly,
-                        InspectedAtUtc = DateTime.UtcNow
-                    };
-                }
-            }
-
-            // =========================================================================
-            // BƯỚC 4: ĐỐI CHIẾU CHÉO VỚI TLS PROFILE (Kế thừa từ NET-13.1.1)
-            // =========================================================================
-            if (context.Items.TryGetValue("TlsProfile", out var tlsObj) && tlsObj is TlsProfile tlsProfile)
-            {
-                // Phát hiện tấn công Protocol Downgrade: TLS ALPN đàm phán h2 nhưng Application lại chạy HTTP/1.1
-                if (tlsProfile.IsSecureConnection &&
-                    tlsProfile.Alpn == "h2" &&
-                    HttpProtocol.IsHttp11(context.Request.Protocol) &&
-                    !hasProxyFingerprint)
-                {
-                    const string downgradeReason = "Protocol Downgrade detected: TLS ALPN negotiated 'h2' but client sent HTTP/1.1 request (Bypassing HTTP/2 Inspection).";
-                    logger.LogWarning("{Reason}", downgradeReason);
-                    return new Http2Profile
-                    {
-                        IsHttp2Connection = false,
-                        PseudoHeaderOrder = pseudoHeaderOrder,
-                        Settings = settings,
-                        Status = Http2InspectionStatus.Inconsistent,
-                        NetworkInconsistencyScore = 1.0f,
-                        AnomalyReason = downgradeReason,
                         InspectedAtUtc = DateTime.UtcNow
                     };
                 }

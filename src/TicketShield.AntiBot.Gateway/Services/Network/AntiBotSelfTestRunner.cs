@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.Logging.Abstractions;
 using TicketShield.AntiBot.Gateway.Models.Network;
 
 namespace TicketShield.AntiBot.Gateway.Services.Network;
@@ -21,15 +20,24 @@ public record SelfTestSuiteReport(
 );
 
 /// <summary>
-/// Service kiểm thử tự động nội tại (Self-Test Runner) cho tầng Network Consistency Layer (NET-13.1.1).
+/// Service kiểm thử tự động nội tại (Self-Test Runner) cho tầng Network Consistency Layer (NET-13.1.1 & NET-13.1.2).
 /// Thực thi toàn bộ test matrix in-memory và benchmark độ trễ microsecond.
 /// </summary>
 public static class AntiBotSelfTestRunner
 {
-    public static SelfTestSuiteReport RunAllTests(IJa4Parser parser, ITlsProfileExtractor extractor)
+    private const string ChromeUa = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36";
+
+    public static SelfTestSuiteReport RunAllTests(
+        IJa4Parser parser,
+        ITlsProfileExtractor extractor,
+        IHttp2ConsistencyService consistencyService)
     {
         var results = new List<SelfTestResult>();
         var sw = new Stopwatch();
+
+        // =========================================================================
+        // NET-13.1.1: TLS PROFILE & JA4 TESTS
+        // =========================================================================
 
         // TC-01: Chrome 130 Standard JA4
         sw.Restart();
@@ -125,7 +133,7 @@ public static class AntiBotSelfTestRunner
             $"Source={profilePlain.Source}, IsSecure={profilePlain.IsSecureConnection}",
             sw.Elapsed.TotalMilliseconds * 1000.0));
 
-        // TC-08: Benchmark 50,000 Iterations
+        // TC-08: Benchmark 50,000 JA4 Parse Operations
         const int benchmarkCount = 50_000;
         sw.Restart();
         for (var i = 0; i < benchmarkCount; i++)
@@ -134,12 +142,120 @@ public static class AntiBotSelfTestRunner
         }
         sw.Stop();
         var avgBenchmarkUs = (sw.Elapsed.TotalMilliseconds * 1000.0) / benchmarkCount;
-        var pass8 = avgBenchmarkUs < 50.0; // < 0.05ms (50µs) SLA target
+        var pass8 = avgBenchmarkUs < 50.0;
         results.Add(new SelfTestResult(
-            $"TC-08: Benchmark {benchmarkCount:N0} Iterations (SLA < 50µs)",
+            $"TC-08: Benchmark {benchmarkCount:N0} JA4 Parses (SLA < 50µs)",
             pass8,
             $"Completed in {sw.ElapsedMilliseconds}ms, Avg = {avgBenchmarkUs:F4} µs/op",
             avgBenchmarkUs));
+
+        // =========================================================================
+        // NET-13.1.2: HTTP/2 SETTINGS & PSEUDO-HEADERS TESTS
+        // =========================================================================
+
+        // TC-09: HTTP/2 Chrome 130 Standard Consistency (m,a,s,p + 6MB Window)
+        sw.Restart();
+        var ctxH2Chrome = new DefaultHttpContext();
+        ctxH2Chrome.Request.Protocol = "HTTP/2";
+        ctxH2Chrome.Request.Headers["X-Http2-Pseudo-Headers"] = "m,a,s,p";
+        ctxH2Chrome.Request.Headers["X-Http2-Settings"] = "1:65536;2:0;4:6291456;6:262144";
+        var h2ResChrome = consistencyService.Inspect(ctxH2Chrome, ChromeUa);
+        sw.Stop();
+        var pass9 = h2ResChrome.Status == Http2InspectionStatus.Consistent &&
+                    h2ResChrome.NetworkInconsistencyScore == 0.0f;
+        results.Add(new SelfTestResult(
+            "TC-09: HTTP/2 Chrome 130 Standard Consistency",
+            pass9,
+            $"Status={h2ResChrome.Status}, Score={h2ResChrome.NetworkInconsistencyScore}, Order={h2ResChrome.PseudoHeaderOrder}",
+            sw.Elapsed.TotalMilliseconds * 1000.0));
+
+        // TC-10: HTTP/2 Bot Pseudo-Header Mismatch (Chrome UA + Firefox order m,p,a,s)
+        sw.Restart();
+        var ctxH2MismatchOrder = new DefaultHttpContext();
+        ctxH2MismatchOrder.Request.Protocol = "HTTP/2";
+        ctxH2MismatchOrder.Request.Headers["X-Http2-Pseudo-Headers"] = "m,p,a,s"; // Firefox order
+        ctxH2MismatchOrder.Request.Headers["X-Http2-Settings"] = "1:65536;2:0;4:6291456;6:262144";
+        var h2ResMismatchOrder = consistencyService.Inspect(ctxH2MismatchOrder, ChromeUa);
+        sw.Stop();
+        var pass10 = h2ResMismatchOrder.Status == Http2InspectionStatus.Inconsistent &&
+                     h2ResMismatchOrder.NetworkInconsistencyScore == 1.0f &&
+                     h2ResMismatchOrder.AnomalyReason != null &&
+                     h2ResMismatchOrder.AnomalyReason.Contains("Firefox");
+        results.Add(new SelfTestResult(
+            "TC-10: HTTP/2 Bot Pseudo-Header Order Mismatch (Score=1.0)",
+            pass10,
+            $"Score={h2ResMismatchOrder.NetworkInconsistencyScore}, Reason={h2ResMismatchOrder.AnomalyReason}",
+            sw.Elapsed.TotalMilliseconds * 1000.0));
+
+        // TC-11: HTTP/2 Bot Settings Mismatch (Chrome UA + Python 65535 Window)
+        sw.Restart();
+        var ctxH2MismatchSettings = new DefaultHttpContext();
+        ctxH2MismatchSettings.Request.Protocol = "HTTP/2";
+        ctxH2MismatchSettings.Request.Headers["X-Http2-Pseudo-Headers"] = "m,a,s,p";
+        ctxH2MismatchSettings.Request.Headers["X-Http2-Settings"] = "1:65536;2:0;4:65535;6:262144"; // 65535 = RFC Python bot
+        var h2ResMismatchSettings = consistencyService.Inspect(ctxH2MismatchSettings, ChromeUa);
+        sw.Stop();
+        var pass11 = h2ResMismatchSettings.Status == Http2InspectionStatus.Inconsistent &&
+                     h2ResMismatchSettings.NetworkInconsistencyScore == 1.0f &&
+                     h2ResMismatchSettings.AnomalyReason != null &&
+                     h2ResMismatchSettings.AnomalyReason.Contains("RFC 7540");
+        results.Add(new SelfTestResult(
+            "TC-11: HTTP/2 Bot Settings Window Mismatch (Score=1.0)",
+            pass11,
+            $"Score={h2ResMismatchSettings.NetworkInconsistencyScore}, Reason={h2ResMismatchSettings.AnomalyReason}",
+            sw.Elapsed.TotalMilliseconds * 1000.0));
+
+        // TC-12: HTTP/2 Protocol Downgrade Attack (TLS ALPN h2 -> Application HTTP/1.1)
+        sw.Restart();
+        var ctxDowngrade = new DefaultHttpContext();
+        ctxDowngrade.Request.Protocol = "HTTP/1.1";
+        ctxDowngrade.Items["TlsProfile"] = new TlsProfile
+        {
+            IsSecureConnection = true,
+            Alpn = "h2",
+            TlsVersion = "Tls13"
+        };
+        var h2ResDowngrade = consistencyService.Inspect(ctxDowngrade, ChromeUa);
+        sw.Stop();
+        var pass12 = h2ResDowngrade.Status == Http2InspectionStatus.Inconsistent &&
+                     h2ResDowngrade.NetworkInconsistencyScore == 1.0f &&
+                     h2ResDowngrade.AnomalyReason != null &&
+                     h2ResDowngrade.AnomalyReason.Contains("Protocol Downgrade");
+        results.Add(new SelfTestResult(
+            "TC-12: HTTP/2 Protocol Downgrade Attack Detection (Score=1.0)",
+            pass12,
+            $"Score={h2ResDowngrade.NetworkInconsistencyScore}, Reason={h2ResDowngrade.AnomalyReason}",
+            sw.Elapsed.TotalMilliseconds * 1000.0));
+
+        // TC-13: HTTP/2 Localhost Grace Period (Plain HTTP/1.1 -> No Score Penalty)
+        sw.Restart();
+        var ctxGrace = new DefaultHttpContext();
+        ctxGrace.Request.Protocol = "HTTP/1.1";
+        ctxGrace.Request.Scheme = "http";
+        var h2ResGrace = consistencyService.Inspect(ctxGrace, ChromeUa);
+        sw.Stop();
+        var pass13 = h2ResGrace.Status == Http2InspectionStatus.NotApplicable &&
+                     h2ResGrace.NetworkInconsistencyScore == 0.0f;
+        results.Add(new SelfTestResult(
+            "TC-13: HTTP/2 Localhost Dev Grace Period (Score=0.0)",
+            pass13,
+            $"Status={h2ResGrace.Status}, Score={h2ResGrace.NetworkInconsistencyScore}",
+            sw.Elapsed.TotalMilliseconds * 1000.0));
+
+        // TC-14: Benchmark 50,000 HTTP/2 Consistency Inspections
+        sw.Restart();
+        for (var i = 0; i < benchmarkCount; i++)
+        {
+            consistencyService.Inspect(ctxH2Chrome, ChromeUa);
+        }
+        sw.Stop();
+        var avgH2BenchmarkUs = (sw.Elapsed.TotalMilliseconds * 1000.0) / benchmarkCount;
+        var pass14 = avgH2BenchmarkUs < 50.0;
+        results.Add(new SelfTestResult(
+            $"TC-14: Benchmark {benchmarkCount:N0} HTTP/2 Inspections (SLA < 50µs)",
+            pass14,
+            $"Completed in {sw.ElapsedMilliseconds}ms, Avg = {avgH2BenchmarkUs:F4} µs/op",
+            avgH2BenchmarkUs));
 
         var allPassed = results.All(r => r.Passed);
         var passedCount = results.Count(r => r.Passed);
@@ -148,7 +264,7 @@ public static class AntiBotSelfTestRunner
             allPassed,
             results.Count,
             passedCount,
-            avgBenchmarkUs,
+            avgH2BenchmarkUs,
             results);
     }
 }

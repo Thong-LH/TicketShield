@@ -5,15 +5,19 @@ using TicketShield.AntiBot.Gateway.Models;
 using TicketShield.AntiBot.Gateway.Services;
 using TicketShield.AntiBot.Gateway.Services.Network;
 
-// CLI Self-Test Runner cho NET-13.1.1 (Verification & Latency Benchmark)
+// CLI Self-Test Runner cho NET-13.1.1 & NET-13.1.2 (Verification & Latency Benchmark)
 if (args.Contains("--self-test"))
 {
     var testParser = new Ja4Parser();
     var testExtractor = new TlsProfileExtractor(testParser, Microsoft.Extensions.Logging.Abstractions.NullLogger<TlsProfileExtractor>.Instance);
-    var report = AntiBotSelfTestRunner.RunAllTests(testParser, testExtractor);
+    var pseudoInspector = new PseudoHeaderInspector(Microsoft.Extensions.Logging.Abstractions.NullLogger<PseudoHeaderInspector>.Instance);
+    var settingsInspector = new Http2SettingsInspector(Microsoft.Extensions.Logging.Abstractions.NullLogger<Http2SettingsInspector>.Instance);
+    var testConsistency = new Http2ConsistencyService(pseudoInspector, settingsInspector, Microsoft.Extensions.Logging.Abstractions.NullLogger<Http2ConsistencyService>.Instance);
+
+    var report = AntiBotSelfTestRunner.RunAllTests(testParser, testExtractor, testConsistency);
 
     Console.WriteLine("==========================================================");
-    Console.WriteLine("      NET-13.1.1: SELF-TEST & BENCHMARK VERIFICATION       ");
+    Console.WriteLine("    NET-13.1: PROTOCOL CONSISTENCY VERIFICATION SUITE      ");
     Console.WriteLine("==========================================================");
     foreach (var r in report.Results)
     {
@@ -169,12 +173,13 @@ app.MapGet("/api/antibot/http2-profile", (
     return Results.Ok(profile);
 });
 
-// Endpoint tự kiểm thử tự động nội tại (Self-Test Runner NET-13.1.1)
+// Endpoint tự kiểm thử tự động nội tại (Self-Test Runner NET-13.1.1 & NET-13.1.2)
 app.MapGet("/api/antibot/self-test", (
     [FromServices] IJa4Parser parser,
-    [FromServices] ITlsProfileExtractor extractor) =>
+    [FromServices] ITlsProfileExtractor extractor,
+    [FromServices] IHttp2ConsistencyService consistencyService) =>
 {
-    var report = AntiBotSelfTestRunner.RunAllTests(parser, extractor);
+    var report = AntiBotSelfTestRunner.RunAllTests(parser, extractor, consistencyService);
     return report.AllPassed ? Results.Ok(report) : Results.Problem(title: "Self-Test Failed", statusCode: 500);
 });
 
