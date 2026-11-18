@@ -88,6 +88,9 @@ builder.Services.AddSingleton<ITlsProfileExtractor, TlsProfileExtractor>();
 builder.Services.AddSingleton<IPseudoHeaderInspector, PseudoHeaderInspector>();
 builder.Services.AddSingleton<IHttp2SettingsInspector, Http2SettingsInspector>();
 builder.Services.AddSingleton<IHttp2ConsistencyService, Http2ConsistencyService>();
+builder.Services.AddSingleton<IClientHintsValidator, ClientHintsValidator>();
+builder.Services.AddSingleton<ISubnetCorrelationTracker, SubnetCorrelationTracker>();
+builder.Services.AddSingleton<INetworkConsistencyService, NetworkConsistencyService>();
 
 // 5. YARP Reverse Proxy
 builder.Services.AddReverseProxy()
@@ -171,6 +174,35 @@ app.MapGet("/api/antibot/http2-profile", (
     var ua = ctx.Request.Headers.UserAgent.FirstOrDefault();
     var profile = consistencyService.Inspect(ctx, ua);
     return Results.Ok(profile);
+});
+
+// Endpoint chẩn đoán thông tin Client Hints (NET-13.1.3)
+app.MapGet("/api/antibot/client-hints", (
+    HttpContext ctx,
+    [FromServices] IClientHintsValidator validator) =>
+{
+    var profile = validator.Validate(ctx);
+    return Results.Ok(profile);
+});
+
+// Endpoint chẩn đoán thông tin Subnet Correlation (NET-13.1.3)
+app.MapGet("/api/antibot/subnet", async (
+    HttpContext ctx,
+    [FromServices] ISubnetCorrelationTracker tracker) =>
+{
+    var clientIp = ctx.Request.Headers["X-Forwarded-For"].FirstOrDefault()
+                   ?? ctx.Connection.RemoteIpAddress?.ToString();
+    var metrics = await tracker.TrackSubnetAsync(clientIp, ctx.RequestAborted);
+    return Results.Ok(metrics);
+});
+
+// Endpoint chẩn đoán tổng hợp Network Consistency (NET-13.1)
+app.MapGet("/api/antibot/network-consistency", async (
+    HttpContext ctx,
+    [FromServices] INetworkConsistencyService networkService) =>
+{
+    var summary = await networkService.EvaluateAsync(ctx, ctx.RequestAborted);
+    return Results.Ok(summary);
 });
 
 // Endpoint tự kiểm thử tự động nội tại (Self-Test Runner NET-13.1.1 & NET-13.1.2)

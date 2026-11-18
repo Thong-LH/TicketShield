@@ -52,8 +52,7 @@ public class AntiBotCheckoutGuardMiddleware(
     public async Task InvokeAsync(
         HttpContext context,
         IAntiBotGuardService guardService,
-        ITlsProfileExtractor tlsExtractor,
-        IHttp2ConsistencyService http2Service)
+        INetworkConsistencyService networkService)
     {
         var path = context.Request.Path;
         var method = context.Request.Method;
@@ -62,34 +61,22 @@ public class AntiBotCheckoutGuardMiddleware(
         if (HttpMethods.IsPost(method) &&
             path.Equals("/api/organizer/orders/checkout", StringComparison.OrdinalIgnoreCase))
         {
-            // 1. Trích xuất hồ sơ TLS Profile (NET-13.1.1)
-            var tlsProfile = tlsExtractor.Extract(context);
-            context.Items["TlsProfile"] = tlsProfile;
+            // 1. Đánh giá tính nhất quán mạng toàn diện (NET-13.1: TLS, HTTP/2, Client Hints, Subnet /24)
+            var networkSummary = await networkService.EvaluateAsync(context, context.RequestAborted);
+            context.Items["NetworkConsistencySummary"] = networkSummary;
+            context.Items["TlsProfile"] = networkSummary.Tls;
+            context.Items["Http2Profile"] = networkSummary.Http2;
+            context.Items["ClientHintsProfile"] = networkSummary.ClientHints;
+            context.Items["SubnetRateMetrics"] = networkSummary.Subnet;
 
-            if (tlsProfile.IsSecureConnection)
-            {
-                logger.LogDebug(
-                    "AntiBot TLS Extracted: Source={Source}, Version={Version}, Cipher={Cipher}, ALPN={Alpn}, JA4={Ja4}",
-                    tlsProfile.Source,
-                    tlsProfile.TlsVersion,
-                    tlsProfile.NegotiatedCipherSuite,
-                    tlsProfile.Alpn,
-                    tlsProfile.Ja4?.RawJa4);
-            }
-
-            // 2. Kiểm tra tính nhất quán HTTP/2 Settings & Pseudo-Headers (NET-13.1.2)
-            var userAgent = context.Request.Headers.UserAgent.FirstOrDefault();
-            var http2Profile = http2Service.Inspect(context, userAgent);
-            context.Items["Http2Profile"] = http2Profile;
-
-            if (http2Profile.NetworkInconsistencyScore >= 1.0f)
+            if (networkSummary.HasInconsistency)
             {
                 logger.LogWarning(
-                    "AntiBot Gateway: Flagged HTTP/2 Protocol Inconsistency! Score={Score}, Reason={Reason}",
-                    http2Profile.NetworkInconsistencyScore, http2Profile.AnomalyReason);
+                    "AntiBot Gateway: Flagged Network Inconsistency! Score={Score}, Reason={Reason}",
+                    networkSummary.OverallInconsistencyScore, networkSummary.PrimaryReason);
 
                 context.Request.Headers["X-Network-Inconsistency-Score"] = "1";
-                context.Request.Headers["X-Network-Inconsistency-Reason"] = http2Profile.AnomalyReason ?? "Protocol Inconsistency";
+                context.Request.Headers["X-Network-Inconsistency-Reason"] = networkSummary.PrimaryReason ?? "Network Inconsistency";
             }
 
             context.Request.EnableBuffering();
