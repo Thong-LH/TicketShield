@@ -11,6 +11,7 @@ public class HoldListingForPurchaseCommand : IRequest<ApiResponse<HoldListingFor
     public string? RecipientEmail { get; set; }
     public string? RecipientIdCard { get; set; }
     public bool? BuyAsBundle { get; set; }
+    public List<Guid>? SelectedListingIds { get; set; }
 
     public HoldListingForPurchaseCommand() { }
 
@@ -20,7 +21,8 @@ public class HoldListingForPurchaseCommand : IRequest<ApiResponse<HoldListingFor
         string? recipientName = null,
         string? recipientEmail = null,
         string? recipientIdCard = null,
-        bool? buyAsBundle = null)
+        bool? buyAsBundle = null,
+        List<Guid>? selectedListingIds = null)
     {
         ListingId = listingId;
         PrivateAccessToken = privateAccessToken;
@@ -28,5 +30,6 @@ public class HoldListingForPurchaseCommand : IRequest<ApiResponse<HoldListingFor
         RecipientEmail = recipientEmail;
         RecipientIdCard = recipientIdCard;
         BuyAsBundle = buyAsBundle;
+        SelectedListingIds = selectedListingIds;
     }
 }

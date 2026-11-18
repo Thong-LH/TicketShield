@@ -214,7 +214,8 @@ public class ResaleListingsController(
             RecipientName = request?.RecipientName,
             RecipientEmail = request?.RecipientEmail,
             RecipientIdCard = request?.RecipientIdCard,
-            BuyAsBundle = request?.BuyAsBundle
+            BuyAsBundle = request?.BuyAsBundle,
+            SelectedListingIds = request?.SelectedListingIds
         };
 
         var result = await Mediator.Send(command, ct);
