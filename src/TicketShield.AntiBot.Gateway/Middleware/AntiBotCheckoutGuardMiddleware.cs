@@ -52,7 +52,8 @@ public class AntiBotCheckoutGuardMiddleware(
     public async Task InvokeAsync(
         HttpContext context,
         IAntiBotGuardService guardService,
-        ITlsProfileExtractor tlsExtractor)
+        ITlsProfileExtractor tlsExtractor,
+        IHttp2ConsistencyService http2Service)
     {
         var path = context.Request.Path;
         var method = context.Request.Method;
@@ -61,7 +62,7 @@ public class AntiBotCheckoutGuardMiddleware(
         if (HttpMethods.IsPost(method) &&
             path.Equals("/api/organizer/orders/checkout", StringComparison.OrdinalIgnoreCase))
         {
-            // Trích xuất hồ sơ TLS Profile (NET-13.1.1) làm đầu vào cho Protocol Consistency Layer (NET-13.1.2)
+            // 1. Trích xuất hồ sơ TLS Profile (NET-13.1.1)
             var tlsProfile = tlsExtractor.Extract(context);
             context.Items["TlsProfile"] = tlsProfile;
 
@@ -74,6 +75,21 @@ public class AntiBotCheckoutGuardMiddleware(
                     tlsProfile.NegotiatedCipherSuite,
                     tlsProfile.Alpn,
                     tlsProfile.Ja4?.RawJa4);
+            }
+
+            // 2. Kiểm tra tính nhất quán HTTP/2 Settings & Pseudo-Headers (NET-13.1.2)
+            var userAgent = context.Request.Headers.UserAgent.FirstOrDefault();
+            var http2Profile = http2Service.Inspect(context, userAgent);
+            context.Items["Http2Profile"] = http2Profile;
+
+            if (http2Profile.NetworkInconsistencyScore >= 1.0f)
+            {
+                logger.LogWarning(
+                    "AntiBot Gateway: Flagged HTTP/2 Protocol Inconsistency! Score={Score}, Reason={Reason}",
+                    http2Profile.NetworkInconsistencyScore, http2Profile.AnomalyReason);
+
+                context.Request.Headers["X-Network-Inconsistency-Score"] = "1";
+                context.Request.Headers["X-Network-Inconsistency-Reason"] = http2Profile.AnomalyReason ?? "Protocol Inconsistency";
             }
 
             context.Request.EnableBuffering();

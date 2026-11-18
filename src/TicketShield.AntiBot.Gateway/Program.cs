@@ -81,6 +81,9 @@ builder.Services.AddSingleton<IAntiBotScoringService, AntiBotScoringService>();
 builder.Services.AddSingleton<IAntiBotGuardService, AntiBotGuardService>();
 builder.Services.AddSingleton<IJa4Parser, Ja4Parser>();
 builder.Services.AddSingleton<ITlsProfileExtractor, TlsProfileExtractor>();
+builder.Services.AddSingleton<IPseudoHeaderInspector, PseudoHeaderInspector>();
+builder.Services.AddSingleton<IHttp2SettingsInspector, Http2SettingsInspector>();
+builder.Services.AddSingleton<IHttp2ConsistencyService, Http2ConsistencyService>();
 
 // 5. YARP Reverse Proxy
 builder.Services.AddReverseProxy()
@@ -153,6 +156,16 @@ app.MapGet("/api/antibot/tls-profile", (
     [FromServices] ITlsProfileExtractor extractor) =>
 {
     var profile = extractor.Extract(ctx);
+    return Results.Ok(profile);
+});
+
+// Endpoint chẩn đoán thông tin HTTP/2 Profile (NET-13.1.2)
+app.MapGet("/api/antibot/http2-profile", (
+    HttpContext ctx,
+    [FromServices] IHttp2ConsistencyService consistencyService) =>
+{
+    var ua = ctx.Request.Headers.UserAgent.FirstOrDefault();
+    var profile = consistencyService.Inspect(ctx, ua);
     return Results.Ok(profile);
 });
 
