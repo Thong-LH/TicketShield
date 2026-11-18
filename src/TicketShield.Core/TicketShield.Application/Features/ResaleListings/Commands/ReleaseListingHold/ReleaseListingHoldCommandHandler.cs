@@ -80,10 +80,20 @@ public class ReleaseListingHoldCommandHandler : IRequestHandler<ReleaseListingHo
             }
 
             // BE-12.1.6: Chặn hủy giữ chỗ nếu có Escrow đang đối soát hoặc đã thanh toán
-            var nonReleasableEscrow = await _dbContext.EscrowTransactions
-                .Where(e => e.ListingId == request.ListingId &&
-                       (e.Status == EscrowStatus.TransferNeedsReview || e.Status == EscrowStatus.Locked))
+            var nonReleasableEscrow = await _dbContext.EscrowTransactionListings
+                .Where(etl => etl.ListingId == request.ListingId &&
+                       (etl.Escrow.Status == EscrowStatus.TransferNeedsReview || etl.Escrow.Status == EscrowStatus.Locked))
+                .Select(etl => etl.Escrow)
                 .FirstOrDefaultAsync(cancellationToken);
+
+            if (nonReleasableEscrow == null)
+            {
+                nonReleasableEscrow = await _dbContext.EscrowTransactions
+                    .Where(e => e.ListingId == request.ListingId &&
+                           (e.Status == EscrowStatus.TransferNeedsReview || e.Status == EscrowStatus.Locked))
+                    .FirstOrDefaultAsync(cancellationToken);
+            }
+
             if (nonReleasableEscrow != null)
             {
                 throw new BusinessRuleViolationException(
@@ -165,22 +175,49 @@ public class ReleaseListingHoldCommandHandler : IRequestHandler<ReleaseListingHo
 
         try
         {
-            // BE-12.1.6: Chặn hủy giữ chỗ gói vé nếu có Escrow đang đối soát hoặc đã thanh toán
-            var nonReleasableBundleEscrow = await _dbContext.EscrowTransactions
-                .Where(e => e.BundleId == bundleId &&
-                       (e.Status == EscrowStatus.TransferNeedsReview || e.Status == EscrowStatus.Locked))
+            // BE-12.1.6: Chặn hủy giữ chỗ nếu vé đang đối soát hoặc đã thanh toán
+            var nonReleasableBundleEscrow = await _dbContext.EscrowTransactionListings
+                .Where(etl => etl.ListingId == anchorListing.Id &&
+                              (etl.Escrow.Status == EscrowStatus.TransferNeedsReview || etl.Escrow.Status == EscrowStatus.Locked))
+                .Select(etl => etl.Escrow)
                 .FirstOrDefaultAsync(cancellationToken);
+
+            if (nonReleasableBundleEscrow == null)
+            {
+                nonReleasableBundleEscrow = await _dbContext.EscrowTransactions
+                    .Where(e => (e.ListingId == anchorListing.Id || (anchorListing.IsBundleAllOrNothing && e.BundleId == bundleId)) &&
+                                (e.Status == EscrowStatus.TransferNeedsReview || e.Status == EscrowStatus.Locked))
+                    .FirstOrDefaultAsync(cancellationToken);
+            }
+
             if (nonReleasableBundleEscrow != null)
             {
                 throw new BusinessRuleViolationException(
                     $"Không thể hủy giữ chỗ gói vé đang được xử lý hoặc thanh toán (Trạng thái Escrow: '{nonReleasableBundleEscrow.Status}').");
             }
 
-            // Find the bundle escrow
-            var bundleEscrow = await _dbContext.EscrowTransactions
-                .Where(e => e.BundleId == bundleId && e.Status == EscrowStatus.Pending)
+            // Find the pending bundle escrow for this listing / buyer
+            var bundleEscrow = await _dbContext.EscrowTransactionListings
+                .Where(etl => etl.ListingId == anchorListing.Id && etl.Escrow.Status == EscrowStatus.Pending)
+                .Select(etl => etl.Escrow)
                 .OrderByDescending(e => e.CreatedAt)
                 .FirstOrDefaultAsync(cancellationToken);
+
+            if (bundleEscrow == null)
+            {
+                bundleEscrow = await _dbContext.EscrowTransactions
+                    .Where(e => e.BundleId == bundleId && e.Status == EscrowStatus.Pending && (e.BuyerId == buyerId || e.ListingId == anchorListing.Id))
+                    .OrderByDescending(e => e.CreatedAt)
+                    .FirstOrDefaultAsync(cancellationToken);
+            }
+
+            if (bundleEscrow == null)
+            {
+                bundleEscrow = await _dbContext.EscrowTransactions
+                    .Where(e => e.BundleId == bundleId && e.Status == EscrowStatus.Pending)
+                    .OrderByDescending(e => e.CreatedAt)
+                    .FirstOrDefaultAsync(cancellationToken);
+            }
 
             if (bundleEscrow == null)
             {
