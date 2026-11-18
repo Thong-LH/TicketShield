@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using TicketShield.Identity.Application.Common.Models;
 using TicketShield.Identity.Application.Features.UserBankAccounts.Commands.CreateUserBankAccount;
+using TicketShield.Identity.Application.Features.UserBankAccounts.Commands.DeleteUserBankAccount;
 using TicketShield.Identity.Application.Features.UserBankAccounts.Dtos;
 using TicketShield.Identity.Application.Features.UserBankAccounts.Queries.GetUserBankAccounts;
 using TicketShield.Identity.Application.Features.UserBankAccounts.Queries.GetSupportedBanks;
@@ -60,6 +61,24 @@ public class UserBankAccountsController : ApiControllerBase
     {
         var query = new LookupAccountHolderNameQuery(bin, accountNumber);
         var result = await Mediator.Send(query);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Xóa một tài khoản ngân hàng đã liên kết.
+    /// - 404 nếu không tìm thấy hoặc TK không thuộc user hiện tại.
+    /// - 400 nếu đây là tài khoản Default duy nhất còn lại.
+    /// - Nếu xóa TK Default khi còn TK khác, tự động nâng TK cũ nhất thành Default.
+    /// </summary>
+    [HttpDelete("{id:guid}")]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DeleteBankAccount(Guid id, CancellationToken ct)
+    {
+        var command = new DeleteUserBankAccountCommand(id);
+        var result = await Mediator.Send(command, ct);
         return Ok(result);
     }
 }
