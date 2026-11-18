@@ -437,33 +437,31 @@ public class CreateDisputeCommandHandlerTests
             OriginalPrice = 100_000m
         };
         var originalCode = $"TCK-{suffix}";
+        var ticket = new Ticket
+        {
+            Id = Guid.NewGuid(),
+            EventId = concert.Id,
+            TierId = tier.Id,
+            CurrentOwnerId = ticketStatus.HasValue ? buyer.Id : seller.Id,
+            TicketCode = originalCode,
+            OriginalPrice = 100_000m,
+            Status = ticketStatus ?? TicketStatus.Transferred
+        };
+        db.Tickets.Add(ticket);
+
         var listing = new ResaleListing
         {
             Id = Guid.NewGuid(),
             EventId = concert.Id,
             TierId = tier.Id,
             SellerId = seller.Id,
+            TicketId = ticket.Id,
+            Ticket = ticket,
             OriginalTicketCode = originalCode,
             OriginalPrice = 100_000m,
             ResalePrice = 100_000m,
             ListingStatus = ListingStatus.Sold
         };
-
-        if (ticketStatus.HasValue)
-        {
-            var ticket = new Ticket
-            {
-                Id = Guid.NewGuid(),
-                EventId = concert.Id,
-                TierId = tier.Id,
-                CurrentOwnerId = buyer.Id,
-                TicketCode = originalCode,
-                OriginalPrice = 100_000m,
-                Status = ticketStatus.Value
-            };
-            db.Tickets.Add(ticket);
-            listing.TicketId = ticket.Id;
-        }
 
         var escrow = new EscrowTransaction
         {

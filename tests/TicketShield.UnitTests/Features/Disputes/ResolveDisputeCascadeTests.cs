@@ -40,6 +40,18 @@ public class ResolveDisputeCascadeTests
         };
         var tier = new TicketTier { Id = tierId, EventId = eventId, TierName = "VIP", OriginalPrice = 1_000_000m };
 
+        var origTicket = new Ticket
+        {
+            Id = Guid.NewGuid(),
+            EventId = eventId,
+            TierId = tierId,
+            CurrentOwnerId = sellerId,
+            TicketCode = "ORIG-001",
+            OriginalPrice = 1_000_000m,
+            Status = TicketStatus.Transferred
+        };
+        db.Tickets.Add(origTicket);
+
         // Đơn mua gốc: Escrow cấp NewTicketCode = "TCK-CASCADE-001" cho Buyer
         var originalListing = new ResaleListing
         {
@@ -47,6 +59,8 @@ public class ResolveDisputeCascadeTests
             EventId = eventId,
             TierId = tierId,
             SellerId = sellerId,
+            TicketId = origTicket.Id,
+            Ticket = origTicket,
             OriginalTicketCode = "ORIG-001",
             OriginalPrice = 1_000_000m,
             ResalePrice = 1_000_000m,
@@ -168,12 +182,26 @@ public class ResolveDisputeCascadeTests
         };
         var tier = new TicketTier { Id = tierId, EventId = eventId, TierName = "GA", OriginalPrice = 500_000m };
 
+        var origTicket2 = new Ticket
+        {
+            Id = Guid.NewGuid(),
+            EventId = eventId,
+            TierId = tierId,
+            CurrentOwnerId = sellerId,
+            TicketCode = "ORIG-002",
+            OriginalPrice = 500_000m,
+            Status = TicketStatus.Transferred
+        };
+        db.Tickets.Add(origTicket2);
+
         var originalListing = new ResaleListing
         {
             Id = Guid.NewGuid(),
             EventId = eventId,
             TierId = tierId,
             SellerId = sellerId,
+            TicketId = origTicket2.Id,
+            Ticket = origTicket2,
             OriginalTicketCode = "ORIG-002",
             OriginalPrice = 500_000m,
             ResalePrice = 500_000m,
@@ -202,6 +230,18 @@ public class ResolveDisputeCascadeTests
             Description = "Vé trùng lặp"
         };
 
+        var downstreamTicket = new Ticket
+        {
+            Id = Guid.NewGuid(),
+            EventId = eventId,
+            TierId = tierId,
+            CurrentOwnerId = buyerId,
+            TicketCode = "TCK-DOWNSTREAM-HOLD",
+            OriginalPrice = 500_000m,
+            Status = TicketStatus.LockedForResale
+        };
+        db.Tickets.Add(downstreamTicket);
+
         // Listing thứ cấp đang bị giữ chỗ (Transacting)
         var downstreamListing = new ResaleListing
         {
@@ -209,6 +249,8 @@ public class ResolveDisputeCascadeTests
             EventId = eventId,
             TierId = tierId,
             SellerId = buyerId,
+            TicketId = downstreamTicket.Id,
+            Ticket = downstreamTicket,
             OriginalTicketCode = "TCK-DOWNSTREAM-HOLD",
             OriginalPrice = 500_000m,
             ResalePrice = 500_000m,

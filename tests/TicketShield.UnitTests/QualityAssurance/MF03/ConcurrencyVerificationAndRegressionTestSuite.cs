@@ -140,12 +140,25 @@ public class ConcurrencyVerificationAndRegressionTestSuite
         decimal price = 2_000_000m,
         string ticketCode = "TCK-US55-ORIG")
     {
+        var ticket = new Ticket
+        {
+            Id = Guid.NewGuid(),
+            EventId = ev.Id,
+            TierId = tier.Id,
+            CurrentOwnerId = sellerId,
+            TicketCode = ticketCode,
+            OriginalPrice = price,
+            Status = TicketStatus.LockedForResale
+        };
+
         return new ResaleListing
         {
             Id = Guid.NewGuid(),
             EventId = ev.Id,
             TierId = tier.Id,
             SellerId = sellerId,
+            TicketId = ticket.Id,
+            Ticket = ticket,
             OriginalTicketCode = ticketCode,
             OriginalPrice = price,
             ResalePrice = price,

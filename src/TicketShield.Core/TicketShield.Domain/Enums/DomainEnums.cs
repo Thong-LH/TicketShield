@@ -27,7 +27,8 @@ public enum EscrowStatus
     Disputed,
     RefundQueued,
     Expired,
-    Cancelled
+    Cancelled,
+    TransferNeedsReview
 }
 
 public enum PayoutStatus

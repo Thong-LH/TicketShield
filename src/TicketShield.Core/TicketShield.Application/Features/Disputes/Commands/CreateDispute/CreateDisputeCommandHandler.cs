@@ -62,11 +62,11 @@ public class CreateDisputeCommandHandler : IRequestHandler<CreateDisputeCommand,
         var isTicketUsed = false;
         string? usedCode = null;
 
-        if (escrow.Listing?.TicketId.HasValue == true)
+        if (escrow.Listing != null && escrow.Listing.TicketId != Guid.Empty)
         {
             var listingTicket = await _db.Tickets
                 .AsNoTracking()
-                .FirstOrDefaultAsync(t => t.Id == escrow.Listing.TicketId.Value && t.Status == TicketStatus.Used, cancellationToken);
+                .FirstOrDefaultAsync(t => t.Id == escrow.Listing.TicketId && t.Status == TicketStatus.Used, cancellationToken);
             if (listingTicket != null)
             {
                 isTicketUsed = true;

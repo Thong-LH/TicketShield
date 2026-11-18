@@ -69,14 +69,30 @@ public class ReleaseListingHoldCommandHandler : IRequestHandler<ReleaseListingHo
                 throw new BusinessRuleViolationException($"Bài đăng bán vé hiện không ở trạng thái giữ chỗ (TRANSACTING). Trạng thái hiện tại: '{listing.ListingStatus}'.");
             }
 
+            // BE-12.1.6: Chặn hủy giữ chỗ nếu có Escrow đang đối soát hoặc đã thanh toán
+            var nonReleasableEscrow = await _dbContext.EscrowTransactions
+                .Where(e => e.ListingId == request.ListingId &&
+                       (e.Status == EscrowStatus.TransferNeedsReview || e.Status == EscrowStatus.Locked))
+                .FirstOrDefaultAsync(cancellationToken);
+            if (nonReleasableEscrow != null)
+            {
+                throw new BusinessRuleViolationException(
+                    $"Không thể hủy giữ chỗ bài đăng bán vé đang được xử lý hoặc thanh toán (Trạng thái Escrow: '{nonReleasableEscrow.Status}').");
+            }
+
             // SQL-level filter: chỉ lấy escrow Pending của listing này
             var activeEscrow = await _dbContext.EscrowTransactions
                 .Where(e => e.ListingId == request.ListingId && e.Status == EscrowStatus.Pending)
                 .OrderByDescending(e => e.CreatedAt)
                 .FirstOrDefaultAsync(cancellationToken);
 
+            if (activeEscrow == null)
+            {
+                throw new BusinessRuleViolationException("Không tìm thấy phiên giữ chỗ hợp lệ để hủy.");
+            }
+
             // 4. Validate Buyer Ownership: Only the holding buyer can cancel their hold
-            if (activeEscrow != null && activeEscrow.BuyerId != buyerId)
+            if (activeEscrow.BuyerId != buyerId)
             {
                 throw new ForbiddenAccessException("Bạn không phải người đang giữ chỗ bài đăng bán vé này.");
             }
@@ -138,14 +154,30 @@ public class ReleaseListingHoldCommandHandler : IRequestHandler<ReleaseListingHo
 
         try
         {
+            // BE-12.1.6: Chặn hủy giữ chỗ gói vé nếu có Escrow đang đối soát hoặc đã thanh toán
+            var nonReleasableBundleEscrow = await _dbContext.EscrowTransactions
+                .Where(e => e.BundleId == bundleId &&
+                       (e.Status == EscrowStatus.TransferNeedsReview || e.Status == EscrowStatus.Locked))
+                .FirstOrDefaultAsync(cancellationToken);
+            if (nonReleasableBundleEscrow != null)
+            {
+                throw new BusinessRuleViolationException(
+                    $"Không thể hủy giữ chỗ gói vé đang được xử lý hoặc thanh toán (Trạng thái Escrow: '{nonReleasableBundleEscrow.Status}').");
+            }
+
             // Find the bundle escrow
             var bundleEscrow = await _dbContext.EscrowTransactions
                 .Where(e => e.BundleId == bundleId && e.Status == EscrowStatus.Pending)
                 .OrderByDescending(e => e.CreatedAt)
                 .FirstOrDefaultAsync(cancellationToken);
 
+            if (bundleEscrow == null)
+            {
+                throw new BusinessRuleViolationException("Không tìm thấy phiên giữ chỗ hợp lệ để hủy.");
+            }
+
             // Validate buyer ownership
-            if (bundleEscrow != null && bundleEscrow.BuyerId != buyerId)
+            if (bundleEscrow.BuyerId != buyerId)
             {
                 throw new ForbiddenAccessException("Bạn không phải người đang giữ chỗ gói vé này.");
             }

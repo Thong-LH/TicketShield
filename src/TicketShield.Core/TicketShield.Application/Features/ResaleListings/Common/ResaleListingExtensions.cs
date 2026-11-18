@@ -14,16 +14,27 @@ public static class ResaleListingExtensions
         // If marked Transacting, check if hold expired in realtime
         if (listing.ListingStatus == TicketShield.Domain.Enums.ListingStatus.Transacting)
         {
-            var hasActiveHold = listing.EscrowTransactions
-                .Any(e => e.Status == TicketShield.Domain.Enums.EscrowStatus.Pending && e.UnlockAt.HasValue && e.UnlockAt.Value > now);
+            var hasBlockingEscrow = listing.EscrowTransactions
+                .Any(e => e.Status == TicketShield.Domain.Enums.EscrowStatus.TransferNeedsReview ||
+                          e.Status == TicketShield.Domain.Enums.EscrowStatus.Locked);
 
-            if (!hasActiveHold && unlockAt.HasValue && unlockAt.Value <= now)
+            if (!hasBlockingEscrow)
             {
-                var pastCutoff = listing.Event != null && listing.Event.EventStartAt.AddHours(-2) <= now;
-                listingStatus = pastCutoff
-                    ? TicketShield.Domain.Enums.ListingStatus.Expired.ToString()
-                    : TicketShield.Domain.Enums.ListingStatus.Verified.ToString();
-                unlockAt = null;
+                var hasActiveHold = listing.EscrowTransactions
+                    .Any(e => e.Status == TicketShield.Domain.Enums.EscrowStatus.Pending && e.UnlockAt.HasValue && e.UnlockAt.Value > now);
+
+                if (!hasActiveHold && unlockAt.HasValue && unlockAt.Value <= now)
+                {
+                    var pastCutoff = listing.Event != null && listing.Event.EventStartAt.AddHours(-2) <= now;
+                    listingStatus = pastCutoff
+                        ? TicketShield.Domain.Enums.ListingStatus.Expired.ToString()
+                        : TicketShield.Domain.Enums.ListingStatus.Verified.ToString();
+                    unlockAt = null;
+                }
+            }
+            else
+            {
+                unlockAt = null; // Ẩn thời gian đếm ngược giữ chỗ vì vé đang đối soát/thanh toán
             }
         }
 

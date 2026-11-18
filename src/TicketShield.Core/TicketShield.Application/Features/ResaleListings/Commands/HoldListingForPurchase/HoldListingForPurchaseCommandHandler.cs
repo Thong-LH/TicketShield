@@ -147,6 +147,14 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
                     $"Không thể đặt mua vé. Sự kiện sẽ bắt đầu lúc {eventStartAt.Value:dd/MM/yyyy HH:mm} UTC và đã qua thời hạn mua vé (trước 2 giờ khai mạc).");
             }
 
+            // BE-12.1.6: Chặn đặt mua mới nếu vé có Escrow đang đối soát hoặc đã khóa thanh toán
+            var hasBlockingEscrow = listing.EscrowTransactions
+                .Any(e => e.Status == EscrowStatus.TransferNeedsReview || e.Status == EscrowStatus.Locked);
+            if (hasBlockingEscrow)
+            {
+                throw new BusinessRuleViolationException("Vé này đang trong quá trình thanh toán hoặc đối soát, không thể đặt mua.");
+            }
+
             var activePendingEscrow = listing.EscrowTransactions
                 .Where(e => e.Status == EscrowStatus.Pending && e.UnlockAt.HasValue && e.UnlockAt.Value > now)
                 .OrderByDescending(e => e.CreatedAt)
@@ -349,6 +357,15 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
             }
 
             var effectiveBundleTotal = bundleListings.Count;
+
+            // BE-12.1.6: Chặn đặt mua mới nếu gói vé có Escrow đang đối soát hoặc đã khóa thanh toán
+            var hasBlockingBundleEscrow = await _dbContext.EscrowTransactions
+                .AnyAsync(e => (e.BundleId == bundleId || bundleListings.Select(b => b.Id).Contains(e.ListingId)) &&
+                               (e.Status == EscrowStatus.TransferNeedsReview || e.Status == EscrowStatus.Locked), cancellationToken);
+            if (hasBlockingBundleEscrow)
+            {
+                throw new BusinessRuleViolationException("Gói vé này đang trong quá trình thanh toán hoặc đối soát, không thể đặt mua.");
+            }
 
             // 3. Per-listing validation
             var now = DateTimeOffset.UtcNow;

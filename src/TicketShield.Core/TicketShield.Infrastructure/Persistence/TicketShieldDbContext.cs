@@ -127,7 +127,8 @@ public class TicketShieldDbContext : DbContext, ITicketShieldDbContext
             entity.HasOne(e => e.Ticket)
                 .WithMany(t => t.ResaleListings)
                 .HasForeignKey(e => e.TicketId)
-                .OnDelete(DeleteBehavior.SetNull);
+                .IsRequired()
+                .OnDelete(DeleteBehavior.Restrict);
 
             entity.HasOne(e => e.Event)
                 .WithMany(ev => ev.ResaleListings)

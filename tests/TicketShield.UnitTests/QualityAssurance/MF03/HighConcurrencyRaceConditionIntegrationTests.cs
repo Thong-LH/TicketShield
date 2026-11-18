@@ -132,12 +132,26 @@ public class HighConcurrencyRaceConditionIntegrationTests
             OriginalPrice = price
         };
 
+        var ticket = new Ticket
+        {
+            Id = Guid.NewGuid(),
+            EventId = ev.Id,
+            TierId = tier.Id,
+            CurrentOwnerId = seller.Id,
+            TicketCode = $"TICK-{suffix}",
+            OriginalPrice = price,
+            Status = TicketStatus.Transferred
+        };
+        db.Tickets.Add(ticket);
+
         var listing = new ResaleListing
         {
             Id = Guid.NewGuid(),
             EventId = ev.Id,
             TierId = tier.Id,
             SellerId = seller.Id,
+            TicketId = ticket.Id,
+            Ticket = ticket,
             OriginalTicketCode = $"TICK-{suffix}",
             OriginalPrice = price,
             ResalePrice = price,

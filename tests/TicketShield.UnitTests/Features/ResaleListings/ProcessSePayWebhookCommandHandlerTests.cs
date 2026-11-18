@@ -54,12 +54,27 @@ public class ProcessSePayWebhookCommandHandlerTests
             Event = testEvent
         };
 
+        var ticket = new Ticket
+        {
+            Id = Guid.NewGuid(),
+            TicketCode = "TCK12345",
+            EventId = testEvent.Id,
+            TierId = tier.Id,
+            CurrentOwnerId = seller.Id,
+            OriginalPrice = 500_000m,
+            Status = TicketStatus.LockedForResale,
+            Event = testEvent,
+            Tier = tier
+        };
+
         var listing = new ResaleListing
         {
             Id = Guid.NewGuid(),
             EventId = testEvent.Id,
             TierId = tier.Id,
             SellerId = seller.Id,
+            TicketId = ticket.Id,
+            Ticket = ticket,
             OriginalTicketCode = "TCK12345",
             OriginalPrice = 500_000m,
             ResalePrice = 500_000m,
@@ -90,6 +105,7 @@ public class ProcessSePayWebhookCommandHandlerTests
         context.Events.Add(testEvent);
         context.TicketTiers.Add(tier);
         context.ShadowUsers.AddRange(seller, buyer);
+        context.Tickets.Add(ticket);
         context.ResaleListings.Add(listing);
         context.EscrowTransactions.Add(escrow);
         context.SaveChanges();
@@ -635,12 +651,26 @@ public class ProcessSePayWebhookCommandHandlerTests
         anchorListing.BundleId = bundleId;
         escrow.BundleId = bundleId;
         
+        var childTicket = new Ticket
+        {
+            Id = Guid.NewGuid(),
+            TicketCode = "TCKCHILD",
+            EventId = anchorListing.EventId,
+            TierId = anchorListing.TierId,
+            CurrentOwnerId = anchorListing.SellerId,
+            OriginalPrice = 500_000m,
+            Status = TicketStatus.LockedForResale
+        };
+        context.Tickets.Add(childTicket);
+
         var childListing = new ResaleListing
         {
             Id = Guid.NewGuid(),
             EventId = anchorListing.EventId,
             TierId = anchorListing.TierId,
             SellerId = anchorListing.SellerId,
+            TicketId = childTicket.Id,
+            Ticket = childTicket,
             OriginalTicketCode = "TCKCHILD",
             OriginalPrice = 500_000m,
             ResalePrice = 500_000m,
@@ -689,12 +719,26 @@ public class ProcessSePayWebhookCommandHandlerTests
         escrow.BundleId = bundleId;
         escrow.UnlockAt = DateTimeOffset.UtcNow.AddMinutes(-5); // Expired
 
+        var childTicket2 = new Ticket
+        {
+            Id = Guid.NewGuid(),
+            TicketCode = "TCKCHILD2",
+            EventId = anchorListing.EventId,
+            TierId = anchorListing.TierId,
+            CurrentOwnerId = anchorListing.SellerId,
+            OriginalPrice = 500_000m,
+            Status = TicketStatus.LockedForResale
+        };
+        context.Tickets.Add(childTicket2);
+
         var childListing = new ResaleListing
         {
             Id = Guid.NewGuid(),
             EventId = anchorListing.EventId,
             TierId = anchorListing.TierId,
             SellerId = anchorListing.SellerId,
+            TicketId = childTicket2.Id,
+            Ticket = childTicket2,
             OriginalTicketCode = "TCKCHILD2",
             OriginalPrice = 500_000m,
             ResalePrice = 500_000m,
@@ -733,7 +777,7 @@ public class ProcessSePayWebhookCommandHandlerTests
     }
 
     [Fact]
-    public async Task Handle_BundleTransferPartialFailure_ShouldCompensateAndQueueRefund()
+    public async Task Handle_BundleTransferPartialFailure_ShouldLeaveChangeTrackerCleanAndRouteToTransferNeedsReview()
     {
         // Arrange
         var (context, anchorListing, escrow) = CreateTestFixture("TSBUNDLE03", 1100_000m);
@@ -741,12 +785,26 @@ public class ProcessSePayWebhookCommandHandlerTests
         anchorListing.BundleId = bundleId;
         escrow.BundleId = bundleId;
 
+        var childTicket3 = new Ticket
+        {
+            Id = Guid.NewGuid(),
+            TicketCode = "TCKCHILD3",
+            EventId = anchorListing.EventId,
+            TierId = anchorListing.TierId,
+            CurrentOwnerId = anchorListing.SellerId,
+            OriginalPrice = 500_000m,
+            Status = TicketStatus.LockedForResale
+        };
+        context.Tickets.Add(childTicket3);
+
         var childListing = new ResaleListing
         {
             Id = Guid.NewGuid(),
             EventId = anchorListing.EventId,
             TierId = anchorListing.TierId,
             SellerId = anchorListing.SellerId,
+            TicketId = childTicket3.Id,
+            Ticket = childTicket3,
             OriginalTicketCode = "TCKCHILD3",
             OriginalPrice = 500_000m,
             ResalePrice = 500_000m,
@@ -758,7 +816,7 @@ public class ProcessSePayWebhookCommandHandlerTests
         await context.SaveChangesAsync();
 
         var verification = new Mock<ITicketVerificationService>();
-        // Fail on the child ticket transfer
+        // Success on anchor ticket transfer (ticket 1), fail on child ticket transfer (ticket 2)
         verification.Setup(v => v.TransferOwnershipByListingId(anchorListing.Id, It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new TicketShield.Contracts.Organizer.V1.TransferOwnershipResponse
             {
@@ -784,15 +842,138 @@ public class ProcessSePayWebhookCommandHandlerTests
 
         // Assert
         Assert.True(result.Success);
+        Assert.Equal(nameof(EscrowStatus.TransferNeedsReview), result.Data!.EscrowStatus);
+
+        var dbEscrow = await context.EscrowTransactions.FindAsync(escrow.Id);
+        Assert.Equal(EscrowStatus.TransferNeedsReview, dbEscrow!.Status);
+        Assert.Equal("NEW1", dbEscrow.NewTicketCode);
+
+        // Crucial 2-Phase Saga guarantee: ChangeTracker was clean during Phase 1,
+        // so NO orphan buyer ticket was persisted to DB despite ticket 1 succeeding at Organizer.
+        var persistedBuyerTickets = await context.Tickets.Where(t => t.TicketCode == "NEW1").ToListAsync();
+        Assert.Empty(persistedBuyerTickets);
+
+        // Neither listing should be erroneously rolled back to Verified
+        var dbAnchor = await context.ResaleListings.FindAsync(anchorListing.Id);
+        var dbChild = await context.ResaleListings.FindAsync(childListing.Id);
+        Assert.NotEqual(ListingStatus.Verified, dbAnchor!.ListingStatus);
+        Assert.NotEqual(ListingStatus.Verified, dbChild!.ListingStatus);
+    }
+
+    [Fact]
+    public async Task Handle_BundleTransferImmediateFailure_WhenFirstTicketFails_RollsBackAllListingsAndQueuesRefund()
+    {
+        // Arrange
+        var (context, anchorListing, escrow) = CreateTestFixture("TSBUNDLE04", 1100_000m);
+        var bundleId = Guid.NewGuid();
+        anchorListing.BundleId = bundleId;
+        escrow.BundleId = bundleId;
+
+        var childTicket4 = new Ticket
+        {
+            Id = Guid.NewGuid(),
+            TicketCode = "TCKCHILD4",
+            EventId = anchorListing.EventId,
+            TierId = anchorListing.TierId,
+            CurrentOwnerId = anchorListing.SellerId,
+            OriginalPrice = 500_000m,
+            Status = TicketStatus.LockedForResale
+        };
+        context.Tickets.Add(childTicket4);
+
+        var childListing = new ResaleListing
+        {
+            Id = Guid.NewGuid(),
+            EventId = anchorListing.EventId,
+            TierId = anchorListing.TierId,
+            SellerId = anchorListing.SellerId,
+            TicketId = childTicket4.Id,
+            Ticket = childTicket4,
+            OriginalTicketCode = "TCKCHILD4",
+            OriginalPrice = 500_000m,
+            ResalePrice = 500_000m,
+            ListingStatus = ListingStatus.Transacting,
+            BundleId = bundleId,
+            IsBundleAllOrNothing = true
+        };
+        context.ResaleListings.Add(childListing);
+        await context.SaveChangesAsync();
+
+        var verification = new Mock<ITicketVerificationService>();
+        // Ticket 1 fails immediately with Unspecified (0 tickets transferred at Organizer)
+        verification.Setup(v => v.TransferOwnershipByListingId(anchorListing.Id, It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new TicketShield.Contracts.Organizer.V1.TransferOwnershipResponse
+            {
+                Outcome = TicketShield.Contracts.Organizer.V1.TransferOutcome.Unspecified
+            });
+
+        var handler = new ProcessSePayWebhookCommandHandler(context, null, null, null, verification.Object, null);
+
+        var request = new SePayWebhookRequest
+        {
+            Id = 10024,
+            TransferType = "in",
+            TransferAmount = 1100_000m,
+            Content = "TSBUNDLE04 thanh toan combo fail ngay tu dau",
+            ReferenceCode = "FTBUNDLE04"
+        };
+
+        // Act
+        var result = await handler.Handle(new ProcessSePayWebhookCommand(request), CancellationToken.None);
+
+        // Assert
+        Assert.True(result.Success);
         Assert.Equal(nameof(EscrowStatus.RefundQueued), result.Data!.EscrowStatus);
 
         var dbEscrow = await context.EscrowTransactions.FindAsync(escrow.Id);
         Assert.Equal(EscrowStatus.RefundQueued, dbEscrow!.Status);
 
+        // Since 0 tickets were transferred at Organizer, safe rollback to Verified is permitted
         var dbAnchor = await context.ResaleListings.FindAsync(anchorListing.Id);
         var dbChild = await context.ResaleListings.FindAsync(childListing.Id);
         Assert.Equal(ListingStatus.Verified, dbAnchor!.ListingStatus);
         Assert.Equal(ListingStatus.Verified, dbChild!.ListingStatus);
+    }
+
+    [Fact]
+    public async Task Handle_TransferAmbiguousTimeout_WhenDeadlineExceeded_RoutesToTransferNeedsReviewWithoutAutoRefund()
+    {
+        // Arrange
+        var (context, listing, escrow) = CreateTestFixture("TSTIMEOUT1", 550_000m);
+        var verification = new Mock<ITicketVerificationService>();
+        // gRPC network timeout (DeadlineExceeded)
+        verification.Setup(v => v.TransferOwnershipByListingId(
+                listing.Id,
+                escrow.BuyerId,
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<string?>(),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new Grpc.Core.RpcException(new Grpc.Core.Status(Grpc.Core.StatusCode.DeadlineExceeded, "gRPC Deadline Exceeded")));
+
+        var handler = new ProcessSePayWebhookCommandHandler(context, null, null, null, verification.Object);
+
+        var request = new SePayWebhookRequest
+        {
+            Id = 10025,
+            TransferType = "in",
+            TransferAmount = 550_000m,
+            Content = "TSTIMEOUT1 timeout mang",
+            ReferenceCode = "FTTIMEOUT01"
+        };
+
+        // Act
+        var result = await handler.Handle(new ProcessSePayWebhookCommand(request), CancellationToken.None);
+
+        // Assert: Network timeout is ambiguous -> must route to TransferNeedsReview (NEVER auto-refund)
+        Assert.True(result.Success);
+        Assert.Equal(nameof(EscrowStatus.TransferNeedsReview), result.Data!.EscrowStatus);
+
+        var dbEscrow = await context.EscrowTransactions.FindAsync(escrow.Id);
+        Assert.Equal(EscrowStatus.TransferNeedsReview, dbEscrow!.Status);
+
+        var dbListing = await context.ResaleListings.FindAsync(listing.Id);
+        Assert.NotEqual(ListingStatus.Verified, dbListing!.ListingStatus);
     }
 
     [Fact]

@@ -184,9 +184,10 @@ public class GrpcMockOrganizerRollbackTests
     }
 
     [Fact]
-    public async Task MockOrganizer_ThrowsDeadlineExceededTimeout_RollsBackListingToVerified_AndEscrowToRefundQueued_100PercentSafe()
+    public async Task MockOrganizer_ThrowsDeadlineExceededTimeout_RoutesToTransferNeedsReview_WithoutAutoRefund()
     {
         // Arrange: Giả lập MockOrganizer bị quá hạn phản hồi (Timeout 5000ms / DeadlineExceeded)
+        // Lỗi timeout mạng là mơ hồ (chưa rõ BTC đã commit hay chưa), CẤM hoàn tiền tự động, bắt buộc đưa vào TransferNeedsReview.
         const string paymentRef = "TSTIMEOUT1";
         var (db, listing, escrow, _, _) = CreateFixture(paymentReference: paymentRef);
 
@@ -203,17 +204,17 @@ public class GrpcMockOrganizerRollbackTests
 
         // Assert
         Assert.True(response.Success);
-        Assert.Equal(nameof(EscrowStatus.RefundQueued), response.Data!.EscrowStatus);
-        Assert.Equal(ListingStatus.Verified.ToString(), response.Data.ListingStatus);
+        Assert.Equal(nameof(EscrowStatus.TransferNeedsReview), response.Data!.EscrowStatus);
 
         db.ChangeTracker.Clear();
-        var rolledBackListing = await db.ResaleListings.SingleAsync(l => l.Id == listing.Id);
-        var rolledBackEscrow = await db.EscrowTransactions.SingleAsync(e => e.Id == escrow.Id);
+        var pendingListing = await db.ResaleListings.SingleAsync(l => l.Id == listing.Id);
+        var pendingEscrow = await db.EscrowTransactions.SingleAsync(e => e.Id == escrow.Id);
 
-        Assert.Equal(ListingStatus.Verified, rolledBackListing.ListingStatus);
-        Assert.Equal(EscrowStatus.RefundQueued, rolledBackEscrow.Status);
-        Assert.False(rolledBackEscrow.InSettlementBuffer);
-        Assert.Null(rolledBackEscrow.NewTicketCode);
+        // Listing không được rollback về Verified vì chưa rõ BTC có commit hay không
+        Assert.NotEqual(ListingStatus.Verified, pendingListing.ListingStatus);
+        Assert.Equal(EscrowStatus.TransferNeedsReview, pendingEscrow.Status);
+        Assert.False(pendingEscrow.InSettlementBuffer);
+        Assert.Null(pendingEscrow.NewTicketCode);
     }
 
     [Fact]
@@ -479,19 +480,23 @@ public class GrpcMockOrganizerRollbackTests
 
         // Assert
         Assert.True(response.Success);
-        Assert.Equal(nameof(EscrowStatus.RefundQueued), response.Data!.EscrowStatus);
+        Assert.Equal(nameof(EscrowStatus.TransferNeedsReview), response.Data!.EscrowStatus);
 
-        // Assert ACID ATOMICITY: CẢ HAI vé trong combo đều phải rollback về Verified
-        // Không được phép để xảy ra tình trạng vé 1 đã Sold mà vé 2 lỗi!
+        // Assert 2-Phase Saga Protection:
+        // Vé 1 đã sang tên tại BTC Organizer ("NEW-TCK-BUNDLE-01") nhưng vé 2 lỗi gRPC.
+        // CẤM hoàn tiền tự động và CẤM rollback vé 1 về Verified (tránh Buyer vừa giữ vé vừa nhận lại 100% tiền).
+        // ChangeTracker được giữ sạch ở Pha 1 nên DB không bị lưu Ticket mồ côi cho Buyer.
         db.ChangeTracker.Clear();
-        var allBundleListings = await db.ResaleListings.Where(l => l.BundleId == bundleId).ToListAsync();
-        Assert.Equal(2, allBundleListings.Count);
-        Assert.All(allBundleListings, l => Assert.Equal(ListingStatus.Verified, l.ListingStatus));
+        var persistedBuyerTickets = await db.Tickets.Where(t => t.TicketCode == "NEW-TCK-BUNDLE-01").ToListAsync();
+        Assert.Empty(persistedBuyerTickets);
+
+        var dbListing1 = await db.ResaleListings.SingleAsync(l => l.Id == listing1.Id);
+        Assert.NotEqual(ListingStatus.Verified, dbListing1.ListingStatus);
 
         var updatedEscrow = await db.EscrowTransactions.SingleAsync(e => e.Id == escrow.Id);
-        Assert.Equal(EscrowStatus.RefundQueued, updatedEscrow.Status);
+        Assert.Equal(EscrowStatus.TransferNeedsReview, updatedEscrow.Status);
         Assert.False(updatedEscrow.InSettlementBuffer);
-        Assert.Null(updatedEscrow.NewTicketCode); // Không cấp bất kỳ vé nào trong combo khi có vé lỗi
+        Assert.Equal("NEW-TCK-BUNDLE-01", updatedEscrow.NewTicketCode);
     }
 
     #endregion

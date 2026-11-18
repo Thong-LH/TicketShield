@@ -286,12 +286,26 @@ public class ResolveDisputeCommandHandlerTests
             TierName = "GA",
             OriginalPrice = 500_000m
         };
+        var ticket = new Ticket
+        {
+            Id = Guid.NewGuid(),
+            EventId = concert.Id,
+            TierId = tier.Id,
+            CurrentOwnerId = seller.Id,
+            TicketCode = $"TCK-{suffix}",
+            OriginalPrice = 500_000m,
+            Status = TicketStatus.Transferred
+        };
+        db.Tickets.Add(ticket);
+
         var listing = new ResaleListing
         {
             Id = Guid.NewGuid(),
             EventId = concert.Id,
             TierId = tier.Id,
             SellerId = seller.Id,
+            TicketId = ticket.Id,
+            Ticket = ticket,
             OriginalTicketCode = $"TCK-{suffix}",
             OriginalPrice = 500_000m,
             ResalePrice = 500_000m,

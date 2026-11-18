@@ -41,6 +41,12 @@ public class HoldExpiredConsumer : IConsumer<IHoldExpiredEvent>
             var now = DateTimeOffset.UtcNow;
             var listing = escrow.Listing;
 
+            var hasBlockingEscrow = await _dbContext.EscrowTransactions.AnyAsync(e =>
+                e.ListingId == listing.Id &&
+                e.Id != escrow.Id &&
+                (e.Status == EscrowStatus.TransferNeedsReview || e.Status == EscrowStatus.Locked),
+                context.CancellationToken);
+
             var hasActiveHold = await _dbContext.EscrowTransactions.AnyAsync(e =>
                 e.ListingId == listing.Id &&
                 e.Id != escrow.Id &&
@@ -48,7 +54,7 @@ public class HoldExpiredConsumer : IConsumer<IHoldExpiredEvent>
                 e.UnlockAt.HasValue &&
                 e.UnlockAt.Value > now, context.CancellationToken);
 
-            if (listing.ListingStatus == ListingStatus.Transacting && !hasActiveHold)
+            if (listing.ListingStatus == ListingStatus.Transacting && !hasActiveHold && !hasBlockingEscrow)
             {
                 // Enforce BR-L04 / Event deadline check
                 if (listing.Event != null && listing.Event.EventStartAt.AddHours(-2) <= now)
@@ -72,15 +78,24 @@ public class HoldExpiredConsumer : IConsumer<IHoldExpiredEvent>
                     .Where(l => l.BundleId == escrow.BundleId.Value && l.Id != escrow.ListingId)
                     .ToListAsync(context.CancellationToken);
 
-                foreach (var childListing in bundleChildListings)
+                var hasBlockingBundleEscrow = await _dbContext.EscrowTransactions.AnyAsync(e =>
+                    e.BundleId == escrow.BundleId.Value &&
+                    e.Id != escrow.Id &&
+                    (e.Status == EscrowStatus.TransferNeedsReview || e.Status == EscrowStatus.Locked),
+                    context.CancellationToken);
+
+                if (!hasBlockingBundleEscrow)
                 {
-                    if (childListing.ListingStatus == ListingStatus.Transacting)
+                    foreach (var childListing in bundleChildListings)
                     {
-                        childListing.ListingStatus = (childListing.Event != null && childListing.Event.EventStartAt.AddHours(-2) <= now)
-                            ? ListingStatus.Expired
-                            : ListingStatus.Verified;
-                        _logger.LogInformation("Bundle child Listing {ListingId} (BundleId: {BundleId}) reset to {Status} after 10-minute hold expired.",
-                            childListing.Id, escrow.BundleId.Value, childListing.ListingStatus);
+                        if (childListing.ListingStatus == ListingStatus.Transacting)
+                        {
+                            childListing.ListingStatus = (childListing.Event != null && childListing.Event.EventStartAt.AddHours(-2) <= now)
+                                ? ListingStatus.Expired
+                                : ListingStatus.Verified;
+                            _logger.LogInformation("Bundle child Listing {ListingId} (BundleId: {BundleId}) reset to {Status} after 10-minute hold expired.",
+                                childListing.Id, escrow.BundleId.Value, childListing.ListingStatus);
+                        }
                     }
                 }
             }

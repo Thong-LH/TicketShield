@@ -82,20 +82,34 @@ public class ExpiredHoldReleaseWorker : BackgroundService
                     .Where(l => l.BundleId == expired.BundleId.Value)
                     .ToListAsync(ct);
 
-                foreach (var listing in bundleListings)
+                // BE-12.1.5: Guard against resetting listings that have blocking escrows (TransferNeedsReview, Locked)
+                var hasBlockingBundleEscrow = await dbContext.EscrowTransactions
+                    .AnyAsync(e => (e.BundleId == expired.BundleId.Value || bundleListings.Select(b => b.Id).Contains(e.ListingId)) &&
+                                   (e.Status == EscrowStatus.TransferNeedsReview || e.Status == EscrowStatus.Locked), ct);
+
+                if (!hasBlockingBundleEscrow)
                 {
-                    if (listing.ListingStatus == ListingStatus.Transacting)
+                    foreach (var listing in bundleListings)
                     {
-                        var pastResaleCutoff = listing.Event != null &&
-                            listing.Event.EventStartAt.AddHours(-2) <= now;
-                        listing.ListingStatus = pastResaleCutoff
-                            ? ListingStatus.Expired
-                            : ListingStatus.Verified;
-                        revertedCount++;
-                        _logger.LogInformation(
-                            "Released expired bundle hold for ListingId: {ListingId} (BundleId: {BundleId}). Status set to {ListingStatus}.",
-                            listing.Id, expired.BundleId.Value, listing.ListingStatus);
+                        if (listing.ListingStatus == ListingStatus.Transacting)
+                        {
+                            var pastResaleCutoff = listing.Event != null &&
+                                listing.Event.EventStartAt.AddHours(-2) <= now;
+                            listing.ListingStatus = pastResaleCutoff
+                                ? ListingStatus.Expired
+                                : ListingStatus.Verified;
+                            revertedCount++;
+                            _logger.LogInformation(
+                                "Released expired bundle hold for ListingId: {ListingId} (BundleId: {BundleId}). Status set to {ListingStatus}.",
+                                listing.Id, expired.BundleId.Value, listing.ListingStatus);
+                        }
                     }
+                }
+                else
+                {
+                    _logger.LogInformation(
+                        "Skipped releasing bundle hold for BundleId: {BundleId} due to active blocking escrow (TransferNeedsReview/Locked/Completed).",
+                        expired.BundleId.Value);
                 }
             }
             else
@@ -104,11 +118,16 @@ public class ExpiredHoldReleaseWorker : BackgroundService
                 var listing = expired.Listing;
                 if (listing == null) continue;
 
+                // BE-12.1.5: Guard against resetting listing if a blocking escrow exists
+                var hasBlockingEscrow = await dbContext.EscrowTransactions
+                    .AnyAsync(e => e.ListingId == listing.Id &&
+                                   (e.Status == EscrowStatus.TransferNeedsReview || e.Status == EscrowStatus.Locked), ct);
+
                 var hasActiveHold = await dbContext.EscrowTransactions
                     .AnyAsync(e => e.ListingId == listing.Id && e.Status == EscrowStatus.Pending
                                    && e.UnlockAt.HasValue && e.UnlockAt.Value > now && e.Id != expired.Id, ct);
 
-                if (listing.ListingStatus == ListingStatus.Transacting && !hasActiveHold)
+                if (listing.ListingStatus == ListingStatus.Transacting && !hasActiveHold && !hasBlockingEscrow)
                 {
                     var pastResaleCutoff = listing.Event != null &&
                         listing.Event.EventStartAt.AddHours(-2) <= now;

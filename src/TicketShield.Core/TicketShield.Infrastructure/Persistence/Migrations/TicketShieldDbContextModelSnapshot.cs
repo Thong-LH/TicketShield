@@ -823,7 +823,7 @@ namespace TicketShield.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("seller_id");
 
-                    b.Property<Guid?>("TicketId")
+                    b.Property<Guid>("TicketId")
                         .HasColumnType("uuid")
                         .HasColumnName("ticket_id");
 
@@ -1264,7 +1264,8 @@ namespace TicketShield.Infrastructure.Persistence.Migrations
                     b.HasOne("TicketShield.Domain.Entities.Ticket", "Ticket")
                         .WithMany("ResaleListings")
                         .HasForeignKey("TicketId")
-                        .OnDelete(DeleteBehavior.SetNull)
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
                         .HasConstraintName("fk_resale_listings_tickets_ticket_id");
 
                     b.HasOne("TicketShield.Domain.Entities.TicketTier", "Tier")

@@ -751,12 +751,25 @@ public class AutomatedGateLogHarvestingAndDisputeResolutionIntegrationTests : ID
             OriginalPrice = totalBuyerPaid
         };
 
+        var ticket = new Ticket
+        {
+            Id = Guid.NewGuid(),
+            EventId = eventId,
+            TierId = tierId,
+            CurrentOwnerId = sellerId,
+            TicketCode = $"ORIG-{suffix}",
+            OriginalPrice = totalBuyerPaid,
+            Status = TicketStatus.Transferred
+        };
+
         var listing = new ResaleListing
         {
             Id = listingId,
             EventId = eventId,
             TierId = tierId,
             SellerId = sellerId,
+            TicketId = ticket.Id,
+            Ticket = ticket,
             OriginalTicketCode = $"ORIG-{suffix}",
             OriginalPrice = totalBuyerPaid,
             ResalePrice = totalBuyerPaid,
@@ -787,6 +800,7 @@ public class AutomatedGateLogHarvestingAndDisputeResolutionIntegrationTests : ID
         db.Organizers.Add(organizer);
         db.Events.Add(concertEvent);
         db.TicketTiers.Add(tier);
+        db.Tickets.Add(ticket);
         db.ResaleListings.Add(listing);
         db.EscrowTransactions.Add(escrow);
         await db.SaveChangesAsync();

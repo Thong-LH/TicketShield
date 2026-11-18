@@ -291,4 +291,130 @@ public class ReleaseListingHoldCommandHandlerTests
         var updatedEscrow = await dbContext.EscrowTransactions.FirstAsync(e => e.Id == escrow.Id);
         Assert.Equal(EscrowStatus.Cancelled, updatedEscrow.Status);
     }
+
+    [Fact]
+    public async Task Handle_WhenEscrowInTransferNeedsReview_ShouldThrowBusinessRuleViolationException()
+    {
+        // Arrange
+        var (dbContext, seller, buyer1, _) = CreateInMemoryDbContext();
+        var currentUserService = new MockCurrentUserService(buyer1.Id);
+
+        var listing = new ResaleListing
+        {
+            Id = Guid.NewGuid(),
+            EventId = (await dbContext.Events.FirstAsync()).Id,
+            TierId = (await dbContext.TicketTiers.FirstAsync()).Id,
+            SellerId = seller.Id,
+            OriginalTicketCode = "TCK-REVIEW-001",
+            OriginalPrice = 1_000_000m,
+            ResalePrice = 1_000_000m,
+            ListingStatus = ListingStatus.Transacting
+        };
+        var escrow = new EscrowTransaction
+        {
+            Id = Guid.NewGuid(),
+            ListingId = listing.Id,
+            BuyerId = buyer1.Id,
+            SellerId = seller.Id,
+            PaymentReference = "TSREV01",
+            Status = EscrowStatus.TransferNeedsReview
+        };
+        dbContext.ResaleListings.Add(listing);
+        dbContext.EscrowTransactions.Add(escrow);
+        await dbContext.SaveChangesAsync();
+
+        var handler = new ReleaseListingHoldCommandHandler(dbContext, currentUserService);
+        var command = new ReleaseListingHoldCommand(listing.Id);
+
+        // Act & Assert
+        var ex = await Assert.ThrowsAsync<BusinessRuleViolationException>(() => handler.Handle(command, CancellationToken.None));
+        Assert.Contains("TransferNeedsReview", ex.Message);
+    }
+
+    [Fact]
+    public async Task Handle_WhenBundleEscrowInTransferNeedsReview_ShouldThrowBusinessRuleViolationException()
+    {
+        // Arrange
+        var (dbContext, seller, buyer1, _) = CreateInMemoryDbContext();
+        var currentUserService = new MockCurrentUserService(buyer1.Id);
+        var bundleId = Guid.NewGuid();
+
+        var listing1 = new ResaleListing
+        {
+            Id = Guid.NewGuid(),
+            EventId = (await dbContext.Events.FirstAsync()).Id,
+            TierId = (await dbContext.TicketTiers.FirstAsync()).Id,
+            SellerId = seller.Id,
+            OriginalTicketCode = "TCK-BND-01",
+            OriginalPrice = 1_000_000m,
+            ResalePrice = 1_000_000m,
+            ListingStatus = ListingStatus.Transacting,
+            BundleId = bundleId,
+            IsBundleAllOrNothing = true,
+            BundleTotalTickets = 2
+        };
+        var listing2 = new ResaleListing
+        {
+            Id = Guid.NewGuid(),
+            EventId = (await dbContext.Events.FirstAsync()).Id,
+            TierId = (await dbContext.TicketTiers.FirstAsync()).Id,
+            SellerId = seller.Id,
+            OriginalTicketCode = "TCK-BND-02",
+            OriginalPrice = 1_000_000m,
+            ResalePrice = 1_000_000m,
+            ListingStatus = ListingStatus.Transacting,
+            BundleId = bundleId,
+            IsBundleAllOrNothing = true,
+            BundleTotalTickets = 2
+        };
+        var bundleEscrow = new EscrowTransaction
+        {
+            Id = Guid.NewGuid(),
+            ListingId = listing1.Id,
+            BundleId = bundleId,
+            BuyerId = buyer1.Id,
+            SellerId = seller.Id,
+            PaymentReference = "TSREVBUNDLE01",
+            Status = EscrowStatus.TransferNeedsReview
+        };
+        dbContext.ResaleListings.AddRange(listing1, listing2);
+        dbContext.EscrowTransactions.Add(bundleEscrow);
+        await dbContext.SaveChangesAsync();
+
+        var handler = new ReleaseListingHoldCommandHandler(dbContext, currentUserService);
+        var command = new ReleaseListingHoldCommand(listing1.Id);
+
+        // Act & Assert
+        var ex = await Assert.ThrowsAsync<BusinessRuleViolationException>(() => handler.Handle(command, CancellationToken.None));
+        Assert.Contains("TransferNeedsReview", ex.Message);
+    }
+
+    [Fact]
+    public async Task Handle_WhenNoActivePendingEscrowExists_ShouldThrowBusinessRuleViolationException()
+    {
+        // Arrange
+        var (dbContext, seller, buyer1, _) = CreateInMemoryDbContext();
+        var currentUserService = new MockCurrentUserService(buyer1.Id);
+
+        var listing = new ResaleListing
+        {
+            Id = Guid.NewGuid(),
+            EventId = (await dbContext.Events.FirstAsync()).Id,
+            TierId = (await dbContext.TicketTiers.FirstAsync()).Id,
+            SellerId = seller.Id,
+            OriginalTicketCode = "TCK-NOPENDING-001",
+            OriginalPrice = 1_000_000m,
+            ResalePrice = 1_000_000m,
+            ListingStatus = ListingStatus.Transacting
+        };
+        dbContext.ResaleListings.Add(listing);
+        await dbContext.SaveChangesAsync();
+
+        var handler = new ReleaseListingHoldCommandHandler(dbContext, currentUserService);
+        var command = new ReleaseListingHoldCommand(listing.Id);
+
+        // Act & Assert
+        var ex = await Assert.ThrowsAsync<BusinessRuleViolationException>(() => handler.Handle(command, CancellationToken.None));
+        Assert.Contains("Không tìm thấy phiên giữ chỗ hợp lệ", ex.Message);
+    }
 }

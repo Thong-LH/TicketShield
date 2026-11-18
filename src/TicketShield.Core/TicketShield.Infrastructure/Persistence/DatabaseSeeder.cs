@@ -271,6 +271,55 @@ public static class DatabaseSeeder
         var sellerPlaceholderListing1Id = Guid.Parse("cc111111-1111-1111-1111-111111111111");
         var sellerPlaceholderListing2Id = Guid.Parse("cc222222-2222-2222-2222-222222222222");
 
+        // US-12.2 / US-12.3: Seed Real Ticket Entities for Marketplace and Seller listings
+        var sampleTicketId = Guid.Parse("77777777-7777-7777-7777-777777777777");
+        var sellerPlaceholderTicket1Id = Guid.Parse("cc111111-1111-1111-1111-888888888888");
+        var sellerPlaceholderTicket2Id = Guid.Parse("cc222222-2222-2222-2222-888888888888");
+
+        var sampleTicket = await context.Tickets.FirstOrDefaultAsync(t => t.Id == sampleTicketId);
+        if (sampleTicket == null)
+        {
+            sampleTicket = new Ticket { Id = sampleTicketId };
+            await context.Tickets.AddAsync(sampleTicket);
+        }
+        sampleTicket.EventId = eventId;
+        sampleTicket.TierId = tierGaId;
+        sampleTicket.CurrentOwnerId = sellerId;
+        sampleTicket.TicketCode = "ATSH-GA-999";
+        sampleTicket.SeatZone = "GA Standing Zone 2";
+        sampleTicket.OriginalPrice = 50000m;
+        sampleTicket.Status = TicketStatus.LockedForResale;
+
+        var splTicket1 = await context.Tickets.FirstOrDefaultAsync(t => t.Id == sellerPlaceholderTicket1Id);
+        if (splTicket1 == null)
+        {
+            splTicket1 = new Ticket { Id = sellerPlaceholderTicket1Id };
+            await context.Tickets.AddAsync(splTicket1);
+        }
+        splTicket1.EventId = eventId;
+        splTicket1.TierId = tierVipId;
+        splTicket1.CurrentOwnerId = buyerId;
+        splTicket1.TicketCode = "SEED-PLACEHOLDER-888";
+        splTicket1.SeatZone = "VIP Zone A";
+        splTicket1.OriginalPrice = 50000m;
+        splTicket1.Status = TicketStatus.Valid;
+
+        var splTicket2 = await context.Tickets.FirstOrDefaultAsync(t => t.Id == sellerPlaceholderTicket2Id);
+        if (splTicket2 == null)
+        {
+            splTicket2 = new Ticket { Id = sellerPlaceholderTicket2Id };
+            await context.Tickets.AddAsync(splTicket2);
+        }
+        splTicket2.EventId = eventId;
+        splTicket2.TierId = tierVipId;
+        splTicket2.CurrentOwnerId = buyerId;
+        splTicket2.TicketCode = "SEED-PLACEHOLDER-887";
+        splTicket2.SeatZone = "VIP Zone A";
+        splTicket2.OriginalPrice = 50000m;
+        splTicket2.Status = TicketStatus.Valid;
+
+        await context.SaveChangesAsync();
+
         // 5.1 Seed Sample Single Resale Listing (ATSH-GA-999) for marketplace demo
         var sampleListing = await context.ResaleListings.FirstOrDefaultAsync(l => l.Id == sampleListingId);
         if (sampleListing == null)
@@ -278,6 +327,7 @@ public static class DatabaseSeeder
             sampleListing = new ResaleListing { Id = sampleListingId };
             await context.ResaleListings.AddAsync(sampleListing);
         }
+        sampleListing.TicketId = sampleTicketId;
         sampleListing.EventId = eventId;
         sampleListing.TierId = tierGaId;
         sampleListing.SellerId = sellerId;
@@ -307,6 +357,7 @@ public static class DatabaseSeeder
             spl1 = new ResaleListing { Id = sellerPlaceholderListing1Id };
             await context.ResaleListings.AddAsync(spl1);
         }
+        spl1.TicketId = sellerPlaceholderTicket1Id;
         spl1.EventId = eventId;
         spl1.TierId = tierVipId;
         spl1.SellerId = buyerId;
@@ -324,6 +375,7 @@ public static class DatabaseSeeder
             spl2 = new ResaleListing { Id = sellerPlaceholderListing2Id };
             await context.ResaleListings.AddAsync(spl2);
         }
+        spl2.TicketId = sellerPlaceholderTicket2Id;
         spl2.EventId = eventId;
         spl2.TierId = tierVipId;
         spl2.SellerId = buyerId;

@@ -15,6 +15,10 @@ public class EscrowTransaction : BaseEntity
     public decimal NetSellerPayout { get; set; }
     public string? PaymentReference { get; set; }
     public string? BankTransactionReference { get; set; }
+    /// <summary>
+    /// Trạng thái Escrow (Pending, Locked, Releasing, Released, Refunded, Disputed, RefundQueued, Expired, Cancelled, TransferNeedsReview).
+    /// TransferNeedsReview: Dùng khi việc đổi chủ vé bị dở dang (partial saga failure) hoặc timeout mạng không rõ kết quả, cần đối soát thủ công hoặc qua worker.
+    /// </summary>
     public EscrowStatus Status { get; set; } = EscrowStatus.Pending;
     public DateTimeOffset? UnlockAt { get; set; }
     public DateTimeOffset? TransferredAt { get; set; }

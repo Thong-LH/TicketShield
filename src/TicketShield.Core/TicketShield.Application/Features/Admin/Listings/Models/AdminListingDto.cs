@@ -25,7 +25,7 @@ public class AdminListingDto
     public string OriginalTicketCode { get; set; } = string.Empty;
     public string MaskedTicketCode { get; set; } = string.Empty;
     public string? SeatZone { get; set; }
-    public Guid? TicketId { get; set; }
+    public Guid TicketId { get; set; }
 
     // Seller information
     public Guid SellerId { get; set; }

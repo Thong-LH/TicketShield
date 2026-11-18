@@ -135,6 +135,122 @@ public class AdminTransactionsQueryTests
         Assert.False(result.Data.Transactions.HasNextPage);
     }
 
+    [Fact]
+    public async Task Handle_FilterByDateBoundary_ReturnsExactMatchesWithinVietnamLocalDay()
+    {
+        await using var db = CreateDb();
+
+        var org = new Organizer { Id = Guid.NewGuid(), Name = "Org", OfficialEmail = "org@test.local" };
+        var buyer = new ShadowUser { Id = Guid.NewGuid(), FullName = "Buyer", Email = "buyer@test.local" };
+        var seller = new ShadowUser { Id = Guid.NewGuid(), FullName = "Seller", Email = "seller@test.local" };
+        var ev = new Event
+        {
+            Id = Guid.NewGuid(),
+            OrganizerId = org.Id,
+            Name = "Concert",
+            Venue = "Stadium",
+            EventStartAt = DateTimeOffset.UtcNow.AddDays(7),
+            EventEndAt = DateTimeOffset.UtcNow.AddDays(7).AddHours(3),
+            ResaleDeadline = DateTimeOffset.UtcNow.AddDays(6)
+        };
+        var tier = new TicketTier { Id = Guid.NewGuid(), EventId = ev.Id, TierName = "Standard", OriginalPrice = 100_000m };
+        var ticket = new Ticket
+        {
+            Id = Guid.NewGuid(),
+            TicketCode = "TCK-BOUNDARY-01",
+            EventId = ev.Id,
+            TierId = tier.Id,
+            CurrentOwnerId = seller.Id,
+            OriginalPrice = 100_000m,
+            Status = TicketStatus.LockedForResale
+        };
+        var listing = new ResaleListing
+        {
+            Id = Guid.NewGuid(),
+            TicketId = ticket.Id,
+            EventId = ev.Id,
+            TierId = tier.Id,
+            SellerId = seller.Id,
+            OriginalTicketCode = "TCK-BOUNDARY-01",
+            ResalePrice = 100_000m,
+            ListingStatus = ListingStatus.Verified
+        };
+
+        db.Organizers.Add(org);
+        db.ShadowUsers.AddRange(buyer, seller);
+        db.Events.Add(ev);
+        db.TicketTiers.Add(tier);
+        db.Tickets.Add(ticket);
+        db.ResaleListings.Add(listing);
+
+        // 3 mốc thời gian:
+        // Tx1: 17/11 00:30 (+07) -> UTC: 16/11 17:30
+        var tx1 = new EscrowTransaction
+        {
+            Id = Guid.NewGuid(),
+            ListingId = listing.Id,
+            BuyerId = buyer.Id,
+            SellerId = seller.Id,
+            Status = EscrowStatus.Released,
+            TotalBuyerPaid = 105_000m,
+            NetSellerPayout = 95_000m,
+            CreatedAt = new DateTimeOffset(2026, 11, 17, 0, 30, 0, TimeSpan.FromHours(7))
+        };
+
+        // Tx2: 17/11 23:30 (+07) -> UTC: 17/11 16:30
+        var tx2 = new EscrowTransaction
+        {
+            Id = Guid.NewGuid(),
+            ListingId = listing.Id,
+            BuyerId = buyer.Id,
+            SellerId = seller.Id,
+            Status = EscrowStatus.Released,
+            TotalBuyerPaid = 105_000m,
+            NetSellerPayout = 95_000m,
+            CreatedAt = new DateTimeOffset(2026, 11, 17, 23, 30, 0, TimeSpan.FromHours(7))
+        };
+
+        // Tx3: 18/11 00:30 (+07) -> UTC: 17/11 17:30
+        var tx3 = new EscrowTransaction
+        {
+            Id = Guid.NewGuid(),
+            ListingId = listing.Id,
+            BuyerId = buyer.Id,
+            SellerId = seller.Id,
+            Status = EscrowStatus.Released,
+            TotalBuyerPaid = 105_000m,
+            NetSellerPayout = 95_000m,
+            CreatedAt = new DateTimeOffset(2026, 11, 18, 0, 30, 0, TimeSpan.FromHours(7))
+        };
+
+        db.EscrowTransactions.AddRange(tx1, tx2, tx3);
+        await db.SaveChangesAsync();
+
+        var handler = new GetAdminTransactionsQueryHandler(db);
+
+        // Filter 17/11 -> 17/11 theo UTC mà FE gửi:
+        // 17/11 00:00 (+07) = 16/11 17:00 UTC
+        // 17/11 23:59:59.999 (+07) = 17/11 16:59:59.999 UTC
+        var fromUtc = DateTimeOffset.Parse("2026-11-16T17:00:00.000Z");
+        var toUtc = DateTimeOffset.Parse("2026-11-17T16:59:59.999Z");
+
+        var query = new GetAdminTransactionsQuery
+        {
+            FromDate = fromUtc,
+            ToDate = toUtc
+        };
+
+        var result = await handler.Handle(query, CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.NotNull(result.Data);
+        Assert.Equal(2, result.Data.Transactions.TotalCount);
+        Assert.Equal(2, result.Data.Transactions.Items.Count);
+        Assert.Contains(result.Data.Transactions.Items, item => item.EscrowId == tx1.Id);
+        Assert.Contains(result.Data.Transactions.Items, item => item.EscrowId == tx2.Id);
+        Assert.DoesNotContain(result.Data.Transactions.Items, item => item.EscrowId == tx3.Id);
+    }
+
     private static TicketShieldDbContext CreateDb()
     {
         var options = new DbContextOptionsBuilder<TicketShieldDbContext>()

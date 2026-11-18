@@ -4,6 +4,7 @@
 .context/
 .agents/
 local_docs/
+scratch/
 
 # Documents & Guides
 docs/*

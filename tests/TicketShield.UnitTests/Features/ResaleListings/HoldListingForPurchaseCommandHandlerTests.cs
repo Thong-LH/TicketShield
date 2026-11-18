@@ -483,4 +483,104 @@ public class HoldListingForPurchaseCommandHandlerTests
         Assert.Equal(ListingStatus.Verified, saved.ListingStatus);
         Assert.Empty(saved.EscrowTransactions);
     }
+
+    [Fact]
+    public async Task Handle_WhenListingHasTransferNeedsReviewEscrow_ShouldThrowBusinessRuleViolationException()
+    {
+        // Arrange
+        var (dbContext, seller, buyer) = CreateInMemoryDbContext();
+        var feeCalculator = new MockResaleFeeCalculator();
+        var currentUserService = new MockCurrentUserService(buyer.Id);
+
+        var listing = new ResaleListing
+        {
+            Id = Guid.NewGuid(),
+            EventId = (await dbContext.Events.FirstAsync()).Id,
+            TierId = (await dbContext.TicketTiers.FirstAsync()).Id,
+            SellerId = seller.Id,
+            OriginalTicketCode = "TCK-HOLD-REV-01",
+            OriginalPrice = 1_000_000m,
+            ResalePrice = 1_000_000m,
+            ListingStatus = ListingStatus.Transacting
+        };
+        var reviewEscrow = new EscrowTransaction
+        {
+            Id = Guid.NewGuid(),
+            ListingId = listing.Id,
+            BuyerId = Guid.NewGuid(),
+            SellerId = seller.Id,
+            PaymentReference = "TSREVHOLD1",
+            Status = EscrowStatus.TransferNeedsReview
+        };
+        listing.EscrowTransactions.Add(reviewEscrow);
+        dbContext.ResaleListings.Add(listing);
+        dbContext.EscrowTransactions.Add(reviewEscrow);
+        await dbContext.SaveChangesAsync();
+
+        var handler = new HoldListingForPurchaseCommandHandler(dbContext, feeCalculator, currentUserService);
+        var command = new HoldListingForPurchaseCommand(listing.Id);
+
+        // Act & Assert
+        var ex = await Assert.ThrowsAsync<BusinessRuleViolationException>(() => handler.Handle(command, CancellationToken.None));
+        Assert.Contains("đang trong quá trình thanh toán hoặc đối soát", ex.Message);
+    }
+
+    [Fact]
+    public async Task Handle_WhenBundleHasTransferNeedsReviewEscrow_ShouldThrowBusinessRuleViolationException()
+    {
+        // Arrange
+        var (dbContext, seller, buyer) = CreateInMemoryDbContext();
+        var feeCalculator = new MockResaleFeeCalculator();
+        var currentUserService = new MockCurrentUserService(buyer.Id);
+        var bundleId = Guid.NewGuid();
+
+        var listing1 = new ResaleListing
+        {
+            Id = Guid.NewGuid(),
+            EventId = (await dbContext.Events.FirstAsync()).Id,
+            TierId = (await dbContext.TicketTiers.FirstAsync()).Id,
+            SellerId = seller.Id,
+            OriginalTicketCode = "TCK-BND-REV-01",
+            OriginalPrice = 1_000_000m,
+            ResalePrice = 1_000_000m,
+            ListingStatus = ListingStatus.Transacting,
+            BundleId = bundleId,
+            IsBundleAllOrNothing = true,
+            BundleTotalTickets = 2
+        };
+        var listing2 = new ResaleListing
+        {
+            Id = Guid.NewGuid(),
+            EventId = (await dbContext.Events.FirstAsync()).Id,
+            TierId = (await dbContext.TicketTiers.FirstAsync()).Id,
+            SellerId = seller.Id,
+            OriginalTicketCode = "TCK-BND-REV-02",
+            OriginalPrice = 1_000_000m,
+            ResalePrice = 1_000_000m,
+            ListingStatus = ListingStatus.Transacting,
+            BundleId = bundleId,
+            IsBundleAllOrNothing = true,
+            BundleTotalTickets = 2
+        };
+        var bundleReviewEscrow = new EscrowTransaction
+        {
+            Id = Guid.NewGuid(),
+            ListingId = listing1.Id,
+            BundleId = bundleId,
+            BuyerId = Guid.NewGuid(),
+            SellerId = seller.Id,
+            PaymentReference = "TSREVBUNDLEHOLD1",
+            Status = EscrowStatus.TransferNeedsReview
+        };
+        dbContext.ResaleListings.AddRange(listing1, listing2);
+        dbContext.EscrowTransactions.Add(bundleReviewEscrow);
+        await dbContext.SaveChangesAsync();
+
+        var handler = new HoldListingForPurchaseCommandHandler(dbContext, feeCalculator, currentUserService);
+        var command = new HoldListingForPurchaseCommand(listing1.Id);
+
+        // Act & Assert
+        var ex = await Assert.ThrowsAsync<BusinessRuleViolationException>(() => handler.Handle(command, CancellationToken.None));
+        Assert.Contains("đang trong quá trình thanh toán hoặc đối soát", ex.Message);
+    }
 }

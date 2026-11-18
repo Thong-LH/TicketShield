@@ -75,15 +75,17 @@ public class GetAdminTransactionsQueryHandler : IRequestHandler<GetAdminTransact
             query = query.Where(e => e.InSettlementBuffer);
         }
 
-        // Lọc theo khoảng ngày tạo
+        // Lọc theo khoảng ngày tạo (chuẩn hóa về UTC phòng thủ múi giờ)
         if (request.FromDate.HasValue)
         {
-            query = query.Where(e => e.CreatedAt >= request.FromDate.Value);
+            var fromUtc = request.FromDate.Value.ToUniversalTime();
+            query = query.Where(e => e.CreatedAt >= fromUtc);
         }
 
         if (request.ToDate.HasValue)
         {
-            query = query.Where(e => e.CreatedAt <= request.ToDate.Value);
+            var toUtc = request.ToDate.Value.ToUniversalTime();
+            query = query.Where(e => e.CreatedAt <= toUtc);
         }
 
         // Tìm kiếm từ khóa

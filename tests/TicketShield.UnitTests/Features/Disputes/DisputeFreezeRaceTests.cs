@@ -205,12 +205,26 @@ public class DisputeFreezeRaceTests
             TierName = "GA",
             OriginalPrice = 100_000m
         };
+        var ticket = new Ticket
+        {
+            Id = Guid.NewGuid(),
+            EventId = concert.Id,
+            TierId = tier.Id,
+            CurrentOwnerId = seller.Id,
+            TicketCode = $"TCK-{suffix}",
+            OriginalPrice = 100_000m,
+            Status = TicketStatus.Transferred
+        };
+        db.Tickets.Add(ticket);
+
         var listing = new ResaleListing
         {
             Id = Guid.NewGuid(),
             EventId = concert.Id,
             TierId = tier.Id,
             SellerId = seller.Id,
+            TicketId = ticket.Id,
+            Ticket = ticket,
             OriginalTicketCode = $"TCK-{suffix}",
             OriginalPrice = 100_000m,
             ResalePrice = 100_000m,
