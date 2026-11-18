@@ -42,6 +42,7 @@ public class EscrowTransaction : BaseEntity
     public ShadowUser Seller { get; set; } = null!;
     public PayoutTransaction? PayoutTransaction { get; set; }
     public Dispute? Dispute { get; set; }
+    public ICollection<EscrowTransactionListing> EscrowListings { get; set; } = new List<EscrowTransactionListing>();
 
     public static DateTimeOffset ComputeSettlementUnlockAt(
         DateTimeOffset utcNow,

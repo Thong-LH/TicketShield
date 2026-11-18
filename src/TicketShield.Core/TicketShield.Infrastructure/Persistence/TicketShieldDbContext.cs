@@ -20,6 +20,7 @@ public class TicketShieldDbContext : DbContext, ITicketShieldDbContext
     public DbSet<Ticket> Tickets => Set<Ticket>();
     public DbSet<ResaleListing> ResaleListings => Set<ResaleListing>();
     public DbSet<EscrowTransaction> EscrowTransactions => Set<EscrowTransaction>();
+    public DbSet<EscrowTransactionListing> EscrowTransactionListings => Set<EscrowTransactionListing>();
     public DbSet<PayoutTransaction> PayoutTransactions => Set<PayoutTransaction>();
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
     public DbSet<Dispute> Disputes => Set<Dispute>();
@@ -206,6 +207,24 @@ public class TicketShieldDbContext : DbContext, ITicketShieldDbContext
             entity.HasIndex(e => e.BundleId)
                 .HasDatabaseName("idx_escrows_bundle_id")
                 .HasFilter("bundle_id IS NOT NULL");
+        });
+
+        // EscrowTransactionListing (Join entity for bundle/flexible escrow listings)
+        modelBuilder.Entity<EscrowTransactionListing>(entity =>
+        {
+            entity.ToTable("escrow_transaction_listings");
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => new { e.EscrowId, e.ListingId }).IsUnique();
+
+            entity.HasOne(e => e.Escrow)
+                .WithMany(es => es.EscrowListings)
+                .HasForeignKey(e => e.EscrowId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(e => e.Listing)
+                .WithMany(l => l.EscrowListings)
+                .HasForeignKey(e => e.ListingId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         // PayoutTransaction

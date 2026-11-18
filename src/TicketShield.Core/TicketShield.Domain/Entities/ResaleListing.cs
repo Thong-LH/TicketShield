@@ -45,6 +45,7 @@ public class ResaleListing : BaseEntity
     public TicketTier Tier { get; set; } = null!;
     public ShadowUser Seller { get; set; } = null!;
     public ICollection<EscrowTransaction> EscrowTransactions { get; set; } = new List<EscrowTransaction>();
+    public ICollection<EscrowTransactionListing> EscrowListings { get; set; } = new List<EscrowTransactionListing>();
     public EscrowTransaction? EscrowTransaction
     {
         get => EscrowTransactions.OrderByDescending(e => e.CreatedAt).FirstOrDefault();

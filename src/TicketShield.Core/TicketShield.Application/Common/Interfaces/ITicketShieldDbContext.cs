@@ -12,6 +12,7 @@ public interface ITicketShieldDbContext
     DbSet<Ticket> Tickets { get; }
     DbSet<ResaleListing> ResaleListings { get; }
     DbSet<EscrowTransaction> EscrowTransactions { get; }
+    DbSet<EscrowTransactionListing> EscrowTransactionListings { get; }
     DbSet<PayoutTransaction> PayoutTransactions { get; }
     DbSet<OutboxMessage> OutboxMessages { get; }
     DbSet<Dispute> Disputes { get; }
