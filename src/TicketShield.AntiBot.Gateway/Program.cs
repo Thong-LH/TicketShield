@@ -3,6 +3,7 @@ using StackExchange.Redis;
 using TicketShield.AntiBot.Gateway.Middleware;
 using TicketShield.AntiBot.Gateway.Models;
 using TicketShield.AntiBot.Gateway.Services;
+using TicketShield.AntiBot.Gateway.Services.Network;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -53,6 +54,8 @@ builder.Services.AddSingleton<ISessionTokenService, SessionTokenService>();
 builder.Services.AddSingleton<IAntiBotRedisService, AntiBotRedisService>();
 builder.Services.AddSingleton<IAntiBotScoringService, AntiBotScoringService>();
 builder.Services.AddSingleton<IAntiBotGuardService, AntiBotGuardService>();
+builder.Services.AddSingleton<IJa4Parser, Ja4Parser>();
+builder.Services.AddSingleton<ITlsProfileExtractor, TlsProfileExtractor>();
 
 // 5. YARP Reverse Proxy
 builder.Services.AddReverseProxy()
@@ -117,6 +120,15 @@ app.MapPost("/api/v1/antibot/session", (
         issuedAtUtc = now,
         expiresInSeconds = 7200
     });
+});
+
+// Endpoint chẩn đoán thông tin TLS Profile (NET-13.1.1)
+app.MapGet("/api/antibot/tls-profile", (
+    HttpContext ctx,
+    [FromServices] ITlsProfileExtractor extractor) =>
+{
+    var profile = extractor.Extract(ctx);
+    return Results.Ok(profile);
 });
 
 // Interceptor Guard Middleware chạy trước YARP Reverse Proxy

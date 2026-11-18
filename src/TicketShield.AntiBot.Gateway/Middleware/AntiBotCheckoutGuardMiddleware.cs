@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using TicketShield.AntiBot.Gateway.Models;
 using TicketShield.AntiBot.Gateway.Services;
+using TicketShield.AntiBot.Gateway.Services.Network;
 
 namespace TicketShield.AntiBot.Gateway.Middleware;
 
@@ -48,7 +49,10 @@ public class AntiBotCheckoutGuardMiddleware(
         PropertyNameCaseInsensitive = true
     };
 
-    public async Task InvokeAsync(HttpContext context, IAntiBotGuardService guardService)
+    public async Task InvokeAsync(
+        HttpContext context,
+        IAntiBotGuardService guardService,
+        ITlsProfileExtractor tlsExtractor)
     {
         var path = context.Request.Path;
         var method = context.Request.Method;
@@ -57,6 +61,21 @@ public class AntiBotCheckoutGuardMiddleware(
         if (HttpMethods.IsPost(method) &&
             path.Equals("/api/organizer/orders/checkout", StringComparison.OrdinalIgnoreCase))
         {
+            // Trích xuất hồ sơ TLS Profile (NET-13.1.1) làm đầu vào cho Protocol Consistency Layer (NET-13.1.2)
+            var tlsProfile = tlsExtractor.Extract(context);
+            context.Items["TlsProfile"] = tlsProfile;
+
+            if (tlsProfile.IsSecureConnection)
+            {
+                logger.LogDebug(
+                    "AntiBot TLS Extracted: Source={Source}, Version={Version}, Cipher={Cipher}, ALPN={Alpn}, JA4={Ja4}",
+                    tlsProfile.Source,
+                    tlsProfile.TlsVersion,
+                    tlsProfile.NegotiatedCipherSuite,
+                    tlsProfile.Alpn,
+                    tlsProfile.Ja4?.RawJa4);
+            }
+
             context.Request.EnableBuffering();
 
             string? sessionToken = null;
