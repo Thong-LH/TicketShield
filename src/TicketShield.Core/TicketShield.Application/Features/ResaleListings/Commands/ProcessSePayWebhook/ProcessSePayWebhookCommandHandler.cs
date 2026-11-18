@@ -231,7 +231,54 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
         }
 
         var issuedTickets = new List<IssuedTicket>();
-        var listingsToTransfer = new List<ResaleListing> { escrow.Listing };
+        List<ResaleListing> listingsToTransfer;
+
+        // Query EscrowTransactionListings to get the exact listings held for this escrow
+        var escrowSelectedListingIds = await _dbContext.EscrowTransactionListings
+            .Where(etl => etl.EscrowId == escrow.Id)
+            .Select(etl => etl.ListingId)
+            .ToListAsync(cancellationToken);
+
+        if (escrowSelectedListingIds.Count > 0)
+        {
+            listingsToTransfer = await _dbContext.ResaleListings
+                .Include(l => l.Ticket)
+                .Include(l => l.Event)
+                .Where(l => escrowSelectedListingIds.Contains(l.Id))
+                .OrderBy(l => l.CreatedAt)
+                .ThenBy(l => l.Id)
+                .ToListAsync(cancellationToken);
+        }
+        else if (escrow.BundleId.HasValue)
+        {
+            var bundleListings = await _dbContext.ResaleListings
+                .Include(l => l.Ticket)
+                .Include(l => l.Event)
+                .Where(l => l.BundleId == escrow.BundleId)
+                .OrderBy(l => l.CreatedAt)
+                .ThenBy(l => l.Id)
+                .ToListAsync(cancellationToken);
+
+            if (bundleListings.Count < 2 || bundleListings.Count > ResaleListing.MaxBundleTickets)
+            {
+                throw new BusinessRuleViolationException(
+                    $"Gói vé không hợp lệ: cần từ 2 đến {ResaleListing.MaxBundleTickets} vé thật nhưng chỉ tìm thấy {bundleListings.Count} vé. Giao dịch bị từ chối.");
+            }
+
+            listingsToTransfer = bundleListings;
+        }
+        else
+        {
+            listingsToTransfer = new List<ResaleListing> { escrow.Listing };
+        }
+
+        foreach (var l in listingsToTransfer)
+        {
+            if (l.Ticket == null && l.TicketId != Guid.Empty)
+            {
+                l.Ticket = await _dbContext.Tickets.FirstOrDefaultAsync(t => t.Id == l.TicketId, cancellationToken);
+            }
+        }
 
         // =========================================================================
         // PHA 1 (External Only): Gọi gRPC BTC Organizer hoàn toàn trong bộ nhớ.
@@ -239,24 +286,6 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
         // =========================================================================
         try
         {
-            if (escrow.BundleId.HasValue)
-            {
-                var bundleListings = await _dbContext.ResaleListings
-                    .Include(l => l.Ticket)
-                    .Where(l => l.BundleId == escrow.BundleId)
-                    .OrderBy(l => l.CreatedAt)
-                    .ThenBy(l => l.Id)
-                    .ToListAsync(cancellationToken);
-
-                if (bundleListings.Count < 2 || bundleListings.Count > ResaleListing.MaxBundleTickets)
-                {
-                    throw new BusinessRuleViolationException(
-                        $"Gói vé không hợp lệ: cần từ 2 đến {ResaleListing.MaxBundleTickets} vé thật nhưng chỉ tìm thấy {bundleListings.Count} vé. Giao dịch bị từ chối.");
-                }
-
-                listingsToTransfer = bundleListings;
-            }
-
             foreach (var listing in listingsToTransfer)
             {
                 var issued = await TransferOneAtOrganizerAsync(listing, escrow, cancellationToken);
@@ -313,6 +342,17 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
                     listing.ListingStatus = ListingStatus.Verified;
                 }
 
+                if (escrow.BundleId.HasValue)
+                {
+                    var otherBundleListings = await _dbContext.ResaleListings
+                        .Where(l => l.BundleId == escrow.BundleId && l.ListingStatus == ListingStatus.Transacting)
+                        .ToListAsync(cancellationToken);
+                    foreach (var l in otherBundleListings)
+                    {
+                        l.ListingStatus = ListingStatus.Verified;
+                    }
+                }
+
                 escrow.Status = EscrowStatus.RefundQueued;
                 escrow.BankTransactionReference = bankTxRef;
                 escrow.InSettlementBuffer = false;
@@ -340,6 +380,7 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
         // PHA 2 (Persistence Only): Chỉ chạy khi 100% số vé trong danh sách đã cấp mã.
         // Lúc này mới cập nhật Entity, tạo Ticket mới cho Buyer và SaveChangesAsync.
         // =========================================================================
+        var releasedSiblingListingIds = new List<Guid>();
         try
         {
             foreach (var listing in listingsToTransfer)
@@ -368,6 +409,27 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
                     UpdatedAt = now
                 };
                 await _dbContext.Tickets.AddAsync(buyerTicket, cancellationToken);
+            }
+
+            // Release remaining listings in the bundle that were held but not purchased
+            if (escrow.BundleId.HasValue)
+            {
+                var transferredListingIds = listingsToTransfer.Select(l => l.Id).ToList();
+                var remainingBundleListings = await _dbContext.ResaleListings
+                    .Include(l => l.Event)
+                    .Where(l => l.BundleId == escrow.BundleId && !transferredListingIds.Contains(l.Id))
+                    .ToListAsync(cancellationToken);
+
+                foreach (var remaining in remainingBundleListings)
+                {
+                    if (remaining.ListingStatus == ListingStatus.Transacting)
+                    {
+                        var pastResaleCutoff = remaining.Event != null &&
+                            remaining.Event.EventStartAt.AddHours(-2) <= now;
+                        remaining.ListingStatus = pastResaleCutoff ? ListingStatus.Expired : ListingStatus.Verified;
+                        releasedSiblingListingIds.Add(remaining.Id);
+                    }
+                }
             }
 
             escrow.Status = EscrowStatus.Locked;
@@ -439,6 +501,13 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
             await _paymentNotifier.NotifyMarketplaceListingChangedAsync(
                 new { listingId = escrow.ListingId, bundleId = escrow.BundleId, listingStatus = ListingStatus.Sold.ToString() },
                 cancellationToken);
+
+            foreach (var releasedId in releasedSiblingListingIds)
+            {
+                await _paymentNotifier.NotifyMarketplaceListingChangedAsync(
+                    new { listingId = releasedId, bundleId = escrow.BundleId, listingStatus = ListingStatus.Verified.ToString() },
+                    cancellationToken);
+            }
         }
 
         var response = new ProcessSePayWebhookResponse
