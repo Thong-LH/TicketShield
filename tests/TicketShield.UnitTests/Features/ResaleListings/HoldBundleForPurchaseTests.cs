@@ -611,6 +611,100 @@ public class HoldBundleForPurchaseTests
     }
 
     [Fact]
+    public async Task HoldBundle_WhenFlexibleAndBuyerSelectsOneOfThree_CalculatesPriceForOneAndLocksAllThree()
+    {
+        // Arrange
+        var (dbContext, seller, buyer1, _, _) = CreateInMemoryDbContextWithServices();
+        var feeCalculator = new MockResaleFeeCalculator();
+        var currentUserService = new MockCurrentUserService(buyer1.Id);
+
+        var eventId = (await dbContext.Events.FirstAsync()).Id;
+        var tierId = (await dbContext.TicketTiers.FirstAsync()).Id;
+        var bundleId = Guid.NewGuid();
+
+        var listings = new List<ResaleListing>
+        {
+            new()
+            {
+                Id = Guid.NewGuid(),
+                EventId = eventId,
+                TierId = tierId,
+                SellerId = seller.Id,
+                OriginalTicketCode = "TCK-BND-ONE-001",
+                OriginalPrice = 1_000_000m,
+                ResalePrice = 1_000_000m,
+                ListingStatus = ListingStatus.Verified,
+                BundleId = bundleId,
+                BundleTotalTickets = 3,
+                IsBundleAllOrNothing = false,
+                CreatedAt = DateTimeOffset.UtcNow
+            },
+            new()
+            {
+                Id = Guid.NewGuid(),
+                EventId = eventId,
+                TierId = tierId,
+                SellerId = seller.Id,
+                OriginalTicketCode = "TCK-BND-ONE-002",
+                OriginalPrice = 1_000_000m,
+                ResalePrice = 1_000_000m,
+                ListingStatus = ListingStatus.Verified,
+                BundleId = bundleId,
+                BundleTotalTickets = 3,
+                IsBundleAllOrNothing = false,
+                CreatedAt = DateTimeOffset.UtcNow
+            },
+            new()
+            {
+                Id = Guid.NewGuid(),
+                EventId = eventId,
+                TierId = tierId,
+                SellerId = seller.Id,
+                OriginalTicketCode = "TCK-BND-ONE-003",
+                OriginalPrice = 1_000_000m,
+                ResalePrice = 1_000_000m,
+                ListingStatus = ListingStatus.Verified,
+                BundleId = bundleId,
+                BundleTotalTickets = 3,
+                IsBundleAllOrNothing = false,
+                CreatedAt = DateTimeOffset.UtcNow
+            }
+        };
+        dbContext.ResaleListings.AddRange(listings);
+        await dbContext.SaveChangesAsync();
+
+        var selectedIds = new List<Guid> { listings[0].Id };
+        var handler = new HoldListingForPurchaseCommandHandler(dbContext, feeCalculator, currentUserService);
+        var command = new HoldListingForPurchaseCommand(listings[0].Id, selectedListingIds: selectedIds);
+
+        // Act
+        var result = await handler.Handle(command, CancellationToken.None);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.True(result.Success);
+        Assert.Equal(bundleId, result.Data.BundleId);
+        Assert.Equal(1, result.Data.BundleTotalTickets);
+        Assert.Single(result.Data.BundleItems!);
+        Assert.Equal(1_000_000m, result.Data.ResalePrice);
+        Assert.Equal(50_000m, result.Data.BuyerFee);
+        Assert.Equal(1_050_000m, result.Data.TotalBuyerPaid);
+
+        // All 3 listings in bundle must be locked to Transacting during hold
+        var dbListings = await dbContext.ResaleListings.Where(l => l.BundleId == bundleId).ToListAsync();
+        Assert.All(dbListings, l => Assert.Equal(ListingStatus.Transacting, l.ListingStatus));
+
+        // Escrow must record exactly the 1 selected listing
+        var escrow = await dbContext.EscrowTransactions
+            .Include(e => e.EscrowListings)
+            .FirstAsync(e => e.BundleId == bundleId);
+        Assert.Equal(1_000_000m, escrow.OriginalTicketPrice);
+        Assert.Equal(1_050_000m, escrow.TotalBuyerPaid);
+        Assert.Single(escrow.EscrowListings);
+        Assert.Equal(listings[0].Id, escrow.EscrowListings.First().ListingId);
+    }
+
+    [Fact]
     public async Task HoldBundle_WhenAllOrNothingAndBuyerSelectsTwoOfThree_ThrowsBusinessRuleViolationException()
     {
         // Arrange
