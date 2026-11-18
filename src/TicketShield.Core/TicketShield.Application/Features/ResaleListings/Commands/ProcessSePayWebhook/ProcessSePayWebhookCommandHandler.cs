@@ -97,11 +97,15 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
                 .ThenInclude(l => l.Event)
             .Include(e => e.Listing)
                 .ThenInclude(l => l.Tier)
-            .Include(e => e.Listing)
-                .ThenInclude(l => l.Ticket)
             .Include(e => e.Buyer)
             .Include(e => e.Seller)
             .FirstOrDefaultAsync(e => e.PaymentReference == paymentReference, cancellationToken);
+
+        if (escrow?.Listing != null && escrow.Listing.TicketId != Guid.Empty && escrow.Listing.Ticket == null)
+        {
+            escrow.Listing.Ticket = await _dbContext.Tickets
+                .FirstOrDefaultAsync(t => t.Id == escrow.Listing.TicketId, cancellationToken);
+        }
 
         if (escrow == null)
         {

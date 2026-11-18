@@ -88,12 +88,7 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
         }
 
         var isBundle = routingListing.BundleId != null || routingListing.BundleTotalTickets >= 2;
-        var isAllOrNothing = routingListing.IsBundleAllOrNothing;
-        // Nếu là bundle nhưng cho phép bán lẻ (IsBundleAllOrNothing = false), và buyer yêu cầu mua lẻ (BuyAsBundle == false)
-        // thì không route sang HandleBundleHoldAsync mà đi tiếp xuống luồng giữ vé đơn lẻ (single listing).
-        var shouldHoldAsBundle = isBundle && (isAllOrNothing || request.BuyAsBundle != false);
-
-        if (shouldHoldAsBundle)
+        if (isBundle)
         {
             return await HandleBundleHoldAsync(routingListing, buyer, request, cancellationToken);
         }
@@ -224,6 +219,12 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
                     RecipientIdCard = request.RecipientIdCard
                 };
                 _dbContext.EscrowTransactions.Add(escrow);
+                _dbContext.EscrowTransactionListings.Add(new EscrowTransactionListing
+                {
+                    Id = Guid.NewGuid(),
+                    EscrowId = escrow.Id,
+                    ListingId = listing.Id
+                });
             }
 
             await _dbContext.SaveChangesAsync(cancellationToken);
@@ -371,15 +372,53 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
                 throw new BusinessRuleViolationException("Gói vé này đang trong quá trình thanh toán hoặc đối soát, không thể đặt mua.");
             }
 
-            // 3. Per-listing validation
-            var now = DateTimeOffset.UtcNow;
-            foreach (var listing in bundleListings)
+            // 2.1 Determine selected listings to hold
+            List<ResaleListing> selectedListings;
+
+            if (request.SelectedListingIds != null && request.SelectedListingIds.Count > 0)
             {
-                if (listing.SellerId == buyerId)
+                if (request.SelectedListingIds.Distinct().Count() != request.SelectedListingIds.Count)
                 {
-                    throw new BadRequestException("Bạn không thể tự mua vé của chính mình.");
+                    throw new BusinessRuleViolationException("Danh sách vé chọn chứa mã trùng lặp.");
                 }
 
+                var bundleMap = bundleListings.ToDictionary(l => l.Id);
+                var invalidIds = request.SelectedListingIds.Where(id => !bundleMap.ContainsKey(id)).ToList();
+                if (invalidIds.Count > 0)
+                {
+                    throw new BusinessRuleViolationException(
+                        $"Danh sách vé chọn chứa vé không thuộc gói vé này (ListingId: {string.Join(", ", invalidIds)}).");
+                }
+
+                if (anchorListing.IsBundleAllOrNothing && request.SelectedListingIds.Count != bundleListings.Count)
+                {
+                    throw new BusinessRuleViolationException(
+                        $"Gói vé này yêu cầu mua toàn bộ gói ({bundleListings.Count} vé), không được chọn mua lẻ.");
+                }
+
+                selectedListings = request.SelectedListingIds.Select(id => bundleMap[id]).ToList();
+            }
+            else
+            {
+                if (!anchorListing.IsBundleAllOrNothing && request.BuyAsBundle == false)
+                {
+                    selectedListings = new List<ResaleListing> { anchorListing };
+                }
+                else
+                {
+                    selectedListings = bundleListings;
+                }
+            }
+
+            // 3. Per-listing validation
+            var now = DateTimeOffset.UtcNow;
+            if (bundleListings.Any(l => l.SellerId == buyerId))
+            {
+                throw new BadRequestException("Bạn không thể tự mua vé của chính mình.");
+            }
+
+            foreach (var listing in selectedListings)
+            {
                 if (listing.IsPrivate)
                 {
                     var isTokenValid = !string.IsNullOrWhiteSpace(request.PrivateAccessToken) &&
@@ -417,6 +456,19 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
                 }
             }
 
+            if (anchorListing.IsBundleAllOrNothing)
+            {
+                foreach (var listing in bundleListings)
+                {
+                    if (listing.ListingStatus == ListingStatus.Sold ||
+                        listing.ListingStatus == ListingStatus.Cancelled ||
+                        listing.ListingStatus == ListingStatus.Expired)
+                    {
+                        throw new BusinessRuleViolationException($"Vé '{listing.OriginalTicketCode}' trong gói đang ở trạng thái '{listing.ListingStatus}' và không thể đặt mua.");
+                    }
+                }
+            }
+
             // 4. Check for existing bundle escrow (renew scenario)
             var existingBundleEscrow = await _dbContext.EscrowTransactions
                 .Where(e => e.BundleId == bundleId && e.BuyerId == buyerId && e.Status == EscrowStatus.Pending
@@ -426,7 +478,7 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
 
             var isRenew = existingBundleEscrow != null;
 
-            // 5. Calculate aggregated fees
+            // 5. Calculate aggregated fees ONLY for selected listings
             var unlockAt = now.AddMinutes(10);
             decimal totalOriginalPrice = 0m;
             decimal totalBuyerFee = 0m;
@@ -435,7 +487,7 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
             decimal totalNetSellerPayout = 0m;
             var bundleItems = new List<BundleHeldItemDto>();
 
-            foreach (var listing in bundleListings)
+            foreach (var listing in selectedListings)
             {
                 var feeResult = await _feeCalculator.CalculateFeeAsync(listing.ResalePrice, listing.IsPrivate, listing.EventId, cancellationToken);
                 totalOriginalPrice += listing.ResalePrice;
@@ -455,6 +507,15 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
                 listing.ListingStatus = ListingStatus.Transacting;
             }
 
+            // Đồng thời tạm khóa các vé còn lại trong bundle đang Verified sang Transacting để tránh tranh chấp khi checkout
+            foreach (var listing in bundleListings.Where(l => !selectedListings.Any(s => s.Id == l.Id)))
+            {
+                if (listing.ListingStatus == ListingStatus.Verified)
+                {
+                    listing.ListingStatus = ListingStatus.Transacting;
+                }
+            }
+
             // 6. Create or renew the single bundle escrow
             string paymentReference;
             EscrowTransaction escrow;
@@ -472,6 +533,21 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
                 if (!string.IsNullOrWhiteSpace(request.RecipientEmail)) escrow.RecipientEmail = request.RecipientEmail;
                 if (!string.IsNullOrWhiteSpace(request.RecipientIdCard)) escrow.RecipientIdCard = request.RecipientIdCard;
                 paymentReference = escrow.PaymentReference!;
+
+                var oldEscrowListings = await _dbContext.EscrowTransactionListings
+                    .Where(etl => etl.EscrowId == escrow.Id)
+                    .ToListAsync(cancellationToken);
+                _dbContext.EscrowTransactionListings.RemoveRange(oldEscrowListings);
+
+                foreach (var selected in selectedListings)
+                {
+                    await _dbContext.EscrowTransactionListings.AddAsync(new EscrowTransactionListing
+                    {
+                        Id = Guid.NewGuid(),
+                        EscrowId = escrow.Id,
+                        ListingId = selected.Id
+                    }, cancellationToken);
+                }
             }
             else
             {
@@ -495,7 +571,17 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
                     RecipientEmail = !string.IsNullOrWhiteSpace(request.RecipientEmail) ? request.RecipientEmail : buyer.Email,
                     RecipientIdCard = request.RecipientIdCard
                 };
-                _dbContext.EscrowTransactions.Add(escrow);
+                await _dbContext.EscrowTransactions.AddAsync(escrow, cancellationToken);
+
+                foreach (var selected in selectedListings)
+                {
+                    await _dbContext.EscrowTransactionListings.AddAsync(new EscrowTransactionListing
+                    {
+                        Id = Guid.NewGuid(),
+                        EscrowId = escrow.Id,
+                        ListingId = selected.Id
+                    }, cancellationToken);
+                }
             }
 
             // 7. Generate VietQR for the aggregated total
@@ -536,13 +622,13 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
                 HoldDurationSeconds = (int)Math.Max(0, (unlockAt - DateTimeOffset.UtcNow).TotalSeconds),
                 ServerNow = now,
                 BundleId = bundleId,
-                BundleTotalTickets = effectiveBundleTotal,
+                BundleTotalTickets = selectedListings.Count,
                 BundleItems = bundleItems
             };
 
             return ApiResponse<HoldListingForPurchaseResponse>.SuccessResponse(
                 response,
-                $"Giữ chỗ gói {effectiveBundleTotal} vé thành công! Vui lòng thanh toán trong vòng 10 phút.");
+                $"Giữ chỗ {(selectedListings.Count > 1 ? $"gói {selectedListings.Count} vé" : "vé")} thành công! Vui lòng thanh toán trong vòng 10 phút.");
         }
         catch
         {
