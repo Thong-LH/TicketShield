@@ -5,6 +5,31 @@ using TicketShield.AntiBot.Gateway.Models;
 using TicketShield.AntiBot.Gateway.Services;
 using TicketShield.AntiBot.Gateway.Services.Network;
 
+// CLI Self-Test Runner cho NET-13.1.1 (Verification & Latency Benchmark)
+if (args.Contains("--self-test"))
+{
+    var testParser = new Ja4Parser();
+    var testExtractor = new TlsProfileExtractor(testParser, Microsoft.Extensions.Logging.Abstractions.NullLogger<TlsProfileExtractor>.Instance);
+    var report = AntiBotSelfTestRunner.RunAllTests(testParser, testExtractor);
+
+    Console.WriteLine("==========================================================");
+    Console.WriteLine("      NET-13.1.1: SELF-TEST & BENCHMARK VERIFICATION       ");
+    Console.WriteLine("==========================================================");
+    foreach (var r in report.Results)
+    {
+        Console.ForegroundColor = r.Passed ? ConsoleColor.Green : ConsoleColor.Red;
+        Console.WriteLine($"[{(r.Passed ? "PASS" : "FAIL")}] {r.TestName} ({r.LatencyMicroseconds:F2} us)");
+        Console.WriteLine($"       Details: {r.Details}");
+        Console.ResetColor();
+    }
+    Console.WriteLine();
+    Console.WriteLine($"Summary: {report.PassedTests}/{report.TotalTests} tests passed.");
+    Console.WriteLine($"Average Benchmark Latency: {report.AverageLatencyMicroseconds:F4} us (SLA Target: < 50 us)");
+    Console.WriteLine(report.AllPassed ? "STATUS: SUCCESS (100% PASSED)" : "STATUS: FAILED");
+
+    Environment.Exit(report.AllPassed ? 0 : 1);
+}
+
 var builder = WebApplication.CreateBuilder(args);
 
 var port = builder.Configuration.GetValue("HttpPort", 5006);
@@ -129,6 +154,15 @@ app.MapGet("/api/antibot/tls-profile", (
 {
     var profile = extractor.Extract(ctx);
     return Results.Ok(profile);
+});
+
+// Endpoint tự kiểm thử tự động nội tại (Self-Test Runner NET-13.1.1)
+app.MapGet("/api/antibot/self-test", (
+    [FromServices] IJa4Parser parser,
+    [FromServices] ITlsProfileExtractor extractor) =>
+{
+    var report = AntiBotSelfTestRunner.RunAllTests(parser, extractor);
+    return report.AllPassed ? Results.Ok(report) : Results.Problem(title: "Self-Test Failed", statusCode: 500);
 });
 
 // Interceptor Guard Middleware chạy trước YARP Reverse Proxy
