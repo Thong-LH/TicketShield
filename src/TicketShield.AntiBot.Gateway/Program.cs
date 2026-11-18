@@ -5,7 +5,7 @@ using TicketShield.AntiBot.Gateway.Models;
 using TicketShield.AntiBot.Gateway.Services;
 using TicketShield.AntiBot.Gateway.Services.Network;
 
-// CLI Self-Test Runner cho NET-13.1.1 & NET-13.1.2 (Verification & Latency Benchmark)
+// CLI Self-Test Runner cho NET-13.1 (Verification & Latency Benchmark)
 if (args.Contains("--self-test"))
 {
     var testParser = new Ja4Parser();
@@ -13,8 +13,11 @@ if (args.Contains("--self-test"))
     var pseudoInspector = new PseudoHeaderInspector(Microsoft.Extensions.Logging.Abstractions.NullLogger<PseudoHeaderInspector>.Instance);
     var settingsInspector = new Http2SettingsInspector(Microsoft.Extensions.Logging.Abstractions.NullLogger<Http2SettingsInspector>.Instance);
     var testConsistency = new Http2ConsistencyService(pseudoInspector, settingsInspector, Microsoft.Extensions.Logging.Abstractions.NullLogger<Http2ConsistencyService>.Instance);
+    var testClientHints = new ClientHintsValidator();
+    var testSubnetTracker = new SubnetCorrelationTracker(null, null, null, Microsoft.Extensions.Logging.Abstractions.NullLogger<SubnetCorrelationTracker>.Instance);
+    var testNetworkService = new NetworkConsistencyService(testExtractor, testConsistency, testClientHints, testSubnetTracker, Microsoft.Extensions.Logging.Abstractions.NullLogger<NetworkConsistencyService>.Instance);
 
-    var report = AntiBotSelfTestRunner.RunAllTests(testParser, testExtractor, testConsistency);
+    var report = AntiBotSelfTestRunner.RunAllTests(testParser, testExtractor, testConsistency, testClientHints, testSubnetTracker, testNetworkService);
 
     Console.WriteLine("==========================================================");
     Console.WriteLine("    NET-13.1: PROTOCOL CONSISTENCY VERIFICATION SUITE      ");
@@ -205,13 +208,16 @@ app.MapGet("/api/antibot/network-consistency", async (
     return Results.Ok(summary);
 });
 
-// Endpoint tự kiểm thử tự động nội tại (Self-Test Runner NET-13.1.1 & NET-13.1.2)
+// Endpoint tự kiểm thử tự động nội tại (Self-Test Runner NET-13.1)
 app.MapGet("/api/antibot/self-test", (
     [FromServices] IJa4Parser parser,
     [FromServices] ITlsProfileExtractor extractor,
-    [FromServices] IHttp2ConsistencyService consistencyService) =>
+    [FromServices] IHttp2ConsistencyService consistencyService,
+    [FromServices] IClientHintsValidator clientHintsValidator,
+    [FromServices] ISubnetCorrelationTracker subnetTracker,
+    [FromServices] INetworkConsistencyService networkService) =>
 {
-    var report = AntiBotSelfTestRunner.RunAllTests(parser, extractor, consistencyService);
+    var report = AntiBotSelfTestRunner.RunAllTests(parser, extractor, consistencyService, clientHintsValidator, subnetTracker, networkService);
     return report.AllPassed ? Results.Ok(report) : Results.Problem(title: "Self-Test Failed", statusCode: 500);
 });
 

@@ -30,7 +30,10 @@ public static class AntiBotSelfTestRunner
     public static SelfTestSuiteReport RunAllTests(
         IJa4Parser parser,
         ITlsProfileExtractor extractor,
-        IHttp2ConsistencyService consistencyService)
+        IHttp2ConsistencyService consistencyService,
+        IClientHintsValidator? clientHintsValidator = null,
+        ISubnetCorrelationTracker? subnetTracker = null,
+        INetworkConsistencyService? networkService = null)
     {
         var results = new List<SelfTestResult>();
         var sw = new Stopwatch();
@@ -257,14 +260,210 @@ public static class AntiBotSelfTestRunner
             $"Completed in {sw.ElapsedMilliseconds}ms, Avg = {avgH2BenchmarkUs:F4} µs/op",
             avgH2BenchmarkUs));
 
+        // =========================================================================
+        // NET-13.1.3: CLIENT HINTS (Sec-Ch-Ua) & SUBNET CORRELATION TESTS
+        // =========================================================================
+        var hintsValidator = clientHintsValidator ?? new ClientHintsValidator();
+        var subTracker = subnetTracker ?? new SubnetCorrelationTracker(null, null, null, Microsoft.Extensions.Logging.Abstractions.NullLogger<SubnetCorrelationTracker>.Instance);
+        var netService = networkService ?? new NetworkConsistencyService(extractor, consistencyService, hintsValidator, subTracker, Microsoft.Extensions.Logging.Abstractions.NullLogger<NetworkConsistencyService>.Instance);
+
+        // TC-15: Client Hints Chrome 130 Consistent (Score = 0.0)
+        sw.Restart();
+        var ctxCh1 = new DefaultHttpContext();
+        ctxCh1.Request.Headers.UserAgent = ChromeUa;
+        ctxCh1.Request.Headers["Sec-Ch-Ua"] = "\"Chromium\";v=\"130\", \"Google Chrome\";v=\"130\", \"Not?A_Brand\";v=\"99\"";
+        ctxCh1.Request.Headers["Sec-Ch-Ua-Mobile"] = "?0";
+        ctxCh1.Request.Headers["Sec-Ch-Ua-Platform"] = "\"Windows\"";
+        ctxCh1.Request.Headers["Sec-Fetch-Site"] = "same-origin";
+        ctxCh1.Request.Headers["Sec-Fetch-Mode"] = "cors";
+        ctxCh1.Request.Headers["Sec-Fetch-Dest"] = "empty";
+        var chRes1 = hintsValidator.Validate(ctxCh1);
+        sw.Stop();
+        var pass15 = chRes1.Status == ClientHintsStatus.Consistent && chRes1.InconsistencyScore == 0.0f;
+        results.Add(new SelfTestResult(
+            "TC-15: Client Hints Chrome 130 Consistent (Score=0.0)",
+            pass15,
+            $"Status={chRes1.Status}, Score={chRes1.InconsistencyScore}",
+            sw.Elapsed.TotalMilliseconds * 1000.0));
+
+        // TC-16: Client Hints Safari macOS True User (Score = 0.0, NotApplicable)
+        sw.Restart();
+        var ctxSafari = new DefaultHttpContext();
+        ctxSafari.Request.Headers.UserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15";
+        var chResSafari = hintsValidator.Validate(ctxSafari);
+        sw.Stop();
+        var pass16 = chResSafari.Status == ClientHintsStatus.NotApplicable && chResSafari.InconsistencyScore == 0.0f;
+        results.Add(new SelfTestResult(
+            "TC-16: Client Hints Safari macOS True User (Score=0.0, NotApplicable)",
+            pass16,
+            $"Status={chResSafari.Status}, Score={chResSafari.InconsistencyScore}",
+            sw.Elapsed.TotalMilliseconds * 1000.0));
+
+        // TC-17: Client Hints Firefox Windows True User (Score = 0.0, NotApplicable)
+        sw.Restart();
+        var ctxFirefox = new DefaultHttpContext();
+        ctxFirefox.Request.Headers.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:132.0) Gecko/20100101 Firefox/132.0";
+        var chResFirefox = hintsValidator.Validate(ctxFirefox);
+        sw.Stop();
+        var pass17 = chResFirefox.Status == ClientHintsStatus.NotApplicable && chResFirefox.InconsistencyScore == 0.0f;
+        results.Add(new SelfTestResult(
+            "TC-17: Client Hints Firefox Windows True User (Score=0.0, NotApplicable)",
+            pass17,
+            $"Status={chResFirefox.Status}, Score={chResFirefox.InconsistencyScore}",
+            sw.Elapsed.TotalMilliseconds * 1000.0));
+
+        // TC-18: Client Hints TicketShield Mobile App True User (Score = 0.0, NotApplicable)
+        sw.Restart();
+        var ctxMobileApp = new DefaultHttpContext();
+        ctxMobileApp.Request.Headers.UserAgent = "TicketShield-Mobile/2.1.0 (Android 14; Pixel 8)";
+        var chResMobileApp = hintsValidator.Validate(ctxMobileApp);
+        sw.Stop();
+        var pass18 = chResMobileApp.Status == ClientHintsStatus.NotApplicable && chResMobileApp.InconsistencyScore == 0.0f;
+        results.Add(new SelfTestResult(
+            "TC-18: Client Hints TicketShield Mobile App True User (Score=0.0)",
+            pass18,
+            $"Status={chResMobileApp.Status}, Score={chResMobileApp.InconsistencyScore}",
+            sw.Elapsed.TotalMilliseconds * 1000.0));
+
+        // TC-19: Bot curl_cffi Impersonation (Chrome UA without Sec-Ch-Ua -> Score = 1.0)
+        sw.Restart();
+        var ctxCurlCffi = new DefaultHttpContext();
+        ctxCurlCffi.Request.Headers.UserAgent = ChromeUa;
+        var chResCurlCffi = hintsValidator.Validate(ctxCurlCffi);
+        sw.Stop();
+        var pass19 = chResCurlCffi.Status == ClientHintsStatus.MissingHints && chResCurlCffi.InconsistencyScore == 1.0f;
+        results.Add(new SelfTestResult(
+            "TC-19: Bot curl_cffi Impersonation Missing Hints (Score=1.0)",
+            pass19,
+            $"Status={chResCurlCffi.Status}, Reason={chResCurlCffi.AnomalyReason}",
+            sw.Elapsed.TotalMilliseconds * 1000.0));
+
+        // TC-20: Bot Version Mismatch (Chrome 130 vs Sec-Ch-Ua v=120 -> Score = 1.0)
+        sw.Restart();
+        var ctxVerMismatch = new DefaultHttpContext();
+        ctxVerMismatch.Request.Headers.UserAgent = ChromeUa;
+        ctxVerMismatch.Request.Headers["Sec-Ch-Ua"] = "\"Chromium\";v=\"120\", \"Google Chrome\";v=\"120\"";
+        ctxVerMismatch.Request.Headers["Sec-Ch-Ua-Mobile"] = "?0";
+        ctxVerMismatch.Request.Headers["Sec-Ch-Ua-Platform"] = "\"Windows\"";
+        ctxVerMismatch.Request.Headers["Sec-Fetch-Site"] = "same-origin";
+        var chResVerMismatch = hintsValidator.Validate(ctxVerMismatch);
+        sw.Stop();
+        var pass20 = chResVerMismatch.Status == ClientHintsStatus.VersionMismatch && chResVerMismatch.InconsistencyScore == 1.0f;
+        results.Add(new SelfTestResult(
+            "TC-20: Bot Version Mismatch (Chrome 130 vs Hints v=120 -> Score=1.0)",
+            pass20,
+            $"Status={chResVerMismatch.Status}, Reason={chResVerMismatch.AnomalyReason}",
+            sw.Elapsed.TotalMilliseconds * 1000.0));
+
+        // TC-21: Bot Platform Mismatch (Windows UA vs Linux Platform -> Score = 1.0)
+        sw.Restart();
+        var ctxPlatMismatch = new DefaultHttpContext();
+        ctxPlatMismatch.Request.Headers.UserAgent = ChromeUa;
+        ctxPlatMismatch.Request.Headers["Sec-Ch-Ua"] = "\"Chromium\";v=\"130\", \"Google Chrome\";v=\"130\"";
+        ctxPlatMismatch.Request.Headers["Sec-Ch-Ua-Platform"] = "\"Linux\"";
+        ctxPlatMismatch.Request.Headers["Sec-Fetch-Site"] = "same-origin";
+        var chResPlatMismatch = hintsValidator.Validate(ctxPlatMismatch);
+        sw.Stop();
+        var pass21 = chResPlatMismatch.Status == ClientHintsStatus.PlatformMismatch && chResPlatMismatch.InconsistencyScore == 1.0f;
+        results.Add(new SelfTestResult(
+            "TC-21: Bot Platform Mismatch (Windows UA vs Linux -> Score=1.0)",
+            pass21,
+            $"Status={chResPlatMismatch.Status}, Reason={chResPlatMismatch.AnomalyReason}",
+            sw.Elapsed.TotalMilliseconds * 1000.0));
+
+        // TC-22: Safari Impersonator sending Chromium Hints -> Score = 1.0
+        sw.Restart();
+        var ctxSafariSpoof = new DefaultHttpContext();
+        ctxSafariSpoof.Request.Headers.UserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15";
+        ctxSafariSpoof.Request.Headers["Sec-Ch-Ua"] = "\"Chromium\";v=\"130\", \"Google Chrome\";v=\"130\"";
+        var chResSafariSpoof = hintsValidator.Validate(ctxSafariSpoof);
+        sw.Stop();
+        var pass22 = chResSafariSpoof.Status == ClientHintsStatus.BrandMismatch && chResSafariSpoof.InconsistencyScore == 1.0f;
+        results.Add(new SelfTestResult(
+            "TC-22: Safari Impersonator Sending Chromium Hints (Score=1.0)",
+            pass22,
+            $"Status={chResSafariSpoof.Status}, Reason={chResSafariSpoof.AnomalyReason}",
+            sw.Elapsed.TotalMilliseconds * 1000.0));
+
+        // TC-23: Subnet Tracking Localhost 127.0.0.1 Exemption (Burst 50 req -> Score=0.0)
+        sw.Restart();
+        bool pass23 = true;
+        for (int i = 0; i < 50; i++)
+        {
+            var res = subTracker.TrackSubnetAsync("127.0.0.1").GetAwaiter().GetResult();
+            if (!res.IsExempt || res.IsAnomaly || res.InconsistencyScore > 0.0f)
+            {
+                pass23 = false;
+                break;
+            }
+        }
+        sw.Stop();
+        results.Add(new SelfTestResult(
+            "TC-23: Subnet Localhost 127.0.0.1 Exemption (50 bursts -> Score=0.0)",
+            pass23,
+            "Localhost IP is 100% exempt from rate limiting",
+            sw.Elapsed.TotalMilliseconds * 1000.0));
+
+        // TC-24: Subnet Tracking Residential Proxy Botnet Cluster (/24 -> Score=1.0)
+        sw.Restart();
+        SubnetRateMetrics? clusterRes = null;
+        for (int i = 1; i <= 16; i++)
+        {
+            clusterRes = subTracker.TrackSubnetAsync($"198.51.100.{i % 8 + 1}").GetAwaiter().GetResult();
+        }
+        sw.Stop();
+        var pass24 = clusterRes != null && clusterRes.IsAnomaly && clusterRes.InconsistencyScore == 1.0f;
+        results.Add(new SelfTestResult(
+            "TC-24: Residential Proxy Botnet Cluster Detection (Score=1.0)",
+            pass24,
+            $"Subnet={clusterRes?.SubnetCidr}, ReqCount={clusterRes?.SubnetRequestCount}, DistinctIps={clusterRes?.DistinctIpCount}",
+            sw.Elapsed.TotalMilliseconds * 1000.0));
+
+        // TC-25: Facade NetworkConsistencyService End-to-End Evaluation
+        sw.Restart();
+        var ctxFacade = new DefaultHttpContext();
+        ctxFacade.Request.Headers.UserAgent = ChromeUa;
+        ctxFacade.Request.Headers["Sec-Ch-Ua"] = "\"Chromium\";v=\"130\", \"Google Chrome\";v=\"130\"";
+        ctxFacade.Request.Headers["Sec-Ch-Ua-Mobile"] = "?0";
+        ctxFacade.Request.Headers["Sec-Ch-Ua-Platform"] = "\"Windows\"";
+        ctxFacade.Request.Headers["Sec-Fetch-Site"] = "same-origin";
+        ctxFacade.Request.Headers["Sec-Fetch-Mode"] = "cors";
+        ctxFacade.Request.Headers["Sec-Fetch-Dest"] = "empty";
+        ctxFacade.Connection.RemoteIpAddress = System.Net.IPAddress.Loopback;
+        var summary = netService.EvaluateAsync(ctxFacade).GetAwaiter().GetResult();
+        sw.Stop();
+        var pass25 = summary.OverallInconsistencyScore == 0.0f && !summary.HasInconsistency;
+        results.Add(new SelfTestResult(
+            "TC-25: Facade NetworkConsistencyService End-to-End (Score=0.0)",
+            pass25,
+            $"OverallScore={summary.OverallInconsistencyScore}, HasInconsistency={summary.HasInconsistency}",
+            sw.Elapsed.TotalMilliseconds * 1000.0));
+
+        // TC-26: Benchmark 50,000 Client Hints Validations (SLA < 10µs)
+        sw.Restart();
+        for (var i = 0; i < benchmarkCount; i++)
+        {
+            hintsValidator.Validate(ctxCh1);
+        }
+        sw.Stop();
+        var avgChBenchmarkUs = (sw.Elapsed.TotalMilliseconds * 1000.0) / benchmarkCount;
+        var pass26 = avgChBenchmarkUs < 10.0;
+        results.Add(new SelfTestResult(
+            $"TC-26: Benchmark {benchmarkCount:N0} Client Hints Validations (SLA < 10µs)",
+            pass26,
+            $"Completed in {sw.ElapsedMilliseconds}ms, Avg = {avgChBenchmarkUs:F4} µs/op",
+            avgChBenchmarkUs));
+
         var allPassed = results.All(r => r.Passed);
         var passedCount = results.Count(r => r.Passed);
+
+        var overallAvgBenchmarkUs = (avgH2BenchmarkUs + avgChBenchmarkUs) / 2.0;
 
         return new SelfTestSuiteReport(
             allPassed,
             results.Count,
             passedCount,
-            avgH2BenchmarkUs,
+            overallAvgBenchmarkUs,
             results);
     }
 }
