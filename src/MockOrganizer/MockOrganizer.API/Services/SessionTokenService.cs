@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.Configuration;
+using MockOrganizer.API.Models;
 
 namespace MockOrganizer.API.Services;
 
@@ -23,6 +24,29 @@ public class SessionTokenService : ISessionTokenService
         var epochMs = now.ToUnixTimeMilliseconds();
         var sessionId = Guid.NewGuid();
         var payload = $"{sessionId:N}:{tierId:D}:{epochMs}";
+        return SignPayload(payload);
+    }
+
+    public (string Token, string Nonce, DateTimeOffset IssuedAt, int ExpiresInSeconds) GenerateSessionTokenWithNonce(
+        Guid tierId,
+        DateTimeOffset? issuedAt = null,
+        int expiresInSeconds = 300)
+    {
+        var now = issuedAt ?? _clock.GetUtcNow();
+        var epochMs = now.ToUnixTimeMilliseconds();
+        var sessionId = Guid.NewGuid();
+
+        var nonceBytes = RandomNumberGenerator.GetBytes(16);
+        var nonce = Convert.ToHexString(nonceBytes).ToLowerInvariant();
+
+        var payload = $"{sessionId:N}:{tierId:D}:{epochMs}:{nonce}";
+        var token = SignPayload(payload);
+
+        return (token, nonce, now, expiresInSeconds);
+    }
+
+    private string SignPayload(string payload)
+    {
         var payloadBytes = Encoding.UTF8.GetBytes(payload);
         var payloadBase64 = Convert.ToBase64String(payloadBytes)
             .TrimEnd('=').Replace('+', '-').Replace('/', '_');
@@ -37,12 +61,18 @@ public class SessionTokenService : ISessionTokenService
 
     public (bool IsValid, DateTimeOffset IssuedAt, Guid TierId) ValidateSessionToken(string? token)
     {
+        var result = ValidateSessionTokenV2(token);
+        return (result.IsValid, result.IssuedAt, result.TierId);
+    }
+
+    public SessionTokenValidationResult ValidateSessionTokenV2(string? token)
+    {
         if (string.IsNullOrWhiteSpace(token))
-            return (false, DateTimeOffset.MinValue, Guid.Empty);
+            return SessionTokenValidationResult.Failed("Token is null or empty.");
 
         var parts = token.Split('.');
         if (parts.Length != 2)
-            return (false, DateTimeOffset.MinValue, Guid.Empty);
+            return SessionTokenValidationResult.Failed("Token format is invalid.");
 
         try
         {
@@ -56,36 +86,46 @@ public class SessionTokenService : ISessionTokenService
             var actualSignature = Convert.FromBase64String(actualSignatureBase64);
 
             if (!CryptographicOperations.FixedTimeEquals(expectedSignature, actualSignature))
-                return (false, DateTimeOffset.MinValue, Guid.Empty);
+                return SessionTokenValidationResult.Failed("HMAC signature mismatch.");
 
             var payload = Encoding.UTF8.GetString(payloadBytes);
             var segments = payload.Split(':');
-            if (segments.Length != 3)
-                return (false, DateTimeOffset.MinValue, Guid.Empty);
+
+            // Hỗ trợ cả v1 (3 segments) và v2 (4 segments kèm Nonce)
+            if (segments.Length != 3 && segments.Length != 4)
+                return SessionTokenValidationResult.Failed($"Invalid payload segments count: {segments.Length}");
 
             if (!Guid.TryParse(segments[0], out _) ||
                 !Guid.TryParse(segments[1], out var tierId) ||
                 !long.TryParse(segments[2], out var epochMs))
             {
-                return (false, DateTimeOffset.MinValue, Guid.Empty);
+                return SessionTokenValidationResult.Failed("Failed to parse token payload values.");
+            }
+
+            string? nonce = null;
+            var tokenVersion = 1;
+            if (segments.Length == 4)
+            {
+                nonce = segments[3];
+                tokenVersion = 2;
             }
 
             var issuedAt = DateTimeOffset.FromUnixTimeMilliseconds(epochMs);
             var now = _clock.GetUtcNow();
 
-            // Chặn token trong tương lai (cho phép dung sai clock skew 5 giây)
-            if (issuedAt > now.AddSeconds(5))
-                return (false, DateTimeOffset.MinValue, Guid.Empty);
+            // Dung sai lệch đồng hồ client-server (Clock skew tolerance 15 giây)
+            if (issuedAt > now.AddSeconds(15))
+                return SessionTokenValidationResult.Failed("Token issued in the future (clock skew exceeded 15s).");
 
-            // Chặn token quá hạn (ví dụ quá 2 giờ)
-            if (now - issuedAt > TimeSpan.FromHours(2))
-                return (false, DateTimeOffset.MinValue, Guid.Empty);
+            var maxTtl = tokenVersion == 2 ? TimeSpan.FromSeconds(300) : TimeSpan.FromHours(2);
+            if (now - issuedAt > maxTtl)
+                return SessionTokenValidationResult.Failed($"Token expired (exceeded max TTL of {maxTtl.TotalSeconds}s).");
 
-            return (true, issuedAt, tierId);
+            return SessionTokenValidationResult.Success(issuedAt, tierId, nonce, tokenVersion);
         }
-        catch
+        catch (Exception ex)
         {
-            return (false, DateTimeOffset.MinValue, Guid.Empty);
+            return SessionTokenValidationResult.Failed($"Validation exception: {ex.Message}");
         }
     }
 
