@@ -122,12 +122,26 @@ public class AntiBotCheckoutGuardMiddleware(
 
             context.Request.EnableBuffering();
 
+            // Nhận diện chế độ Data Collection phục vụ huấn luyện mô hình v2.0 (US-13.3, ML-13.3.1)
+            var isDataCollectionMode = context.Request.Headers.TryGetValue("X-Data-Collection-Mode", out var dcmVal) &&
+                (string.Equals(dcmVal, "true", StringComparison.OrdinalIgnoreCase) || dcmVal == "1");
+
+            int collectionStatusCode = StatusCodes.Status200OK;
+            string? collectionErrorCode = null;
+            string? collectionErrorMessage = null;
+
             string? sessionToken = null;
             string? buyerEmail = null;
             Guid? payloadTierId = null;
             string? deviceFingerprint = null;
             float? actionInterval = null;
             float? isWebdriver = null;
+            float? virtualGpuDetected = null;
+            float? prototypeTampered = null;
+            float? canvasTampered = null;
+            string? canvasHash = null;
+            string? webglRenderer = null;
+            string? webglVendor = null;
             string? clientNonce = null;
             long? clientTimestamp = null;
             string? clientUserAgent = null;
@@ -191,6 +205,33 @@ public class AntiBotCheckoutGuardMiddleware(
                             clientUserAgent = cua.GetString();
                         }
 
+                        if (te.TryGetProperty("virtual_gpu_detected", out var vgd) || te.TryGetProperty("virtualGpuDetected", out vgd))
+                        {
+                            if (vgd.TryGetSingle(out var vgdVal))
+                                virtualGpuDetected = vgdVal;
+                        }
+
+                        if (te.TryGetProperty("prototype_tampered", out var pt) || te.TryGetProperty("prototypeTampered", out pt))
+                        {
+                            if (pt.TryGetSingle(out var ptVal))
+                                prototypeTampered = ptVal;
+                        }
+
+                        if (te.TryGetProperty("canvas_tampered", out var cat) || te.TryGetProperty("canvasTampered", out cat))
+                        {
+                            if (cat.TryGetSingle(out var catVal))
+                                canvasTampered = catVal;
+                        }
+
+                        if (te.TryGetProperty("canvas_hash", out var ch) || te.TryGetProperty("canvasHash", out ch))
+                            canvasHash = ch.GetString();
+
+                        if (te.TryGetProperty("webgl_renderer", out var wr) || te.TryGetProperty("webglRenderer", out wr))
+                            webglRenderer = wr.GetString();
+
+                        if (te.TryGetProperty("webgl_vendor", out var wv) || te.TryGetProperty("webglVendor", out wv))
+                            webglVendor = wv.GetString();
+
                         if (string.IsNullOrWhiteSpace(deviceFingerprint))
                         {
                             if (te.TryGetProperty("device_fingerprint", out var tdf) || te.TryGetProperty("deviceFingerprint", out tdf))
@@ -224,114 +265,158 @@ public class AntiBotCheckoutGuardMiddleware(
                 if (!tokenResult.IsValid)
                 {
                     logger.LogWarning("AntiBot Gateway: REJECTED invalid session token. Reason={Reason}", tokenResult.FailureReason);
-                    context.Response.StatusCode = StatusCodes.Status403Forbidden;
-                    context.Response.ContentType = "application/json";
-                    await context.Response.WriteAsJsonAsync(new
+                    if (!isDataCollectionMode)
                     {
-                        message = $"Invalid session token: {tokenResult.FailureReason}",
-                        code = "InvalidSessionToken"
-                    });
-                    return;
-                }
-
-                // Kiểm tra khớp hạng vé nếu request có truyền tierId
-                var requestTierId = payloadTierId ?? Guid.Empty;
-                if (requestTierId != Guid.Empty && tokenResult.TierId != Guid.Empty && tokenResult.TierId != requestTierId)
-                {
-                    logger.LogWarning("AntiBot Gateway: REJECTED Tier Mismatch. Token Tier={TokenTier}, Request Tier={ReqTier}",
-                        tokenResult.TierId, requestTierId);
-                    context.Response.StatusCode = StatusCodes.Status403Forbidden;
-                    context.Response.ContentType = "application/json";
-                    await context.Response.WriteAsJsonAsync(new
-                    {
-                        message = "Session token was issued for a different ticket tier.",
-                        code = "TierMismatch"
-                    });
-                    return;
-                }
-
-                // Nếu là Token v2 (có nhúng One-Time Nonce):
-                if (tokenResult.TokenVersion == 2 && !string.IsNullOrWhiteSpace(tokenResult.Nonce))
-                {
-                    // a) Đối chiếu Telemetry Nonce vs Token Nonce
-                    if (!string.Equals(clientNonce, tokenResult.Nonce, StringComparison.Ordinal))
-                    {
-                        logger.LogWarning("AntiBot Gateway: REJECTED Nonce Mismatch! Token Nonce={TokenNonce}, Telemetry Nonce={TelemetryNonce}",
-                            tokenResult.Nonce, clientNonce);
                         context.Response.StatusCode = StatusCodes.Status403Forbidden;
                         context.Response.ContentType = "application/json";
                         await context.Response.WriteAsJsonAsync(new
                         {
-                            message = "Cryptographic Nonce mismatch between Session Token and Telemetry payload.",
-                            code = "NonceMismatch"
+                            message = $"Invalid session token: {tokenResult.FailureReason}",
+                            code = "InvalidSessionToken"
                         });
                         return;
                     }
-
-                    // b) Kiểm tra Clock Skew (dung sai ±15s)
-                    if (clientTimestamp.HasValue)
+                    collectionStatusCode = StatusCodes.Status403Forbidden;
+                    collectionErrorCode ??= "InvalidSessionToken";
+                    collectionErrorMessage ??= $"Invalid session token: {tokenResult.FailureReason}";
+                }
+                else
+                {
+                    // Kiểm tra khớp hạng vé nếu request có truyền tierId
+                    var requestTierId = payloadTierId ?? Guid.Empty;
+                    if (requestTierId != Guid.Empty && tokenResult.TierId != Guid.Empty && tokenResult.TierId != requestTierId)
                     {
-                        var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-                        var skewMs = Math.Abs(nowMs - clientTimestamp.Value);
-                        if (skewMs > 15_000)
+                        logger.LogWarning("AntiBot Gateway: REJECTED Tier Mismatch. Token Tier={TokenTier}, Request Tier={ReqTier}",
+                            tokenResult.TierId, requestTierId);
+                        if (!isDataCollectionMode)
                         {
-                            logger.LogWarning("AntiBot Gateway: REJECTED Clock Skew anomaly. Skew={SkewMs}ms (Allowed: ±15000ms)", skewMs);
                             context.Response.StatusCode = StatusCodes.Status403Forbidden;
                             context.Response.ContentType = "application/json";
                             await context.Response.WriteAsJsonAsync(new
                             {
-                                message = "Client timestamp is outside the allowed window (±15s).",
-                                code = "ClockSkew"
+                                message = "Session token was issued for a different ticket tier.",
+                                code = "TierMismatch"
                             });
                             return;
                         }
+                        collectionStatusCode = StatusCodes.Status403Forbidden;
+                        collectionErrorCode ??= "TierMismatch";
+                        collectionErrorMessage ??= "Session token was issued for a different ticket tier.";
                     }
 
-                    // c) Tiêu thụ Nonce nguyên tử chống Replay (Atomic Check-and-Consume)
-                    var consumption = await nonceService.ValidateAndConsumeNonceAsync(tokenResult.Nonce, tokenResult.TierId, context.RequestAborted);
-                    if (consumption.IsReplay)
+                    // Nếu là Token v2 (có nhúng One-Time Nonce):
+                    if (tokenResult.TokenVersion == 2 && !string.IsNullOrWhiteSpace(tokenResult.Nonce))
                     {
-                        logger.LogWarning("AntiBot Gateway: REPLAY ATTACK BLOCKED! Nonce {Nonce} already consumed.", tokenResult.Nonce);
-                        context.Response.StatusCode = StatusCodes.Status429TooManyRequests;
-                        context.Response.ContentType = "application/json";
-                        await context.Response.WriteAsJsonAsync(new
+                        // a) Đối chiếu Telemetry Nonce vs Token Nonce
+                        if (!string.Equals(clientNonce, tokenResult.Nonce, StringComparison.Ordinal))
                         {
-                            message = "This checkout request has already been submitted (Replay Attack Blocked).",
-                            code = "ReplayBlocked",
-                            decision = "Block"
-                        });
-                        return;
-                    }
+                            logger.LogWarning("AntiBot Gateway: REJECTED Nonce Mismatch! Token Nonce={TokenNonce}, Telemetry Nonce={TelemetryNonce}",
+                                tokenResult.Nonce, clientNonce);
+                            if (!isDataCollectionMode)
+                            {
+                                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                                context.Response.ContentType = "application/json";
+                                await context.Response.WriteAsJsonAsync(new
+                                {
+                                    message = "Cryptographic Nonce mismatch between Session Token and Telemetry payload.",
+                                    code = "NonceMismatch"
+                                });
+                                return;
+                            }
+                            collectionStatusCode = StatusCodes.Status403Forbidden;
+                            collectionErrorCode ??= "NonceMismatch";
+                            collectionErrorMessage ??= "Cryptographic Nonce mismatch between Session Token and Telemetry payload.";
+                        }
 
-                    if (consumption.IsExpired)
-                    {
-                        logger.LogWarning("AntiBot Gateway: REJECTED Nonce Expired for {Nonce}.", tokenResult.Nonce);
-                        context.Response.StatusCode = StatusCodes.Status403Forbidden;
-                        context.Response.ContentType = "application/json";
-                        await context.Response.WriteAsJsonAsync(new
+                        // b) Kiểm tra Clock Skew (dung sai ±15s)
+                        if (clientTimestamp.HasValue)
                         {
-                            message = "One-time session nonce has expired or does not exist.",
-                            code = "NonceExpired"
-                        });
-                        return;
-                    }
+                            var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                            var skewMs = Math.Abs(nowMs - clientTimestamp.Value);
+                            if (skewMs > 15_000)
+                            {
+                                logger.LogWarning("AntiBot Gateway: REJECTED Clock Skew anomaly. Skew={SkewMs}ms (Allowed: ±15000ms)", skewMs);
+                                if (!isDataCollectionMode)
+                                {
+                                    context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                                    context.Response.ContentType = "application/json";
+                                    await context.Response.WriteAsJsonAsync(new
+                                    {
+                                        message = "Client timestamp is outside the allowed window (±15s).",
+                                        code = "ClockSkew"
+                                    });
+                                    return;
+                                }
+                                collectionStatusCode = StatusCodes.Status403Forbidden;
+                                collectionErrorCode ??= "ClockSkew";
+                                collectionErrorMessage ??= "Client timestamp is outside the allowed window (±15s).";
+                            }
+                        }
 
-                    if (!consumption.IsSuccess)
-                    {
-                        logger.LogWarning("AntiBot Gateway: REJECTED Nonce validation failed: {Msg}", consumption.Message);
-                        context.Response.StatusCode = StatusCodes.Status403Forbidden;
-                        context.Response.ContentType = "application/json";
-                        await context.Response.WriteAsJsonAsync(new
+                        // c) Tiêu thụ Nonce nguyên tử chống Replay (Atomic Check-and-Consume)
+                        var consumption = await nonceService.ValidateAndConsumeNonceAsync(tokenResult.Nonce, tokenResult.TierId, context.RequestAborted);
+                        if (consumption.IsReplay)
                         {
-                            message = consumption.Message,
-                            code = "NonceInvalid"
-                        });
-                        return;
+                            logger.LogWarning("AntiBot Gateway: REPLAY ATTACK BLOCKED! Nonce {Nonce} already consumed.", tokenResult.Nonce);
+                            if (!isDataCollectionMode)
+                            {
+                                context.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+                                context.Response.ContentType = "application/json";
+                                await context.Response.WriteAsJsonAsync(new
+                                {
+                                    message = "This checkout request has already been submitted (Replay Attack Blocked).",
+                                    code = "ReplayBlocked",
+                                    decision = "Block"
+                                });
+                                return;
+                            }
+                            collectionStatusCode = StatusCodes.Status429TooManyRequests;
+                            collectionErrorCode ??= "ReplayBlocked";
+                            collectionErrorMessage ??= "This checkout request has already been submitted (Replay Attack Blocked).";
+                        }
+                        else if (consumption.IsExpired)
+                        {
+                            logger.LogWarning("AntiBot Gateway: REJECTED Nonce Expired for {Nonce}.", tokenResult.Nonce);
+                            if (!isDataCollectionMode)
+                            {
+                                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                                context.Response.ContentType = "application/json";
+                                await context.Response.WriteAsJsonAsync(new
+                                {
+                                    message = "One-time session nonce has expired or does not exist.",
+                                    code = "NonceExpired"
+                                });
+                                return;
+                            }
+                            collectionStatusCode = StatusCodes.Status403Forbidden;
+                            collectionErrorCode ??= "NonceExpired";
+                            collectionErrorMessage ??= "One-time session nonce has expired or does not exist.";
+                        }
+                        else if (!consumption.IsSuccess)
+                        {
+                            logger.LogWarning("AntiBot Gateway: REJECTED Nonce validation failed: {Msg}", consumption.Message);
+                            if (!isDataCollectionMode)
+                            {
+                                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                                context.Response.ContentType = "application/json";
+                                await context.Response.WriteAsJsonAsync(new
+                                {
+                                    message = consumption.Message,
+                                    code = "NonceInvalid"
+                                });
+                                return;
+                            }
+                            collectionStatusCode = StatusCodes.Status403Forbidden;
+                            collectionErrorCode ??= "NonceInvalid";
+                            collectionErrorMessage ??= consumption.Message;
+                        }
+                        else
+                        {
+                            // Nonce hợp lệ và đã tiêu thụ thành công -> Gắn header chuyển tiếp sang MockOrganizer
+                            context.Request.Headers["X-AntiBot-Nonce-Verified"] = "True";
+                            context.Request.Headers["X-AntiBot-Nonce"] = tokenResult.Nonce;
+                        }
                     }
-
-                    // Nonce hợp lệ và đã tiêu thụ thành công -> Gắn header chuyển tiếp sang MockOrganizer
-                    context.Request.Headers["X-AntiBot-Nonce-Verified"] = "True";
-                    context.Request.Headers["X-AntiBot-Nonce"] = tokenResult.Nonce;
                 }
             }
 
@@ -349,18 +434,24 @@ public class AntiBotCheckoutGuardMiddleware(
                     "AntiBot Gateway: BLATANT UA MISMATCH BLOCKED! Reason={Reason}, ClientPlat={CP}, HeaderPlat={HP}, ClientBrowser={CB}, HeaderBrowser={HB}",
                     uaResult.Reason, uaResult.ClientPlatform, uaResult.HeaderPlatform, uaResult.ClientBrowser, uaResult.HeaderBrowser);
 
-                context.Response.StatusCode = StatusCodes.Status403Forbidden;
-                context.Response.ContentType = "application/json";
-                await context.Response.WriteAsJsonAsync(new
+                if (!isDataCollectionMode)
                 {
-                    message = $"User-Agent Impersonation detected: {uaResult.Reason}",
-                    code = "UserAgentMismatch",
-                    decision = "Block"
-                });
-                return;
+                    context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                    context.Response.ContentType = "application/json";
+                    await context.Response.WriteAsJsonAsync(new
+                    {
+                        message = $"User-Agent Impersonation detected: {uaResult.Reason}",
+                        code = "UserAgentMismatch",
+                        decision = "Block"
+                    });
+                    return;
+                }
+                collectionStatusCode = StatusCodes.Status403Forbidden;
+                collectionErrorCode ??= "UserAgentMismatch";
+                collectionErrorMessage ??= $"User-Agent Impersonation detected: {uaResult.Reason}";
+                isWebdriver = 1.0f;
             }
-
-            if (!uaResult.IsConsistent)
+            else if (!uaResult.IsConsistent)
             {
                 logger.LogInformation(
                     "AntiBot Gateway: Flagged UA Mismatch anomaly. Reason={Reason}",
@@ -394,6 +485,79 @@ public class AntiBotCheckoutGuardMiddleware(
                 actionInterval,
                 isWebdriver,
                 context.RequestAborted);
+
+            // =========================================================================
+            // CHẾ ĐỘ THU THẬP DỮ LIỆU ĐỐI KHÁNG (US-13.3, ML-13.3.1 DataCollectionMode)
+            // =========================================================================
+            if (isDataCollectionMode)
+            {
+                var effectiveStatusCode = collectionStatusCode != StatusCodes.Status200OK
+                    ? collectionStatusCode
+                    : guardResult.Decision switch
+                    {
+                        AntiBotDecision.Block => StatusCodes.Status429TooManyRequests,
+                        AntiBotDecision.Challenge => StatusCodes.Status403Forbidden,
+                        _ => StatusCodes.Status200OK
+                    };
+
+                var debugVector = new AntiBotDebugVectorDto
+                {
+                    TimeToCheckout = guardResult.Vector?.TimeToCheckout ?? -1.0f,
+                    ActionIntervalStdDev = guardResult.Vector?.ActionIntervalStdDev ?? -1.0f,
+                    BurstRate10s = guardResult.Vector?.BurstRate10s ?? 1.0f,
+                    ConcurrentHold = guardResult.Vector?.ConcurrentHold ?? 0.0f,
+                    IsWebDriver = guardResult.Vector?.IsWebDriver ?? -1.0f,
+                    DeviceAccountOverlap = guardResult.Vector?.DeviceAccountOverlap ?? -1.0f,
+                    VirtualGpuDetected = virtualGpuDetected,
+                    PrototypeTampered = prototypeTampered,
+                    CanvasTampered = canvasTampered,
+                    CanvasHash = canvasHash,
+                    WebglRenderer = webglRenderer,
+                    WebglVendor = webglVendor,
+                    ClientUserAgent = clientUserAgent,
+                    HeaderUserAgent = headerUserAgent,
+                    DeviceFingerprint = deviceFingerprint,
+                    Nonce = clientNonce,
+                    ClientTimestamp = clientTimestamp,
+                    Ja4Fingerprint = networkSummary.Tls?.Ja4?.RawJa4,
+                    Http2Fingerprint = networkSummary.Http2?.Settings?.RawSettings ?? networkSummary.Http2?.PseudoHeaderOrder,
+                    UaMatchLevel = uaResult.MatchLevel.ToString(),
+                    UaMismatchReason = uaResult.Reason,
+                    NetworkInconsistencyScore = networkSummary.OverallInconsistencyScore,
+                    NetworkInconsistencyReason = networkSummary.PrimaryReason,
+                    RiskScore = guardResult.RiskScore,
+                    Decision = guardResult.Decision.ToString(),
+                    StatusCode = effectiveStatusCode,
+                    Reason = collectionErrorMessage ?? guardResult.Reason,
+                    ExecutionDurationMs = guardResult.ExecutionDurationMs,
+                    IsDataCollectionMode = true
+                };
+
+                var debugJson = JsonSerializer.Serialize(debugVector, JsonOptions);
+                context.Response.Headers["X-AntiBot-Debug-Vector"] = debugJson;
+
+                if (effectiveStatusCode != StatusCodes.Status200OK)
+                {
+                    context.Response.StatusCode = effectiveStatusCode;
+                    context.Response.ContentType = "application/json";
+                    await context.Response.WriteAsJsonAsync(new
+                    {
+                        message = collectionErrorMessage ?? (guardResult.Decision == AntiBotDecision.Block
+                            ? "Suspicious automated activity detected. Checkout blocked by TicketShield Perimeter Defense."
+                            : "Verification challenge required."),
+                        decision = guardResult.Decision.ToString(),
+                        riskScore = guardResult.RiskScore,
+                        code = collectionErrorCode ?? (guardResult.Decision == AntiBotDecision.Block ? "PerimeterDefenseBlocked" : "ChallengeRequired"),
+                        debugVector
+                    });
+                    return;
+                }
+
+                context.Request.Headers["X-AntiBot-Verified"] = "True";
+                context.Request.Headers["X-AntiBot-Score"] = guardResult.RiskScore.ToString("F4");
+                await next(context);
+                return;
+            }
 
             // 1. Block -> Trả về HTTP 429 Too Many Requests ngay tại Gateway (Bảo vệ BTC)
             if (guardResult.Decision == AntiBotDecision.Block)

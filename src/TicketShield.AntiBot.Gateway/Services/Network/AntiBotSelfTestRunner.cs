@@ -693,6 +693,60 @@ public static class AntiBotSelfTestRunner
                 pass39,
                 $"Status={ctx39.Response.StatusCode}, ConsistentHeader={ctx39.Request.Headers["X-AntiBot-UA-Consistent"]}",
                 sw.Elapsed.TotalMilliseconds * 1000.0));
+
+            // =========================================================================
+            // ML-13.3.1: DATA COLLECTION MODE TESTS
+            // =========================================================================
+
+            // TC-41: Data Collection Mode - Blatant OS Mismatch (HTTP 403 with X-AntiBot-Debug-Vector)
+            sw.Restart();
+            var (token41, nonce41, _, _) = tokenService.GenerateSessionTokenWithNonce(tierId, null, 300);
+            nonceService.RegisterNonceAsync(nonce41, tierId, TimeSpan.FromMinutes(5)).GetAwaiter().GetResult();
+            var ctx41 = CreateCheckoutContext(
+                token41,
+                nonce41,
+                tierId,
+                DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                userAgent: linuxHeaderUa,
+                clientUserAgent: ChromeUa);
+            ctx41.Request.Headers["X-Data-Collection-Mode"] = "True";
+            middleware.InvokeAsync(ctx41, dummyGuard, networkService, tokenService, nonceService, uaValidator).GetAwaiter().GetResult();
+            sw.Stop();
+            var hasDebugVector41 = ctx41.Response.Headers.ContainsKey("X-AntiBot-Debug-Vector");
+            var debugVectorStr41 = ctx41.Response.Headers["X-AntiBot-Debug-Vector"].ToString();
+            var pass41 = ctx41.Response.StatusCode == StatusCodes.Status403Forbidden
+                         && hasDebugVector41
+                         && debugVectorStr41.Contains("\"ua_match_level\":\"BlatantMismatch\"");
+            results.Add(new SelfTestResult(
+                "TC-41: Data Collection Mode - Blatant OS Mismatch with Debug Vector Header",
+                pass41,
+                $"Status={ctx41.Response.StatusCode}, HasDebugHeader={hasDebugVector41}",
+                sw.Elapsed.TotalMilliseconds * 1000.0));
+
+            // TC-42: Data Collection Mode - Consistent Chrome Windows (HTTP 200 with X-AntiBot-Debug-Vector)
+            sw.Restart();
+            var (token42, nonce42, _, _) = tokenService.GenerateSessionTokenWithNonce(tierId, null, 300);
+            nonceService.RegisterNonceAsync(nonce42, tierId, TimeSpan.FromMinutes(5)).GetAwaiter().GetResult();
+            var ctx42 = CreateCheckoutContext(
+                token42,
+                nonce42,
+                tierId,
+                DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                userAgent: ChromeUa,
+                clientUserAgent: ChromeUa);
+            ctx42.Request.Headers["X-Data-Collection-Mode"] = "True";
+            middleware.InvokeAsync(ctx42, dummyGuard, networkService, tokenService, nonceService, uaValidator).GetAwaiter().GetResult();
+            sw.Stop();
+            var hasDebugVector42 = ctx42.Response.Headers.ContainsKey("X-AntiBot-Debug-Vector");
+            var debugVectorStr42 = ctx42.Response.Headers["X-AntiBot-Debug-Vector"].ToString();
+            var pass42 = ctx42.Response.StatusCode == StatusCodes.Status200OK
+                         && hasDebugVector42
+                         && debugVectorStr42.Contains("\"ua_match_level\":\"ExactMatch\"");
+            results.Add(new SelfTestResult(
+                "TC-42: Data Collection Mode - Consistent Chrome Windows with Debug Vector Header",
+                pass42,
+                $"Status={ctx42.Response.StatusCode}, HasDebugHeader={hasDebugVector42}",
+                sw.Elapsed.TotalMilliseconds * 1000.0));
         }
 
         // TC-40: Benchmark 50,000 UA Cross-Validations (SLA < 10µs)
@@ -781,7 +835,12 @@ public static class AntiBotSelfTestRunner
                 Decision = AntiBotDecision.Allow,
                 ExecutionDurationMs = 1.0,
                 IsFailOpen = false,
-                Reason = "SelfTest Mock Allow"
+                Reason = "SelfTest Mock Allow",
+                Vector = new BotRiskVector
+                {
+                    IsWebDriver = isWebdriver ?? -1.0f,
+                    ActionIntervalStdDev = actionIntervalStdDev ?? -1.0f
+                }
             });
         }
     }
