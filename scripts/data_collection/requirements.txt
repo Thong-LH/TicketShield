@@ -1,0 +1,16 @@
+# =========================================================================
+# TicketShield Adversarial Attack Dataset Collection Suite (US-13.3, ML-13.3.1)
+# =========================================================================
+
+# Core Data Collection & Storage
+requests>=2.31.0
+pandas>=2.2.0
+tqdm>=4.66.0
+
+# Optional Parquet Fast Engine (Falls back to CSV if pyarrow not installed)
+# pyarrow>=17.0.0
+
+# Real Bot Automation Engines (Dùng cho live browser automation bên ngoài sandbox)
+playwright>=1.48.0
+undetected-chromedriver>=3.5.5
+curl_cffi>=0.7.3
