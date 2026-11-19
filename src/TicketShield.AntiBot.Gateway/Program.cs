@@ -97,6 +97,7 @@ builder.Services.AddSingleton<IHttp2ConsistencyService, Http2ConsistencyService>
 builder.Services.AddSingleton<IClientHintsValidator, ClientHintsValidator>();
 builder.Services.AddSingleton<ISubnetCorrelationTracker, SubnetCorrelationTracker>();
 builder.Services.AddSingleton<INetworkConsistencyService, NetworkConsistencyService>();
+builder.Services.AddSingleton<IUserAgentCrossValidator, UserAgentCrossValidator>();
 
 // 5. YARP Reverse Proxy
 builder.Services.AddReverseProxy()
