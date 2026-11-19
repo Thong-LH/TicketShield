@@ -50,12 +50,13 @@ public record ClientTelemetryDto
 }
 
 /// <summary>
-/// DTO phản hồi khi client yêu cầu cấp session token mới trước khi checkout.
+/// DTO phản hồi khi client yêu cầu cấp session token mới trước khi checkout (US-13.2.3, SCRUM-376).
 /// </summary>
 public record SessionTokenResponse(
     string SessionToken,
     Guid TierId,
     DateTimeOffset IssuedAtUtc,
-    int ExpiresInSeconds
+    int ExpiresInSeconds,
+    string? Nonce = null
 );
 

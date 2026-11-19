@@ -122,43 +122,53 @@ app.MapGet("/health", (
     });
 });
 
-// Endpoint cấp phát Session Token độc lập tại Gateway (SCRUM-272)
-app.MapGet("/api/organizer/orders/session", (
+// Endpoint cấp phát Session Token độc lập tại Gateway (SCRUM-272 & US-13.2.3)
+app.MapGet("/api/organizer/orders/session", async (
     [FromQuery] Guid tierId,
-    [FromServices] ISessionTokenService tokenService) =>
+    [FromServices] ISessionTokenService tokenService,
+    [FromServices] INonceValidationService nonceService) =>
 {
     if (tierId == Guid.Empty)
         return Results.BadRequest(new { message = "TierId must not be empty." });
 
     var now = DateTimeOffset.UtcNow;
-    var token = tokenService.GenerateSessionToken(tierId, now);
+    var (token, nonce, issuedAt, expiresInSeconds) = tokenService.GenerateSessionTokenWithNonce(tierId, now, 300);
+
+    // Đăng ký Nonce nguyên tử vào Store (Redis + In-Memory Fallback, TTL 300s)
+    await nonceService.RegisterNonceAsync(nonce, tierId, TimeSpan.FromSeconds(expiresInSeconds));
 
     return Results.Ok(new
     {
         sessionToken = token,
         tierId = tierId,
-        issuedAtUtc = now,
-        expiresInSeconds = 7200
+        nonce = nonce,
+        issuedAtUtc = issuedAt,
+        expiresInSeconds = expiresInSeconds
     });
 });
 
 // Endpoint cấp phát Session Token chuẩn REST v1
-app.MapPost("/api/v1/antibot/session", (
+app.MapPost("/api/v1/antibot/session", async (
     [FromBody] SessionRequestDto request,
-    [FromServices] ISessionTokenService tokenService) =>
+    [FromServices] ISessionTokenService tokenService,
+    [FromServices] INonceValidationService nonceService) =>
 {
     if (request.TierId == Guid.Empty)
         return Results.BadRequest(new { message = "TierId must not be empty." });
 
     var now = DateTimeOffset.UtcNow;
-    var token = tokenService.GenerateSessionToken(request.TierId, now);
+    var (token, nonce, issuedAt, expiresInSeconds) = tokenService.GenerateSessionTokenWithNonce(request.TierId, now, 300);
+
+    // Đăng ký Nonce nguyên tử vào Store (Redis + In-Memory Fallback, TTL 300s)
+    await nonceService.RegisterNonceAsync(nonce, request.TierId, TimeSpan.FromSeconds(expiresInSeconds));
 
     return Results.Ok(new
     {
         sessionToken = token,
         tierId = request.TierId,
-        issuedAtUtc = now,
-        expiresInSeconds = 7200
+        nonce = nonce,
+        issuedAtUtc = issuedAt,
+        expiresInSeconds = expiresInSeconds
     });
 });
 

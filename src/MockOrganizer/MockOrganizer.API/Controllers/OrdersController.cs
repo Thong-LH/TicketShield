@@ -38,12 +38,13 @@ public class OrdersController(
             return BadRequest(new { message = "TierId must not be empty." });
 
         var now = _clock.GetUtcNow();
-        var token = sessionTokenService.GenerateSessionToken(tierId, now);
+        var (token, nonce, issuedAt, expiresInSeconds) = sessionTokenService.GenerateSessionTokenWithNonce(tierId, now, 300);
         return Ok(new SessionTokenResponse(
             SessionToken: token,
             TierId: tierId,
-            IssuedAtUtc: now,
-            ExpiresInSeconds: 7200
+            IssuedAtUtc: issuedAt,
+            ExpiresInSeconds: expiresInSeconds,
+            Nonce: nonce
         ));
     }
 
