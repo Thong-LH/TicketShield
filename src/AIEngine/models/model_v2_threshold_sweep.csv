@@ -1,0 +1,20 @@
+threshold,total_samples,true_negatives,false_positives,false_negatives,true_positives,precision,recall,f1_score,false_positive_rate,false_negative_rate,action_recommendation
+0.05,400,200,0,0,200,1.0,1.0,1.0,0.0,0.0,Allow Zone
+0.1,400,200,0,0,200,1.0,1.0,1.0,0.0,0.0,Allow Zone
+0.15,400,200,0,0,200,1.0,1.0,1.0,0.0,0.0,Allow Zone
+0.2,400,200,0,0,200,1.0,1.0,1.0,0.0,0.0,Allow Zone
+0.25,400,200,0,0,200,1.0,1.0,1.0,0.0,0.0,Allow Zone
+0.3,400,200,0,0,200,1.0,1.0,1.0,0.0,0.0,Allow Zone
+0.35,400,200,0,0,200,1.0,1.0,1.0,0.0,0.0,Challenge Grey Zone
+0.4,400,200,0,0,200,1.0,1.0,1.0,0.0,0.0,Challenge Grey Zone
+0.45,400,200,0,0,200,1.0,1.0,1.0,0.0,0.0,Challenge Grey Zone
+0.5,400,200,0,0,200,1.0,1.0,1.0,0.0,0.0,Challenge Grey Zone
+0.55,400,200,0,0,200,1.0,1.0,1.0,0.0,0.0,Challenge Grey Zone
+0.6,400,200,0,0,200,1.0,1.0,1.0,0.0,0.0,Challenge Grey Zone
+0.65,400,200,0,0,200,1.0,1.0,1.0,0.0,0.0,Challenge Grey Zone
+0.7,400,200,0,0,200,1.0,1.0,1.0,0.0,0.0,Challenge Grey Zone
+0.75,400,200,0,0,200,1.0,1.0,1.0,0.0,0.0,Block Zone
+0.8,400,200,0,0,200,1.0,1.0,1.0,0.0,0.0,Block Zone
+0.85,400,200,0,0,200,1.0,1.0,1.0,0.0,0.0,Block Zone
+0.9,400,200,0,0,200,1.0,1.0,1.0,0.0,0.0,Block Zone
+0.95,400,200,0,0,200,1.0,1.0,1.0,0.0,0.0,Block Zone
