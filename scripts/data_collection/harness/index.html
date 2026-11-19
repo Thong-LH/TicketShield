@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>TicketShield Anti-Bot Telemetry Harness</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; padding: 20px; }
+    h1 { color: #38bdf8; font-size: 1.25rem; }
+    #status { padding: 8px 12px; border-radius: 6px; background: #1e293b; display: inline-block; font-size: 0.9rem; }
+    #output { margin-top: 15px; background: #020617; color: #38bdf8; padding: 12px; border-radius: 6px; font-family: monospace; font-size: 0.85rem; max-height: 400px; overflow: auto; white-space: pre-wrap; }
+    .btn { background: #2563eb; color: #fff; border: none; padding: 8px 14px; border-radius: 6px; cursor: pointer; margin-right: 8px; }
+  </style>
+</head>
+<body>
+  <h1>🛡️ TicketShield Lightweight Telemetry Test Harness</h1>
+  <div id="status">Status: Ready (Loaded in <span id="loadTime">0</span>ms)</div>
+  <div style="margin-top: 15px;">
+    <button id="btnCollect" class="btn" onclick="triggerCollect()">Collect Telemetry</button>
+  </div>
+  <div id="output">Telemetry output will appear here...</div>
+
+  <script>
+    const startTime = performance.now();
+
+    // =========================================================================
+    // TICKETSHIELD ANTI-BOT TELEMETRY SDK (STANDALONE HARNESS BUNDLE)
+    // Synchronized faithfully with FE_CapstoneProject/apps/web/src/lib/anti-bot-sdk.ts
+    // =========================================================================
+
+    const isNativeFunction = (fn) => {
+      try {
+        if (typeof fn !== 'function') return false;
+        const str = Function.prototype.toString.call(fn);
+        return /\{\s*\[native code\]\s*\}/.test(str);
+      } catch {
+        return false;
+      }
+    };
+
+    const VIRTUAL_GPU_PATTERNS = [
+      /swiftshader/i,
+      /llvmpipe/i,
+      /virtualbox/i, /vbox/i,
+      /vmware/i, /svga3d/i,
+      /qemu/i,
+      /software rasterizer/i,
+      /basic render driver/i,
+      /microsoft basic render/i,
+    ];
+
+    const isVirtualGpu = (renderer, vendor) => {
+      const combined = `${vendor} ${renderer}`.toLowerCase();
+      return VIRTUAL_GPU_PATTERNS.some((pat) => pat.test(combined));
+    };
+
+    let cachedGpuInfo = null;
+    const extractWebGlGpuInfo = () => {
+      if (cachedGpuInfo) return cachedGpuInfo;
+      const fallback = {
+        virtual_gpu_detected: 0,
+        webgl_renderer: 'unavailable',
+        webgl_vendor: 'unavailable',
+        is_tampered: false,
+      };
+
+      try {
+        const canvas = document.createElement('canvas');
+        const gl = canvas.getContext('webgl2') || canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+        if (!gl) {
+          cachedGpuInfo = { ...fallback, webgl_renderer: 'disabled', webgl_vendor: 'disabled' };
+          return cachedGpuInfo;
+        }
+
+        const isTampered = !isNativeFunction(gl.getParameter);
+        const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+        let renderer = '';
+        let vendor = '';
+
+        if (debugInfo) {
+          vendor = String(gl.getParameter(debugInfo.UNMASKED_VENDOR_WEBGL) ?? '');
+          renderer = String(gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) ?? '');
+        } else {
+          vendor = String(gl.getParameter(gl.VENDOR) ?? 'masked');
+          renderer = String(gl.getParameter(gl.RENDERER) ?? 'masked');
+        }
+
+        gl.getExtension('WEBGL_lose_context')?.loseContext();
+        const isVirtual = isVirtualGpu(renderer, vendor);
+
+        cachedGpuInfo = {
+          virtual_gpu_detected: isVirtual ? 1 : 0,
+          webgl_renderer: renderer || 'unknown',
+          webgl_vendor: vendor || 'unknown',
+          is_tampered: isTampered,
+        };
+        return cachedGpuInfo;
+      } catch {
+        return fallback;
+      }
+    };
+
+    let cachedPrototypeResult = null;
+    const inspectWebdriverPrototype = () => {
+      if (cachedPrototypeResult) return cachedPrototypeResult;
+      const fallback = {
+        prototype_tampered: 0,
+        is_webdriver_effective: typeof navigator !== 'undefined' && navigator.webdriver === true ? 1 : 0,
+      };
+
+      try {
+        const ua = navigator.userAgent || '';
+        const isInAppWebView = /FBAN|FBAV|Instagram|Zalo|TikTok|Line|Snapchat/i.test(ua);
+        const isSafari = /Safari/i.test(ua) && !/Chrome|Chromium|Edg|CriOS|OPR/i.test(ua);
+
+        // Bẫy 1: Own Property Check
+        if (Object.prototype.hasOwnProperty.call(navigator, 'webdriver')) {
+          cachedPrototypeResult = {
+            prototype_tampered: 1,
+            is_webdriver_effective: 1,
+            reason: 'navigator.hasOwnProperty("webdriver") is true (own property injection)',
+          };
+          return cachedPrototypeResult;
+        }
+
+        const proto = Object.getPrototypeOf(navigator);
+        if (!proto) {
+          cachedPrototypeResult = fallback;
+          return cachedPrototypeResult;
+        }
+
+        const desc = Object.getOwnPropertyDescriptor(proto, 'webdriver');
+        if (!desc) {
+          // Safari / In-App WebView hợp lệ có thể không định nghĩa webdriver trên prototype
+          if (isInAppWebView || isSafari) {
+            cachedPrototypeResult = {
+              prototype_tampered: 0,
+              is_webdriver_effective: 0,
+              reason: 'webdriver descriptor not on prototype (exempted for In-App WebView / Safari)',
+            };
+            return cachedPrototypeResult;
+          }
+
+          cachedPrototypeResult = {
+            prototype_tampered: 1,
+            is_webdriver_effective: 1,
+            reason: 'webdriver descriptor missing from Navigator.prototype (deleted by bot stealth)',
+          };
+          return cachedPrototypeResult;
+        }
+
+        if (typeof desc.get !== 'function') {
+          cachedPrototypeResult = {
+            prototype_tampered: 1,
+            is_webdriver_effective: 1,
+            reason: 'webdriver descriptor does not have a getter function',
+          };
+          return cachedPrototypeResult;
+        }
+
+        if (!isNativeFunction(desc.get)) {
+          cachedPrototypeResult = {
+            prototype_tampered: 1,
+            is_webdriver_effective: 1,
+            reason: 'webdriver getter is not a native function (tampered with JS code)',
+          };
+          return cachedPrototypeResult;
+        }
+
+        if (desc.set !== undefined) {
+          cachedPrototypeResult = {
+            prototype_tampered: 1,
+            is_webdriver_effective: 1,
+            reason: 'webdriver descriptor has unexpected setter',
+          };
+          return cachedPrototypeResult;
+        }
+
+        if (desc.configurable === false || desc.enumerable === false) {
+          cachedPrototypeResult = {
+            prototype_tampered: 1,
+            is_webdriver_effective: 1,
+            reason: 'webdriver descriptor configurable/enumerable flags have been modified',
+          };
+          return cachedPrototypeResult;
+        }
+
+        cachedPrototypeResult = {
+          prototype_tampered: 0,
+          is_webdriver_effective: navigator.webdriver === true ? 1 : 0,
+        };
+        return cachedPrototypeResult;
+      } catch {
+        return fallback;
+      }
+    };
+
+    const fallbackHash128 = (str) => {
+      let h1 = 1779033703, h2 = 3144134277, h3 = 1013904242, h4 = 2773480762;
+      for (let i = 0, k; i < str.length; i++) {
+        k = str.charCodeAt(i);
+        h1 = h2 ^ Math.imul(h1 ^ k, 597399067);
+        h2 = h3 ^ Math.imul(h2 ^ k, 2869860233);
+        h3 = h4 ^ Math.imul(h3 ^ k, 951274213);
+        h4 = h1 ^ Math.imul(h4 ^ k, 2716044179);
+      }
+      h1 = Math.imul(h3 ^ (h1 >>> 18), 597399067);
+      h2 = Math.imul(h4 ^ (h2 >>> 22), 2869860233);
+      h3 = Math.imul(h1 ^ (h3 >>> 17), 951274213);
+      h4 = Math.imul(h2 ^ (h4 >>> 19), 2716044179);
+      return [h1 ^ h2 ^ h3 ^ h4, h2 ^ h1, h3 ^ h1, h4 ^ h1]
+        .map((h) => (h >>> 0).toString(16).padStart(8, '0'))
+        .join('');
+    };
+
+    let cachedCanvasResult = null;
+    const extractCanvasMicroEntropy = () => {
+      if (cachedCanvasResult) return cachedCanvasResult;
+      const fallback = { canvas_hash: 'unavailable', canvas_tampered: 0 };
+      try {
+        const isToDataUrlTampered = typeof HTMLCanvasElement !== 'undefined' && !isNativeFunction(HTMLCanvasElement.prototype.toDataURL);
+        const isGetImageDataTampered = typeof CanvasRenderingContext2D !== 'undefined' && !isNativeFunction(CanvasRenderingContext2D.prototype.getImageData);
+
+        const canvas = document.createElement('canvas');
+        canvas.width = 180;
+        canvas.height = 40;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          cachedCanvasResult = { canvas_hash: 'disabled', canvas_tampered: 0 };
+          return cachedCanvasResult;
+        }
+
+        const grad = ctx.createLinearGradient(0, 0, 180, 0);
+        grad.addColorStop(0, '#f38b00');
+        grad.addColorStop(1, '#e52d27');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, 180, 40);
+
+        ctx.textBaseline = 'top';
+        ctx.font = '14px "Arial", "Segoe UI", sans-serif';
+        ctx.fillStyle = '#069';
+        ctx.fillText('TicketShield 🎟️ 2026', 4, 4);
+
+        ctx.fillStyle = 'rgba(102, 204, 0, 0.7)';
+        ctx.fillText('AntiBot 🛡️ Micro-Entropy', 4, 20);
+
+        ctx.shadowBlur = 4;
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+        ctx.beginPath();
+        ctx.arc(160, 20, 12, 0, Math.PI * 2);
+        ctx.stroke();
+
+        const img1 = ctx.getImageData(0, 0, 180, 40).data;
+        const img2 = ctx.getImageData(0, 0, 180, 40).data;
+        let isNoisePoisoned = false;
+
+        for (let i = 0; i < img1.length; i += 16) {
+          if (img1[i] !== img2[i]) {
+            isNoisePoisoned = true;
+            break;
+          }
+        }
+
+        const dataUrl = canvas.toDataURL();
+        const canvasHash = fallbackHash128(dataUrl).slice(0, 32);
+
+        cachedCanvasResult = {
+          canvas_hash: canvasHash,
+          canvas_tampered: isToDataUrlTampered || isGetImageDataTampered || isNoisePoisoned ? 1 : 0,
+        };
+        return cachedCanvasResult;
+      } catch {
+        return fallback;
+      }
+    };
+
+    const toHex = (buf) => Array.from(buf, (b) => b.toString(16).padStart(2, '0')).join('');
+
+    const computeFingerprint = async () => {
+      const gpu = extractWebGlGpuInfo();
+      const parts = [
+        navigator.userAgent || 'unknown',
+        navigator.language || 'en',
+        navigator.platform || 'unknown',
+        String(navigator.hardwareConcurrency || ''),
+        typeof screen !== 'undefined' ? `${screen.width}x${screen.height}x${screen.colorDepth}` : '0x0x0',
+        Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+        gpu.webgl_vendor,
+        gpu.webgl_renderer,
+      ].join('|');
+
+      if (globalThis.crypto?.subtle) {
+        try {
+          const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(parts));
+          return toHex(new Uint8Array(digest)).slice(0, 32);
+        } catch {}
+      }
+      return fallbackHash128(parts).slice(0, 32);
+    };
+
+    const createNonce = () => {
+      if (typeof globalThis.crypto?.randomUUID === 'function') {
+        return crypto.randomUUID();
+      }
+      const bytes = crypto.getRandomValues(new Uint8Array(16));
+      bytes[6] = (bytes[6] & 0x0f) | 0x40;
+      bytes[8] = (bytes[8] & 0x3f) | 0x80;
+      const hex = toHex(bytes);
+      return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+    };
+
+    let actionTimestamps = [];
+    const recordAction = () => {
+      actionTimestamps.push(performance.now());
+      if (actionTimestamps.length > 21) actionTimestamps.shift();
+    };
+
+    const computeIntervalStdDev = (timestamps) => {
+      if (timestamps.length < 3) return undefined;
+      const intervals = [];
+      for (let i = 1; i < timestamps.length; i++) {
+        intervals.push(timestamps[i] - timestamps[i - 1]);
+      }
+      const mean = intervals.reduce((a, b) => a + b, 0) / intervals.length;
+      const variance = intervals.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / intervals.length;
+      return Math.round(Math.sqrt(variance) * 100) / 100;
+    };
+
+    // Tự động lắng nghe con trỏ chuột
+    document.addEventListener('pointerdown', recordAction, { capture: true, passive: true });
+
+    // =========================================================================
+    // HARNESS EXPOSED API (CHO PLAYWRIGHT / PUPPETEER / UC / PYTHON)
+    // =========================================================================
+
+    window.simulateClicks = (count = 5, meanIntervalMs = 12, stdDevMs = 2) => {
+      actionTimestamps = [];
+      let current = performance.now();
+      actionTimestamps.push(current);
+      for (let i = 1; i < count; i++) {
+        // Gaussian Box-Muller generator
+        const u1 = Math.random();
+        const u2 = Math.random();
+        const z0 = Math.sqrt(-2.0 * Math.log(u1)) * Math.cos(2.0 * Math.PI * u2);
+        const interval = Math.max(1, meanIntervalMs + z0 * stdDevMs);
+        current += interval;
+        actionTimestamps.push(current);
+      }
+      return computeIntervalStdDev(actionTimestamps);
+    };
+
+    window.collectTelemetry = async (options = {}) => {
+      const gpu = extractWebGlGpuInfo();
+      const proto = inspectWebdriverPrototype();
+      const canvas = extractCanvasMicroEntropy();
+      const fingerprint = await computeFingerprint();
+      const stdDev = options.action_interval_std_dev !== undefined
+        ? options.action_interval_std_dev
+        : computeIntervalStdDev(actionTimestamps);
+
+      const effectiveNonce = options.nonce && options.nonce.trim().length > 0
+        ? options.nonce.trim()
+        : createNonce();
+
+      const isWdEffective = proto.prototype_tampered === 1 || proto.is_webdriver_effective === 1
+        ? 1
+        : typeof navigator !== 'undefined' && navigator.webdriver === true
+          ? 1
+          : 0;
+
+      const telemetry = {
+        is_webdriver: isWdEffective,
+        virtual_gpu_detected: gpu.virtual_gpu_detected,
+        prototype_tampered: proto.prototype_tampered,
+        canvas_hash: canvas.canvas_hash,
+        canvas_tampered: canvas.canvas_tampered,
+        webgl_renderer: gpu.webgl_renderer,
+        webgl_vendor: gpu.webgl_vendor,
+        ...(stdDev !== undefined && { action_interval_std_dev: stdDev }),
+        device_fingerprint: fingerprint,
+        nonce: effectiveNonce,
+        client_timestamp: Date.now(),
+        client_user_agent: navigator.userAgent || '',
+      };
+
+      return telemetry;
+    };
+
+    window.submitCheckout = async (gatewayUrl = 'http://localhost:5006/api/organizer/orders/checkout', payload = {}) => {
+      const response = await fetch(gatewayUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Data-Collection-Mode': 'True',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const debugHeader = response.headers.get('X-AntiBot-Debug-Vector');
+      let bodyData = null;
+      try {
+        bodyData = await response.json();
+      } catch {}
+
+      return {
+        status: response.status,
+        headers: Object.fromEntries(response.headers.entries()),
+        debugVector: debugHeader ? JSON.parse(debugHeader) : (bodyData?.debugVector || null),
+        body: bodyData,
+      };
+    };
+
+    async function triggerCollect() {
+      const t = await window.collectTelemetry();
+      document.getElementById('output').textContent = JSON.stringify(t, null, 2);
+    }
+
+    const elapsed = Math.round(performance.now() - startTime);
+    document.getElementById('loadTime').textContent = elapsed;
+    console.log(`[Harness] Initialized in ${elapsed}ms`);
+  </script>
+</body>
+</html>
