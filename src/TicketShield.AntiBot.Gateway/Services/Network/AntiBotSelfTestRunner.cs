@@ -38,7 +38,8 @@ public static class AntiBotSelfTestRunner
         INetworkConsistencyService? networkService = null,
         INonceValidationService? nonceService = null,
         ISessionTokenService? tokenService = null,
-        IUserAgentCrossValidator? uaValidator = null)
+        IUserAgentCrossValidator? uaValidator = null,
+        IAntiBotScoringService? scoringService = null)
     {
         var results = new List<SelfTestResult>();
         var sw = new Stopwatch();
@@ -765,10 +766,142 @@ public static class AntiBotSelfTestRunner
             $"Completed in {sw.ElapsedMilliseconds}ms, Avg = {avgUaBenchmarkUs:F4} µs/op",
             avgUaBenchmarkUs));
 
+        // =========================================================================
+        // ML-13.3.3 / ML-13.3.5: AI MODEL v2.0 & SHADOW MODE EVALUATION
+        // =========================================================================
+        double avgV2BenchmarkUs = 0.0;
+        if (scoringService != null)
+        {
+            // TC-43: Model v2.0 ONNX Initialization & SHA-256 Hash Verification
+            sw.Restart();
+            var isReady43 = scoringService.IsModelV2Ready;
+            var hash43 = scoringService.ModelV2Sha256;
+            sw.Stop();
+            var pass43 = isReady43 && !string.IsNullOrEmpty(hash43) && hash43 == "d647e87b5e23f3d6302ffb6ed597010388abc4e243a1c683f4293da2fa3f570c";
+            results.Add(new SelfTestResult(
+                "TC-43: Model v2.0 ONNX Initialization & SHA-256 Verification",
+                pass43,
+                $"IsReady={isReady43}, Sha256={hash43}",
+                sw.Elapsed.TotalMilliseconds * 1000.0));
+
+            // TC-44: Model v2.0 Human Profile Evaluation (11D -> Allow < 0.35)
+            sw.Restart();
+            var humanV2 = new BotRiskVectorV2
+            {
+                IsWebDriver = 0.0f,
+                VirtualGpuDetected = 0.0f,
+                PrototypeTampered = 0.0f,
+                CanvasTampered = 0.0f,
+                ActionIntervalStdDev = 150.0f,
+                UaMatchLevel = 0.0f,
+                NetworkInconsistencyScore = 0.0f,
+                TimeToCheckout = 18.0f,
+                BurstRate10s = 1.0f,
+                ConcurrentHold = 0.0f,
+                DeviceAccountOverlap = 0.0f
+            };
+            var resHuman44 = scoringService.EvaluateV2(humanV2);
+            sw.Stop();
+            var pass44 = resHuman44.Decision == "Allow" && resHuman44.RiskScore < 0.35f;
+            results.Add(new SelfTestResult(
+                "TC-44: Model v2.0 Human Profile Evaluation (11D -> Allow)",
+                pass44,
+                $"Decision={resHuman44.Decision}, Risk={resHuman44.RiskScore}, Latency={resHuman44.InferenceTimeMs}ms",
+                sw.Elapsed.TotalMilliseconds * 1000.0));
+
+            // TC-45: Model v2.0 Brave Farbling Profile Evaluation (CanvasTampered=1.0 -> Allow < 0.35, Zero False Positive!)
+            sw.Restart();
+            var braveV2 = new BotRiskVectorV2
+            {
+                IsWebDriver = 0.0f,
+                VirtualGpuDetected = 0.0f,
+                PrototypeTampered = 0.0f,
+                CanvasTampered = 1.0f, // Brave Farbling ngẫu hóa canvas
+                ActionIntervalStdDev = 175.0f, // Nhịp bấm sinh học tự nhiên
+                UaMatchLevel = 0.0f,
+                NetworkInconsistencyScore = 0.0f,
+                TimeToCheckout = 14.5f,
+                BurstRate10s = 1.0f,
+                ConcurrentHold = 0.0f,
+                DeviceAccountOverlap = 0.0f
+            };
+            var resBrave45 = scoringService.EvaluateV2(braveV2);
+            sw.Stop();
+            var pass45 = resBrave45.Decision == "Allow" && resBrave45.RiskScore < 0.35f;
+            results.Add(new SelfTestResult(
+                "TC-45: Model v2.0 Brave Farbling Zero False-Positive (Allow < 0.35)",
+                pass45,
+                $"Decision={resBrave45.Decision}, Risk={resBrave45.RiskScore}, Latency={resBrave45.InferenceTimeMs}ms",
+                sw.Elapsed.TotalMilliseconds * 1000.0));
+
+            // TC-46: Model v2.0 Adversarial Stealth Bot Evaluation (11D -> Block >= 0.75)
+            sw.Restart();
+            var stealthV2 = new BotRiskVectorV2
+            {
+                IsWebDriver = 1.0f,
+                VirtualGpuDetected = 0.0f,
+                PrototypeTampered = 1.0f,
+                CanvasTampered = 0.0f,
+                ActionIntervalStdDev = 5.0f,
+                UaMatchLevel = 0.5f,
+                NetworkInconsistencyScore = 0.4f,
+                TimeToCheckout = 0.25f,
+                BurstRate10s = 12.0f,
+                ConcurrentHold = 5.0f,
+                DeviceAccountOverlap = 0.8f
+            };
+            var resStealth46 = scoringService.EvaluateV2(stealthV2);
+            sw.Stop();
+            var pass46 = resStealth46.Decision == "Block" && resStealth46.RiskScore >= 0.75f;
+            results.Add(new SelfTestResult(
+                "TC-46: Model v2.0 Adversarial Stealth Bot Detection (Block >= 0.75)",
+                pass46,
+                $"Decision={resStealth46.Decision}, Risk={resStealth46.RiskScore}, Latency={resStealth46.InferenceTimeMs}ms",
+                sw.Elapsed.TotalMilliseconds * 1000.0));
+
+            // TC-47: Shadow Mode Dual-Evaluation Cohort Verification
+            sw.Restart();
+            var v1_human = new BotRiskVector
+            {
+                TimeToCheckout = 18.0f,
+                ActionIntervalStdDev = 150.0f,
+                BurstRate10s = 1.0f,
+                ConcurrentHold = 0.0f,
+                IsWebDriver = 0.0f,
+                DeviceAccountOverlap = 0.0f
+            };
+            var shadowRes47 = scoringService.EvaluateShadow(v1_human, humanV2);
+            sw.Stop();
+            var pass47 = shadowRes47.ShadowCohort == "v1_allow_v2_allow" && shadowRes47.DecisionMatches;
+            results.Add(new SelfTestResult(
+                "TC-47: Shadow Mode Dual-Evaluation Cohort Verification",
+                pass47,
+                $"Cohort={shadowRes47.ShadowCohort}, DecisionMatches={shadowRes47.DecisionMatches}, Delta={shadowRes47.RiskScoreDelta}",
+                sw.Elapsed.TotalMilliseconds * 1000.0));
+
+            // TC-48: Model v2.0 CPU Latency Benchmark 1,000 Inferences (SLA < 1.0ms)
+            sw.Restart();
+            const int v2BenchmarkIterations = 1_000;
+            for (var i = 0; i < v2BenchmarkIterations; i++)
+            {
+                scoringService.EvaluateV2(humanV2);
+            }
+            sw.Stop();
+            avgV2BenchmarkUs = (sw.Elapsed.TotalMilliseconds * 1000.0) / v2BenchmarkIterations;
+            var pass48 = avgV2BenchmarkUs < 1000.0; // SLA < 1ms = 1,000µs
+            results.Add(new SelfTestResult(
+                "TC-48: Model v2.0 In-Process CPU Latency Benchmark 1,000 Inferences (SLA < 1.0ms)",
+                pass48,
+                $"Completed in {sw.ElapsedMilliseconds}ms, Avg = {avgV2BenchmarkUs:F2} µs/op",
+                avgV2BenchmarkUs));
+        }
+
         var allPassed = results.All(r => r.Passed);
         var passedCount = results.Count(r => r.Passed);
 
-        var overallAvgBenchmarkUs = (avgH2BenchmarkUs + avgChBenchmarkUs + avgUaBenchmarkUs) / 3.0;
+        var overallAvgBenchmarkUs = scoringService != null
+            ? (avgH2BenchmarkUs + avgChBenchmarkUs + avgUaBenchmarkUs + avgV2BenchmarkUs) / 4.0
+            : (avgH2BenchmarkUs + avgChBenchmarkUs + avgUaBenchmarkUs) / 3.0;
 
         return new SelfTestSuiteReport(
             allPassed,

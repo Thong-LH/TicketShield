@@ -19,8 +19,14 @@ if (args.Contains("--self-test"))
     var testNonceService = new NonceValidationService();
     var testTokenService = new SessionTokenService(new ConfigurationBuilder().Build());
     var testUaValidator = new UserAgentCrossValidator();
+    var testScoringService = new AntiBotScoringService(
+        Microsoft.Extensions.Options.Options.Create(new AntiBotScoringOptions()),
+        Microsoft.Extensions.Logging.Abstractions.NullLogger<AntiBotScoringService>.Instance);
 
-    var report = AntiBotSelfTestRunner.RunAllTests(testParser, testExtractor, testConsistency, testClientHints, testSubnetTracker, testNetworkService, testNonceService, testTokenService, testUaValidator);
+    var report = AntiBotSelfTestRunner.RunAllTests(
+        testParser, testExtractor, testConsistency, testClientHints,
+        testSubnetTracker, testNetworkService, testNonceService, testTokenService,
+        testUaValidator, testScoringService);
 
     Console.WriteLine("==========================================================");
     Console.WriteLine(" NET-13.1 & US-13.2: PROTOCOL CONSISTENCY & SDK SUITE     ");
