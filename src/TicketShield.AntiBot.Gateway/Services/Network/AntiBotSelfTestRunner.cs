@@ -33,7 +33,8 @@ public static class AntiBotSelfTestRunner
         IHttp2ConsistencyService consistencyService,
         IClientHintsValidator? clientHintsValidator = null,
         ISubnetCorrelationTracker? subnetTracker = null,
-        INetworkConsistencyService? networkService = null)
+        INetworkConsistencyService? networkService = null,
+        INonceValidationService? nonceService = null)
     {
         var results = new List<SelfTestResult>();
         var sw = new Stopwatch();
@@ -453,6 +454,82 @@ public static class AntiBotSelfTestRunner
             pass26,
             $"Completed in {sw.ElapsedMilliseconds}ms, Avg = {avgChBenchmarkUs:F4} µs/op",
             avgChBenchmarkUs));
+
+        // =========================================================================
+        // SDK-13.2.3: ONE-TIME CRYPTOGRAPHIC NONCE & ANTI-REPLAY TESTS
+        // =========================================================================
+        if (nonceService != null)
+        {
+            // TC-27: Nonce First-Time Registration & Atomic Consumption
+            sw.Restart();
+            var n1 = Guid.NewGuid().ToString("N");
+            var t1 = Guid.NewGuid();
+            nonceService.RegisterNonceAsync(n1, t1, TimeSpan.FromMinutes(5)).GetAwaiter().GetResult();
+            var res1 = nonceService.ValidateAndConsumeNonceAsync(n1, t1).GetAwaiter().GetResult();
+            sw.Stop();
+            var pass27 = res1.IsSuccess && !res1.IsReplay && !res1.IsExpired;
+            results.Add(new SelfTestResult(
+                "TC-27: One-Time Nonce First-Time Registration & Consumption",
+                pass27,
+                $"IsSuccess={res1.IsSuccess}, IsReplay={res1.IsReplay}",
+                sw.Elapsed.TotalMilliseconds * 1000.0));
+
+            // TC-28: Nonce Replay Attack Detection (Same Nonce Consumed Second Time)
+            sw.Restart();
+            var res2 = nonceService.ValidateAndConsumeNonceAsync(n1, t1).GetAwaiter().GetResult();
+            sw.Stop();
+            var pass28 = !res2.IsSuccess && res2.IsReplay && !res2.IsExpired;
+            results.Add(new SelfTestResult(
+                "TC-28: Nonce Replay Attack Blocked (Double-Claim Detection)",
+                pass28,
+                $"IsSuccess={res2.IsSuccess}, IsReplay={res2.IsReplay}, Msg={res2.Message}",
+                sw.Elapsed.TotalMilliseconds * 1000.0));
+
+            // TC-29: Unknown / Expired Nonce Handling
+            sw.Restart();
+            var fakeNonce = Guid.NewGuid().ToString("N");
+            var res3 = nonceService.ValidateAndConsumeNonceAsync(fakeNonce, t1).GetAwaiter().GetResult();
+            sw.Stop();
+            var pass29 = !res3.IsSuccess && res3.IsExpired;
+            results.Add(new SelfTestResult(
+                "TC-29: Unknown Nonce Rejected (IsExpired = True)",
+                pass29,
+                $"IsSuccess={res3.IsSuccess}, IsExpired={res3.IsExpired}",
+                sw.Elapsed.TotalMilliseconds * 1000.0));
+
+            // TC-30: Tier Mismatch Nonce Validation
+            sw.Restart();
+            var n4 = Guid.NewGuid().ToString("N");
+            var t4A = Guid.NewGuid();
+            var t4B = Guid.NewGuid();
+            nonceService.RegisterNonceAsync(n4, t4A, TimeSpan.FromMinutes(5)).GetAwaiter().GetResult();
+            var res4 = nonceService.ValidateAndConsumeNonceAsync(n4, t4B).GetAwaiter().GetResult();
+            sw.Stop();
+            var pass30 = !res4.IsSuccess && !res4.IsReplay && !res4.IsExpired;
+            results.Add(new SelfTestResult(
+                "TC-30: Nonce Tier Mismatch Rejected",
+                pass30,
+                $"IsSuccess={res4.IsSuccess}, Msg={res4.Message}",
+                sw.Elapsed.TotalMilliseconds * 1000.0));
+
+            // TC-31: Benchmark 10,000 Nonce Consumptions (SLA < 20µs)
+            sw.Restart();
+            const int nonceBenchCount = 10_000;
+            for (var i = 0; i < nonceBenchCount; i++)
+            {
+                var nBench = Guid.NewGuid().ToString("N");
+                nonceService.RegisterNonceAsync(nBench, t1, TimeSpan.FromMinutes(5)).GetAwaiter().GetResult();
+                nonceService.ValidateAndConsumeNonceAsync(nBench, t1).GetAwaiter().GetResult();
+            }
+            sw.Stop();
+            var avgNonceBenchmarkUs = (sw.Elapsed.TotalMilliseconds * 1000.0) / (nonceBenchCount * 2);
+            var pass31 = avgNonceBenchmarkUs < 20.0;
+            results.Add(new SelfTestResult(
+                $"TC-31: Benchmark {nonceBenchCount:N0} Nonce Cycles (SLA < 20µs)",
+                pass31,
+                $"Completed in {sw.ElapsedMilliseconds}ms, Avg = {avgNonceBenchmarkUs:F4} µs/op",
+                avgNonceBenchmarkUs));
+        }
 
         var allPassed = results.All(r => r.Passed);
         var passedCount = results.Count(r => r.Passed);

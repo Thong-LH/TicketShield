@@ -16,8 +16,9 @@ if (args.Contains("--self-test"))
     var testClientHints = new ClientHintsValidator();
     var testSubnetTracker = new SubnetCorrelationTracker(null, null, null, Microsoft.Extensions.Logging.Abstractions.NullLogger<SubnetCorrelationTracker>.Instance);
     var testNetworkService = new NetworkConsistencyService(testExtractor, testConsistency, testClientHints, testSubnetTracker, Microsoft.Extensions.Logging.Abstractions.NullLogger<NetworkConsistencyService>.Instance);
+    var testNonceService = new NonceValidationService();
 
-    var report = AntiBotSelfTestRunner.RunAllTests(testParser, testExtractor, testConsistency, testClientHints, testSubnetTracker, testNetworkService);
+    var report = AntiBotSelfTestRunner.RunAllTests(testParser, testExtractor, testConsistency, testClientHints, testSubnetTracker, testNetworkService, testNonceService);
 
     Console.WriteLine("==========================================================");
     Console.WriteLine("    NET-13.1: PROTOCOL CONSISTENCY VERIFICATION SUITE      ");
@@ -83,6 +84,7 @@ builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
 
 // 4. Core Anti-Bot Services
 builder.Services.AddSingleton<ISessionTokenService, SessionTokenService>();
+builder.Services.AddSingleton<INonceValidationService, NonceValidationService>();
 builder.Services.AddSingleton<IAntiBotRedisService, AntiBotRedisService>();
 builder.Services.AddSingleton<IAntiBotScoringService, AntiBotScoringService>();
 builder.Services.AddSingleton<IAntiBotGuardService, AntiBotGuardService>();
