@@ -1,0 +1,68 @@
+{
+  "model_name": "TicketShield Anti-Bot Classifier v2.0",
+  "model_version": "2.0.0",
+  "exported_at": "2026-11-19T18:25:45Z",
+  "model_format": "ONNX",
+  "target_opset": 17,
+  "file_size_bytes": 14821,
+  "sha256_hash": "d647e87b5e23f3d6302ffb6ed597010388abc4e243a1c683f4293da2fa3f570c",
+  "contract": {
+    "input_node_name": "float_input",
+    "input_shape": [
+      null,
+      11
+    ],
+    "feature_count": 11,
+    "feature_names": [
+      "is_webdriver",
+      "virtual_gpu_detected",
+      "prototype_tampered",
+      "canvas_tampered",
+      "action_interval_std_dev",
+      "ua_match_level",
+      "network_inconsistency_score",
+      "time_to_checkout",
+      "burst_rate_10s",
+      "concurrent_hold",
+      "device_account_overlap"
+    ],
+    "output_nodes": [
+      "label",
+      "probabilities"
+    ],
+    "probability_output_name": "probabilities",
+    "probability_output_shape": [
+      null,
+      2
+    ],
+    "class_0_meaning": "Human",
+    "class_1_meaning": "Adversarial Bot"
+  },
+  "operational_thresholds": {
+    "allow_threshold": 0.35,
+    "block_threshold": 0.75,
+    "allow_rule": "risk_score < 0.35 -> Allow",
+    "challenge_rule": "0.35 <= risk_score < 0.75 -> Challenge",
+    "block_rule": "risk_score >= 0.75 -> Block"
+  },
+  "quality_and_benchmarks": {
+    "training_serving_skew_max_diff": 0.0,
+    "skew_check_passed": true,
+    "latency_benchmark": {
+      "num_runs": 1000,
+      "min_latency_ms": 0.0157,
+      "mean_latency_ms": 0.02184,
+      "p50_latency_ms": 0.0204,
+      "p90_latency_ms": 0.0255,
+      "p99_latency_ms": 0.0515,
+      "max_latency_ms": 0.1119,
+      "meets_sla_1ms": true,
+      "meets_sla_p99_2_5ms": true
+    }
+  },
+  "compatibility": {
+    "gateway_runtime": "Microsoft.ML.OnnxRuntime 1.20+",
+    "net_framework": ".NET 8.0",
+    "deployment_mode": "In-Process Embedded (Zero Network Overhead)"
+  }
+}
