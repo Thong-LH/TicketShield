@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using Microsoft.AspNetCore.Http;
+using TicketShield.AntiBot.Gateway.Middleware;
+using TicketShield.AntiBot.Gateway.Models;
 using TicketShield.AntiBot.Gateway.Models.Network;
 
 namespace TicketShield.AntiBot.Gateway.Services.Network;
@@ -34,7 +36,8 @@ public static class AntiBotSelfTestRunner
         IClientHintsValidator? clientHintsValidator = null,
         ISubnetCorrelationTracker? subnetTracker = null,
         INetworkConsistencyService? networkService = null,
-        INonceValidationService? nonceService = null)
+        INonceValidationService? nonceService = null,
+        ISessionTokenService? tokenService = null)
     {
         var results = new List<SelfTestResult>();
         var sw = new Stopwatch();
@@ -531,6 +534,75 @@ public static class AntiBotSelfTestRunner
                 avgNonceBenchmarkUs));
         }
 
+        // =========================================================================
+        // SDK-13.2.3: MIDDLEWARE INTEGRATION ANTI-REPLAY TESTS
+        // =========================================================================
+        if (nonceService != null && tokenService != null && networkService != null)
+        {
+            var dummyGuard = new DummySelfTestGuardService();
+            var middlewareLogger = Microsoft.Extensions.Logging.Abstractions.NullLogger<AntiBotCheckoutGuardMiddleware>.Instance;
+            var middleware = new AntiBotCheckoutGuardMiddleware((_) => Task.CompletedTask, middlewareLogger);
+
+            var tierId = Guid.NewGuid();
+            var (validToken, validNonce, _, _) = tokenService.GenerateSessionTokenWithNonce(tierId, null, 300);
+            nonceService.RegisterNonceAsync(validNonce, tierId, TimeSpan.FromMinutes(5)).GetAwaiter().GetResult();
+
+            // TC-32: Middleware Allow Valid Request -> Nonce Consumed & Forwarded with Header
+            sw.Restart();
+            var ctxValid = CreateCheckoutContext(validToken, validNonce, tierId, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+            middleware.InvokeAsync(ctxValid, dummyGuard, networkService, tokenService, nonceService).GetAwaiter().GetResult();
+            sw.Stop();
+            var pass32 = ctxValid.Response.StatusCode == StatusCodes.Status200OK
+                         && ctxValid.Request.Headers["X-AntiBot-Nonce-Verified"] == "True"
+                         && ctxValid.Request.Headers["X-AntiBot-Nonce"] == validNonce;
+            results.Add(new SelfTestResult(
+                "TC-32: Middleware Flow - Valid Nonce Forwarded with Verified Header",
+                pass32,
+                $"Status={ctxValid.Response.StatusCode}, VerifiedHeader={ctxValid.Request.Headers["X-AntiBot-Nonce-Verified"]}",
+                sw.Elapsed.TotalMilliseconds * 1000.0));
+
+            // TC-33: Middleware Block Replay Attack (Replay the exact same Token and Nonce of TC-32)
+            sw.Restart();
+            var ctxReplay = CreateCheckoutContext(validToken, validNonce, tierId, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+            middleware.InvokeAsync(ctxReplay, dummyGuard, networkService, tokenService, nonceService).GetAwaiter().GetResult();
+            sw.Stop();
+            var pass33 = ctxReplay.Response.StatusCode == StatusCodes.Status429TooManyRequests;
+            results.Add(new SelfTestResult(
+                "TC-33: Middleware Flow - Replay Attack Blocked (HTTP 429)",
+                pass33,
+                $"Expected=429, Actual={ctxReplay.Response.StatusCode}",
+                sw.Elapsed.TotalMilliseconds * 1000.0));
+
+            // TC-34: Middleware Block Nonce Mismatch (Token Nonce != Telemetry Nonce)
+            sw.Restart();
+            var (tokenMismatched, serverNonce, _, _) = tokenService.GenerateSessionTokenWithNonce(tierId, null, 300);
+            nonceService.RegisterNonceAsync(serverNonce, tierId, TimeSpan.FromMinutes(5)).GetAwaiter().GetResult();
+            var ctxMismatch = CreateCheckoutContext(tokenMismatched, "forged_telemetry_nonce_abc", tierId, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+            middleware.InvokeAsync(ctxMismatch, dummyGuard, networkService, tokenService, nonceService).GetAwaiter().GetResult();
+            sw.Stop();
+            var pass34 = ctxMismatch.Response.StatusCode == StatusCodes.Status403Forbidden;
+            results.Add(new SelfTestResult(
+                "TC-34: Middleware Flow - Nonce Mismatch Blocked (HTTP 403)",
+                pass34,
+                $"Expected=403, Actual={ctxMismatch.Response.StatusCode}",
+                sw.Elapsed.TotalMilliseconds * 1000.0));
+
+            // TC-35: Middleware Block Clock Skew Anomaly (> 15s)
+            sw.Restart();
+            var (tokenSkew, skewNonce, _, _) = tokenService.GenerateSessionTokenWithNonce(tierId, null, 300);
+            nonceService.RegisterNonceAsync(skewNonce, tierId, TimeSpan.FromMinutes(5)).GetAwaiter().GetResult();
+            var skewedTimestamp = DateTimeOffset.UtcNow.AddSeconds(30).ToUnixTimeMilliseconds(); // 30s in the future
+            var ctxSkew = CreateCheckoutContext(tokenSkew, skewNonce, tierId, skewedTimestamp);
+            middleware.InvokeAsync(ctxSkew, dummyGuard, networkService, tokenService, nonceService).GetAwaiter().GetResult();
+            sw.Stop();
+            var pass35 = ctxSkew.Response.StatusCode == StatusCodes.Status403Forbidden;
+            results.Add(new SelfTestResult(
+                "TC-35: Middleware Flow - Clock Skew Anomaly Blocked (HTTP 403)",
+                pass35,
+                $"Expected=403, Actual={ctxSkew.Response.StatusCode}",
+                sw.Elapsed.TotalMilliseconds * 1000.0));
+        }
+
         var allPassed = results.All(r => r.Passed);
         var passedCount = results.Count(r => r.Passed);
 
@@ -542,5 +614,55 @@ public static class AntiBotSelfTestRunner
             passedCount,
             overallAvgBenchmarkUs,
             results);
+    }
+
+    private static DefaultHttpContext CreateCheckoutContext(string token, string nonce, Guid tierId, long clientTimestampMs)
+    {
+        var ctx = new DefaultHttpContext();
+        ctx.Request.Method = "POST";
+        ctx.Request.Path = "/api/organizer/orders/checkout";
+        ctx.Request.ContentType = "application/json";
+        ctx.Response.Body = new MemoryStream();
+        ctx.Connection.RemoteIpAddress = System.Net.IPAddress.Loopback;
+
+        var bodyObj = new
+        {
+            sessionToken = token,
+            tierId = tierId,
+            buyerEmail = "buyer@ticketshield.io",
+            telemetry = new
+            {
+                is_webdriver = 0,
+                virtual_gpu_detected = 0,
+                prototype_tampered = 0,
+                device_fingerprint = "0123456789abcdef0123456789abcdef",
+                nonce = nonce,
+                client_timestamp = clientTimestampMs
+            }
+        };
+
+        var jsonBytes = System.Text.Encoding.UTF8.GetBytes(System.Text.Json.JsonSerializer.Serialize(bodyObj));
+        ctx.Request.Body = new MemoryStream(jsonBytes);
+        ctx.Request.ContentLength = jsonBytes.Length;
+
+        return ctx;
+    }
+
+    private class DummySelfTestGuardService : IAntiBotGuardService
+    {
+        public Task<AntiBotGuardResult> EvaluateCheckoutGuardAsync(
+            string? sessionToken, string? buyerEmail, string? clientIp,
+            string? deviceFingerprint, float? actionIntervalStdDev, float? isWebdriver,
+            CancellationToken ct = default)
+        {
+            return Task.FromResult(new AntiBotGuardResult
+            {
+                RiskScore = 0.1f,
+                Decision = AntiBotDecision.Allow,
+                ExecutionDurationMs = 1.0,
+                IsFailOpen = false,
+                Reason = "SelfTest Mock Allow"
+            });
+        }
     }
 }

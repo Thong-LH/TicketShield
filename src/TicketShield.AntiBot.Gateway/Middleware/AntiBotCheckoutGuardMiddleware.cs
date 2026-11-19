@@ -17,6 +17,9 @@ public class CheckoutTelemetryPayload
     [JsonPropertyName("buyerEmail")]
     public string? BuyerEmail { get; set; }
 
+    [JsonPropertyName("tierId")]
+    public Guid? TierId { get; set; }
+
     [JsonPropertyName("deviceFingerprint")]
     public string? DeviceFingerprint { get; set; }
 
@@ -49,6 +52,17 @@ public class ClientTelemetryDto
 
     [JsonPropertyName("deviceFingerprint")]
     public string? DeviceFingerprint { get; set; }
+
+    [JsonPropertyName("nonce")]
+    public string? Nonce { get; set; }
+
+    [JsonPropertyName("client_timestamp")]
+    public long? ClientTimestampSnake { get; set; }
+
+    [JsonPropertyName("clientTimestamp")]
+    public long? ClientTimestampCamel { get; set; }
+
+    public long? ClientTimestamp => ClientTimestampSnake ?? ClientTimestampCamel;
 }
 
 /// <summary>
@@ -67,7 +81,9 @@ public class AntiBotCheckoutGuardMiddleware(
     public async Task InvokeAsync(
         HttpContext context,
         IAntiBotGuardService guardService,
-        INetworkConsistencyService networkService)
+        INetworkConsistencyService networkService,
+        ISessionTokenService tokenService,
+        INonceValidationService nonceService)
     {
         var path = context.Request.Path;
         var method = context.Request.Method;
@@ -98,9 +114,12 @@ public class AntiBotCheckoutGuardMiddleware(
 
             string? sessionToken = null;
             string? buyerEmail = null;
+            Guid? payloadTierId = null;
             string? deviceFingerprint = null;
             float? actionInterval = null;
             float? isWebdriver = null;
+            string? clientNonce = null;
+            long? clientTimestamp = null;
 
             try
             {
@@ -113,14 +132,54 @@ public class AntiBotCheckoutGuardMiddleware(
 
                 if (!string.IsNullOrWhiteSpace(bodyText))
                 {
-                    var payload = JsonSerializer.Deserialize<CheckoutTelemetryPayload>(bodyText, JsonOptions);
-                    if (payload != null)
+                    using var doc = JsonDocument.Parse(bodyText);
+                    var root = doc.RootElement;
+
+                    if (root.TryGetProperty("sessionToken", out var st) || root.TryGetProperty("SessionToken", out st))
+                        sessionToken = st.GetString();
+
+                    if (root.TryGetProperty("buyerEmail", out var be) || root.TryGetProperty("BuyerEmail", out be))
+                        buyerEmail = be.GetString();
+
+                    if (root.TryGetProperty("tierId", out var ti) || root.TryGetProperty("TierId", out ti))
                     {
-                        sessionToken = payload.SessionToken;
-                        buyerEmail = payload.BuyerEmail;
-                        deviceFingerprint = payload.DeviceFingerprint ?? payload.Telemetry?.DeviceFingerprint;
-                        actionInterval = payload.Telemetry?.ActionIntervalStdDev;
-                        isWebdriver = payload.Telemetry?.IsWebdriver;
+                        if (ti.TryGetGuid(out var parsedGuid))
+                            payloadTierId = parsedGuid;
+                        else if (Guid.TryParse(ti.GetString(), out var strGuid))
+                            payloadTierId = strGuid;
+                    }
+
+                    if (root.TryGetProperty("deviceFingerprint", out var df) || root.TryGetProperty("device_fingerprint", out df))
+                        deviceFingerprint = df.GetString();
+
+                    if (root.TryGetProperty("telemetry", out var te) && te.ValueKind == JsonValueKind.Object)
+                    {
+                        if (te.TryGetProperty("nonce", out var no) || te.TryGetProperty("Nonce", out no))
+                            clientNonce = no.GetString();
+
+                        if (te.TryGetProperty("client_timestamp", out var ct) || te.TryGetProperty("clientTimestamp", out ct))
+                        {
+                            if (ct.TryGetInt64(out var tsVal))
+                                clientTimestamp = tsVal;
+                        }
+
+                        if (te.TryGetProperty("is_webdriver", out var iw) || te.TryGetProperty("isWebdriver", out iw))
+                        {
+                            if (iw.TryGetSingle(out var iwVal))
+                                isWebdriver = iwVal;
+                        }
+
+                        if (te.TryGetProperty("action_interval_std_dev", out var ai) || te.TryGetProperty("actionIntervalStdDev", out ai))
+                        {
+                            if (ai.TryGetSingle(out var aiVal))
+                                actionInterval = aiVal;
+                        }
+
+                        if (string.IsNullOrWhiteSpace(deviceFingerprint))
+                        {
+                            if (te.TryGetProperty("device_fingerprint", out var tdf) || te.TryGetProperty("deviceFingerprint", out tdf))
+                                deviceFingerprint = tdf.GetString();
+                        }
                     }
                 }
             }
@@ -128,6 +187,129 @@ public class AntiBotCheckoutGuardMiddleware(
             {
                 logger.LogWarning(ex, "Failed to inspect checkout request body. Falling back to headers.");
                 context.Request.Body.Position = 0;
+            }
+
+            // Fallback sang headers nếu body không có
+            sessionToken ??= context.Request.Headers["X-Session-Token"].FirstOrDefault();
+            deviceFingerprint ??= context.Request.Headers["X-Device-Fingerprint"].FirstOrDefault();
+            clientNonce ??= context.Request.Headers["X-AntiBot-Nonce"].FirstOrDefault();
+
+            // 2. Xác thực SessionToken v2 & Chống Replay Nonce (US-13.2.3, SCRUM-376)
+            if (!string.IsNullOrWhiteSpace(sessionToken))
+            {
+                var tokenResult = tokenService.ValidateSessionTokenV2(sessionToken);
+                if (!tokenResult.IsValid)
+                {
+                    logger.LogWarning("AntiBot Gateway: REJECTED invalid session token. Reason={Reason}", tokenResult.FailureReason);
+                    context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                    context.Response.ContentType = "application/json";
+                    await context.Response.WriteAsJsonAsync(new
+                    {
+                        message = $"Invalid session token: {tokenResult.FailureReason}",
+                        code = "InvalidSessionToken"
+                    });
+                    return;
+                }
+
+                // Kiểm tra khớp hạng vé nếu request có truyền tierId
+                var requestTierId = payloadTierId ?? Guid.Empty;
+                if (requestTierId != Guid.Empty && tokenResult.TierId != Guid.Empty && tokenResult.TierId != requestTierId)
+                {
+                    logger.LogWarning("AntiBot Gateway: REJECTED Tier Mismatch. Token Tier={TokenTier}, Request Tier={ReqTier}",
+                        tokenResult.TierId, requestTierId);
+                    context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                    context.Response.ContentType = "application/json";
+                    await context.Response.WriteAsJsonAsync(new
+                    {
+                        message = "Session token was issued for a different ticket tier.",
+                        code = "TierMismatch"
+                    });
+                    return;
+                }
+
+                // Nếu là Token v2 (có nhúng One-Time Nonce):
+                if (tokenResult.TokenVersion == 2 && !string.IsNullOrWhiteSpace(tokenResult.Nonce))
+                {
+                    // a) Đối chiếu Telemetry Nonce vs Token Nonce
+                    if (!string.Equals(clientNonce, tokenResult.Nonce, StringComparison.Ordinal))
+                    {
+                        logger.LogWarning("AntiBot Gateway: REJECTED Nonce Mismatch! Token Nonce={TokenNonce}, Telemetry Nonce={TelemetryNonce}",
+                            tokenResult.Nonce, clientNonce);
+                        context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                        context.Response.ContentType = "application/json";
+                        await context.Response.WriteAsJsonAsync(new
+                        {
+                            message = "Cryptographic Nonce mismatch between Session Token and Telemetry payload.",
+                            code = "NonceMismatch"
+                        });
+                        return;
+                    }
+
+                    // b) Kiểm tra Clock Skew (dung sai ±15s)
+                    if (clientTimestamp.HasValue)
+                    {
+                        var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                        var skewMs = Math.Abs(nowMs - clientTimestamp.Value);
+                        if (skewMs > 15_000)
+                        {
+                            logger.LogWarning("AntiBot Gateway: REJECTED Clock Skew anomaly. Skew={SkewMs}ms (Allowed: ±15000ms)", skewMs);
+                            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                            context.Response.ContentType = "application/json";
+                            await context.Response.WriteAsJsonAsync(new
+                            {
+                                message = "Client timestamp is outside the allowed window (±15s).",
+                                code = "ClockSkew"
+                            });
+                            return;
+                        }
+                    }
+
+                    // c) Tiêu thụ Nonce nguyên tử chống Replay (Atomic Check-and-Consume)
+                    var consumption = await nonceService.ValidateAndConsumeNonceAsync(tokenResult.Nonce, tokenResult.TierId, context.RequestAborted);
+                    if (consumption.IsReplay)
+                    {
+                        logger.LogWarning("AntiBot Gateway: REPLAY ATTACK BLOCKED! Nonce {Nonce} already consumed.", tokenResult.Nonce);
+                        context.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+                        context.Response.ContentType = "application/json";
+                        await context.Response.WriteAsJsonAsync(new
+                        {
+                            message = "This checkout request has already been submitted (Replay Attack Blocked).",
+                            code = "ReplayBlocked",
+                            decision = "Block"
+                        });
+                        return;
+                    }
+
+                    if (consumption.IsExpired)
+                    {
+                        logger.LogWarning("AntiBot Gateway: REJECTED Nonce Expired for {Nonce}.", tokenResult.Nonce);
+                        context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                        context.Response.ContentType = "application/json";
+                        await context.Response.WriteAsJsonAsync(new
+                        {
+                            message = "One-time session nonce has expired or does not exist.",
+                            code = "NonceExpired"
+                        });
+                        return;
+                    }
+
+                    if (!consumption.IsSuccess)
+                    {
+                        logger.LogWarning("AntiBot Gateway: REJECTED Nonce validation failed: {Msg}", consumption.Message);
+                        context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                        context.Response.ContentType = "application/json";
+                        await context.Response.WriteAsJsonAsync(new
+                        {
+                            message = consumption.Message,
+                            code = "NonceInvalid"
+                        });
+                        return;
+                    }
+
+                    // Nonce hợp lệ và đã tiêu thụ thành công -> Gắn header chuyển tiếp sang MockOrganizer
+                    context.Request.Headers["X-AntiBot-Nonce-Verified"] = "True";
+                    context.Request.Headers["X-AntiBot-Nonce"] = tokenResult.Nonce;
+                }
             }
 
             // Fallback sang headers nếu body không có

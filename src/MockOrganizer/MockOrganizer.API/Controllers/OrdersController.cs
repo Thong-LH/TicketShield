@@ -60,16 +60,22 @@ public class OrdersController(
         if (request.Quantity <= 0)
             return BadRequest(new { message = "Quantity must be greater than 0." });
 
-        // SCRUM-247: Chặn replay (nonce, lệch giờ, khớp hạng vé) TRƯỚC Anti-Bot Guard
-        // để không bị Fail-Open bỏ qua và không làm tăng bộ đếm Redis Sliding Window.
-        var replayResult = await replayGuardService.ValidateAsync(request, ct);
-        if (!replayResult.IsAllowed)
-        {
-            logger.LogWarning(
-                "Checkout REJECTED by ReplayGuard. Code={Code}, TierId={TierId}",
-                replayResult.Code, request.TierId);
+        // SCRUM-247 & US-13.2.3: Chặn replay (nonce, lệch giờ, khớp hạng vé) TRƯỚC Anti-Bot Guard.
+        // Nếu Gateway đã kiểm tra và xác thực Nonce (X-AntiBot-Nonce-Verified: True), MockOrganizer tin tưởng kết quả để tránh Double-Claim
+        var isNonceVerifiedByGateway = Request.Headers.TryGetValue("X-AntiBot-Nonce-Verified", out var nonceVerified)
+            && string.Equals(nonceVerified, "True", StringComparison.OrdinalIgnoreCase);
 
-            return Conflict(new { message = replayResult.Message, code = replayResult.Code });
+        if (!isNonceVerifiedByGateway)
+        {
+            var replayResult = await replayGuardService.ValidateAsync(request, ct);
+            if (!replayResult.IsAllowed)
+            {
+                logger.LogWarning(
+                    "Checkout REJECTED by ReplayGuard. Code={Code}, TierId={TierId}",
+                    replayResult.Code, request.TierId);
+
+                return Conflict(new { message = replayResult.Message, code = replayResult.Code });
+            }
         }
 
         var clientIp = HttpContext?.Request?.Headers["X-Forwarded-For"].FirstOrDefault()

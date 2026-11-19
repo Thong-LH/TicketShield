@@ -17,8 +17,9 @@ if (args.Contains("--self-test"))
     var testSubnetTracker = new SubnetCorrelationTracker(null, null, null, Microsoft.Extensions.Logging.Abstractions.NullLogger<SubnetCorrelationTracker>.Instance);
     var testNetworkService = new NetworkConsistencyService(testExtractor, testConsistency, testClientHints, testSubnetTracker, Microsoft.Extensions.Logging.Abstractions.NullLogger<NetworkConsistencyService>.Instance);
     var testNonceService = new NonceValidationService();
+    var testTokenService = new SessionTokenService(new ConfigurationBuilder().Build());
 
-    var report = AntiBotSelfTestRunner.RunAllTests(testParser, testExtractor, testConsistency, testClientHints, testSubnetTracker, testNetworkService, testNonceService);
+    var report = AntiBotSelfTestRunner.RunAllTests(testParser, testExtractor, testConsistency, testClientHints, testSubnetTracker, testNetworkService, testNonceService, testTokenService);
 
     Console.WriteLine("==========================================================");
     Console.WriteLine("    NET-13.1: PROTOCOL CONSISTENCY VERIFICATION SUITE      ");
