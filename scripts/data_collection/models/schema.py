@@ -86,10 +86,18 @@ class DatasetRecord:
                 res[key] = float(res[key])
 
         for key in ["webgl_vendor", "webgl_renderer", "canvas_hash", "device_fingerprint", "client_user_agent", "header_user_agent", "ua_match_level", "ja4_fingerprint", "http2_fingerprint"]:
-            if res.get(key) is None:
-                res[key] = ""
+            val = res.get(key)
+            if not val:
+                if key == "canvas_hash":
+                    res[key] = "unavailable"
+                elif key in ["webgl_vendor", "webgl_renderer", "device_fingerprint"]:
+                    res[key] = "unknown"
+                elif key in ["client_user_agent", "header_user_agent"]:
+                    res[key] = "none"
+                else:
+                    res[key] = "none"
             else:
-                res[key] = str(res[key])
+                res[key] = str(val)
 
         return res
 
