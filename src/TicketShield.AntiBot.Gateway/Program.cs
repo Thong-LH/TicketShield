@@ -18,11 +18,12 @@ if (args.Contains("--self-test"))
     var testNetworkService = new NetworkConsistencyService(testExtractor, testConsistency, testClientHints, testSubnetTracker, Microsoft.Extensions.Logging.Abstractions.NullLogger<NetworkConsistencyService>.Instance);
     var testNonceService = new NonceValidationService();
     var testTokenService = new SessionTokenService(new ConfigurationBuilder().Build());
+    var testUaValidator = new UserAgentCrossValidator();
 
-    var report = AntiBotSelfTestRunner.RunAllTests(testParser, testExtractor, testConsistency, testClientHints, testSubnetTracker, testNetworkService, testNonceService, testTokenService);
+    var report = AntiBotSelfTestRunner.RunAllTests(testParser, testExtractor, testConsistency, testClientHints, testSubnetTracker, testNetworkService, testNonceService, testTokenService, testUaValidator);
 
     Console.WriteLine("==========================================================");
-    Console.WriteLine("    NET-13.1: PROTOCOL CONSISTENCY VERIFICATION SUITE      ");
+    Console.WriteLine(" NET-13.1 & US-13.2: PROTOCOL CONSISTENCY & SDK SUITE     ");
     Console.WriteLine("==========================================================");
     foreach (var r in report.Results)
     {
@@ -222,16 +223,19 @@ app.MapGet("/api/antibot/network-consistency", async (
     return Results.Ok(summary);
 });
 
-// Endpoint tự kiểm thử tự động nội tại (Self-Test Runner NET-13.1)
+// Endpoint tự kiểm thử tự động nội tại (Self-Test Runner NET-13.1 & US-13.2)
 app.MapGet("/api/antibot/self-test", (
     [FromServices] IJa4Parser parser,
     [FromServices] ITlsProfileExtractor extractor,
     [FromServices] IHttp2ConsistencyService consistencyService,
     [FromServices] IClientHintsValidator clientHintsValidator,
     [FromServices] ISubnetCorrelationTracker subnetTracker,
-    [FromServices] INetworkConsistencyService networkService) =>
+    [FromServices] INetworkConsistencyService networkService,
+    [FromServices] INonceValidationService nonceService,
+    [FromServices] ISessionTokenService tokenService,
+    [FromServices] IUserAgentCrossValidator uaValidator) =>
 {
-    var report = AntiBotSelfTestRunner.RunAllTests(parser, extractor, consistencyService, clientHintsValidator, subnetTracker, networkService);
+    var report = AntiBotSelfTestRunner.RunAllTests(parser, extractor, consistencyService, clientHintsValidator, subnetTracker, networkService, nonceService, tokenService, uaValidator);
     return report.AllPassed ? Results.Ok(report) : Results.Problem(title: "Self-Test Failed", statusCode: 500);
 });
 

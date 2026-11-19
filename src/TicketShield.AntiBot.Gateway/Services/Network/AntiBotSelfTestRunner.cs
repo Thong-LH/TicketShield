@@ -37,10 +37,12 @@ public static class AntiBotSelfTestRunner
         ISubnetCorrelationTracker? subnetTracker = null,
         INetworkConsistencyService? networkService = null,
         INonceValidationService? nonceService = null,
-        ISessionTokenService? tokenService = null)
+        ISessionTokenService? tokenService = null,
+        IUserAgentCrossValidator? uaValidator = null)
     {
         var results = new List<SelfTestResult>();
         var sw = new Stopwatch();
+        uaValidator ??= new UserAgentCrossValidator();
 
         // =========================================================================
         // NET-13.1.1: TLS PROFILE & JA4 TESTS
@@ -542,7 +544,6 @@ public static class AntiBotSelfTestRunner
             var dummyGuard = new DummySelfTestGuardService();
             var middlewareLogger = Microsoft.Extensions.Logging.Abstractions.NullLogger<AntiBotCheckoutGuardMiddleware>.Instance;
             var middleware = new AntiBotCheckoutGuardMiddleware((_) => Task.CompletedTask, middlewareLogger);
-            var uaValidator = new UserAgentCrossValidator();
 
             var tierId = Guid.NewGuid();
             var (validToken, validNonce, _, _) = tokenService.GenerateSessionTokenWithNonce(tierId, null, 300);
@@ -602,12 +603,118 @@ public static class AntiBotSelfTestRunner
                 pass35,
                 $"Expected=403, Actual={ctxSkew.Response.StatusCode}",
                 sw.Elapsed.TotalMilliseconds * 1000.0));
+
+            // =========================================================================
+            // US-13.2.4: USER-AGENT CROSS-VALIDATION TESTS (TC-36 to TC-40)
+            // =========================================================================
+
+            // TC-36: Middleware Flow - Consistent Chrome Windows UA Cross-Validation (HTTP 200)
+            sw.Restart();
+            var (token36, nonce36, _, _) = tokenService.GenerateSessionTokenWithNonce(tierId, null, 300);
+            nonceService.RegisterNonceAsync(nonce36, tierId, TimeSpan.FromMinutes(5)).GetAwaiter().GetResult();
+            var ctx36 = CreateCheckoutContext(
+                token36,
+                nonce36,
+                tierId,
+                DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                userAgent: ChromeUa,
+                clientUserAgent: ChromeUa);
+            middleware.InvokeAsync(ctx36, dummyGuard, networkService, tokenService, nonceService, uaValidator).GetAwaiter().GetResult();
+            sw.Stop();
+            var pass36 = ctx36.Response.StatusCode == StatusCodes.Status200OK
+                         && ctx36.Request.Headers["X-AntiBot-UA-Consistent"] == "True";
+            results.Add(new SelfTestResult(
+                "TC-36: Middleware Flow - Consistent Chrome Windows UA Cross-Validation (HTTP 200)",
+                pass36,
+                $"Status={ctx36.Response.StatusCode}, ConsistentHeader={ctx36.Request.Headers["X-AntiBot-UA-Consistent"]}",
+                sw.Elapsed.TotalMilliseconds * 1000.0));
+
+            // TC-37: Middleware Flow - Blatant OS Mismatch Blocked (Client Windows vs Linux VPS -> HTTP 403)
+            sw.Restart();
+            var (token37, nonce37, _, _) = tokenService.GenerateSessionTokenWithNonce(tierId, null, 300);
+            nonceService.RegisterNonceAsync(nonce37, tierId, TimeSpan.FromMinutes(5)).GetAwaiter().GetResult();
+            const string linuxHeaderUa = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36";
+            var ctx37 = CreateCheckoutContext(
+                token37,
+                nonce37,
+                tierId,
+                DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                userAgent: linuxHeaderUa,
+                clientUserAgent: ChromeUa);
+            middleware.InvokeAsync(ctx37, dummyGuard, networkService, tokenService, nonceService, uaValidator).GetAwaiter().GetResult();
+            sw.Stop();
+            var pass37 = ctx37.Response.StatusCode == StatusCodes.Status403Forbidden;
+            results.Add(new SelfTestResult(
+                "TC-37: Middleware Flow - Blatant OS Mismatch Blocked (Client Windows vs Linux VPS -> HTTP 403)",
+                pass37,
+                $"Expected=403, Actual={ctx37.Response.StatusCode}",
+                sw.Elapsed.TotalMilliseconds * 1000.0));
+
+            // TC-38: Middleware Flow - Blatant Browser Mismatch Blocked (Client Chrome vs Firefox -> HTTP 403)
+            sw.Restart();
+            var (token38, nonce38, _, _) = tokenService.GenerateSessionTokenWithNonce(tierId, null, 300);
+            nonceService.RegisterNonceAsync(nonce38, tierId, TimeSpan.FromMinutes(5)).GetAwaiter().GetResult();
+            const string firefoxHeaderUa = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:132.0) Gecko/20100101 Firefox/132.0";
+            var ctx38 = CreateCheckoutContext(
+                token38,
+                nonce38,
+                tierId,
+                DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                userAgent: firefoxHeaderUa,
+                clientUserAgent: ChromeUa);
+            middleware.InvokeAsync(ctx38, dummyGuard, networkService, tokenService, nonceService, uaValidator).GetAwaiter().GetResult();
+            sw.Stop();
+            var pass38 = ctx38.Response.StatusCode == StatusCodes.Status403Forbidden;
+            results.Add(new SelfTestResult(
+                "TC-38: Middleware Flow - Blatant Browser Mismatch Blocked (Client Chrome vs Firefox -> HTTP 403)",
+                pass38,
+                $"Expected=403, Actual={ctx38.Response.StatusCode}",
+                sw.Elapsed.TotalMilliseconds * 1000.0));
+
+            // TC-39: Middleware Flow - In-App WebView Normalization (FB/Zalo Trailing Tokens -> HTTP 200)
+            sw.Restart();
+            var (token39, nonce39, _, _) = tokenService.GenerateSessionTokenWithNonce(tierId, null, 300);
+            nonceService.RegisterNonceAsync(nonce39, tierId, TimeSpan.FromMinutes(5)).GetAwaiter().GetResult();
+            const string iosBaseUa = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148";
+            const string fbWebViewHeaderUa = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 [FBAN/FBAV;IPHONE]";
+            var ctx39 = CreateCheckoutContext(
+                token39,
+                nonce39,
+                tierId,
+                DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                userAgent: fbWebViewHeaderUa,
+                clientUserAgent: iosBaseUa);
+            middleware.InvokeAsync(ctx39, dummyGuard, networkService, tokenService, nonceService, uaValidator).GetAwaiter().GetResult();
+            sw.Stop();
+            var pass39 = ctx39.Response.StatusCode == StatusCodes.Status200OK
+                         && ctx39.Request.Headers["X-AntiBot-UA-Consistent"] == "True";
+            results.Add(new SelfTestResult(
+                "TC-39: Middleware Flow - In-App WebView Normalization (FB/Zalo Trailing Tokens -> HTTP 200)",
+                pass39,
+                $"Status={ctx39.Response.StatusCode}, ConsistentHeader={ctx39.Request.Headers["X-AntiBot-UA-Consistent"]}",
+                sw.Elapsed.TotalMilliseconds * 1000.0));
         }
+
+        // TC-40: Benchmark 50,000 UA Cross-Validations (SLA < 10µs)
+        sw.Restart();
+        const int uaBenchmarkIterations = 50_000;
+        for (var i = 0; i < uaBenchmarkIterations; i++)
+        {
+            uaValidator.Validate(ChromeUa, ChromeUa);
+        }
+        sw.Stop();
+        var avgUaBenchmarkUs = (sw.Elapsed.TotalMilliseconds * 1000.0) / uaBenchmarkIterations;
+        var pass40 = avgUaBenchmarkUs < 10.0;
+        results.Add(new SelfTestResult(
+            "TC-40: Benchmark 50,000 UA Cross-Validations (SLA < 10µs)",
+            pass40,
+            $"Completed in {sw.ElapsedMilliseconds}ms, Avg = {avgUaBenchmarkUs:F4} µs/op",
+            avgUaBenchmarkUs));
 
         var allPassed = results.All(r => r.Passed);
         var passedCount = results.Count(r => r.Passed);
 
-        var overallAvgBenchmarkUs = (avgH2BenchmarkUs + avgChBenchmarkUs) / 2.0;
+        var overallAvgBenchmarkUs = (avgH2BenchmarkUs + avgChBenchmarkUs + avgUaBenchmarkUs) / 3.0;
 
         return new SelfTestSuiteReport(
             allPassed,
