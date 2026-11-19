@@ -4,9 +4,12 @@ Script kiểm tra tính toàn vẹn của mô hình ONNX và độ chuẩn xác 
 """
 
 import os
-import pytest
-import numpy as np
-import onnxruntime as ort
+try:
+    import pytest  # type: ignore
+except ImportError:
+    pytest = None  # type: ignore
+import numpy as np  # type: ignore
+import onnxruntime as ort  # type: ignore
 
 MODEL_PATH = "models/anti_bot_model.onnx"
 
@@ -15,7 +18,9 @@ def test_model_exists():
 
 def test_onnx_contract():
     if not os.path.exists(MODEL_PATH):
-        pytest.skip("Model chưa được train, bỏ qua test contract")
+        if pytest:
+            pytest.skip("Model chưa được train, bỏ qua test contract")
+        return
         
     session = ort.InferenceSession(MODEL_PATH)
     inputs = session.get_inputs()

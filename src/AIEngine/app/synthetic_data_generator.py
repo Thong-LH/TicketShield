@@ -8,7 +8,7 @@ Bao gồm các nhóm đối tượng mô phỏng theo chuẩn nghiên cứu:
   - StealthBot / GreyZone: Phe vé tinh vi có delay giả lập (label 1 & edge-case)
 """
 
-import numpy as np
+import numpy as np  # type: ignore
 import pandas as pd
 
 FEATURE_COLUMNS = [

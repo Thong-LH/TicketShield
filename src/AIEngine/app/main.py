@@ -9,23 +9,33 @@ Theo đặc tả AI-CORE-8.3.1 (TicketShield) bao gồm:
 
 import os
 import sys
-import numpy as np
+import numpy as np  # type: ignore
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report, roc_auc_score, confusion_matrix
-from skl2onnx import convert_sklearn
-from skl2onnx.common.data_types import FloatTensorType
-import onnxruntime as ort
+from skl2onnx import convert_sklearn  # type: ignore
+from skl2onnx.common.data_types import FloatTensorType  # type: ignore
+import onnxruntime as ort  # type: ignore
 
-from app.synthetic_data_generator import (
-    generate_dataset,
-    generate_standard_user,
-    generate_power_user,
-    generate_simple_bot,
-    generate_stealth_bot,
-    FEATURE_COLUMNS,
-)
+try:
+    from app.synthetic_data_generator import (
+        generate_dataset,
+        generate_standard_user,
+        generate_power_user,
+        generate_simple_bot,
+        generate_stealth_bot,
+        FEATURE_COLUMNS,
+    )
+except ImportError:
+    from TicketShield.src.AIEngine.app.synthetic_data_generator import (
+        generate_dataset,
+        generate_standard_user,
+        generate_power_user,
+        generate_simple_bot,
+        generate_stealth_bot,
+        FEATURE_COLUMNS,
+    )
 
 def evaluate_leave_one_cohort_out(n_estimators: int = 100, max_depth: int = 12, random_state: int = 42):
     """
