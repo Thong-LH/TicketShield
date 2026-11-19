@@ -32,6 +32,12 @@ public class ClientTelemetryDto
     [JsonPropertyName("isWebdriver")]
     public float? IsWebdriver { get; set; }
 
+    [JsonPropertyName("virtualGpuDetected")]
+    public float? VirtualGpuDetected { get; set; }
+
+    [JsonPropertyName("webglRenderer")]
+    public string? WebglRenderer { get; set; }
+
     [JsonPropertyName("deviceFingerprint")]
     public string? DeviceFingerprint { get; set; }
 }
