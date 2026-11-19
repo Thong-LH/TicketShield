@@ -35,6 +35,15 @@ public class ClientTelemetryDto
     [JsonPropertyName("virtualGpuDetected")]
     public float? VirtualGpuDetected { get; set; }
 
+    [JsonPropertyName("prototypeTampered")]
+    public float? PrototypeTampered { get; set; }
+
+    [JsonPropertyName("canvasHash")]
+    public string? CanvasHash { get; set; }
+
+    [JsonPropertyName("canvasTampered")]
+    public float? CanvasTampered { get; set; }
+
     [JsonPropertyName("webglRenderer")]
     public string? WebglRenderer { get; set; }
 
