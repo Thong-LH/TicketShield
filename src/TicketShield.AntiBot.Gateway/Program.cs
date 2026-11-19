@@ -46,6 +46,37 @@ if (args.Contains("--self-test"))
     Environment.Exit(report.AllPassed ? 0 : 1);
 }
 
+// CLI Cross-Language Batch Evaluation Runner cho ML-13.3.6
+if (args.Contains("--eval-v2-batch"))
+{
+    var scoringService = new AntiBotScoringService(
+        Microsoft.Extensions.Options.Options.Create(new AntiBotScoringOptions()),
+        Microsoft.Extensions.Logging.Abstractions.NullLogger<AntiBotScoringService>.Instance);
+
+    string jsonInput = string.Empty;
+    int idx = Array.IndexOf(args, "--eval-v2-batch");
+    if (idx + 1 < args.Length && !string.IsNullOrWhiteSpace(args[idx + 1]))
+    {
+        jsonInput = args[idx + 1];
+    }
+    else
+    {
+        jsonInput = Console.In.ReadToEnd();
+    }
+
+    jsonInput = jsonInput.Trim().TrimStart('\uFEFF');
+    var options = new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+    var vectors = System.Text.Json.JsonSerializer.Deserialize<List<BotRiskVectorV2>>(jsonInput, options) ?? new List<BotRiskVectorV2>();
+    var responses = new List<AntiBotScoreResponse>();
+    foreach (var v in vectors)
+    {
+        responses.Add(scoringService.EvaluateV2(v));
+    }
+
+    Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(responses));
+    Environment.Exit(0);
+}
+
 var builder = WebApplication.CreateBuilder(args);
 
 var port = builder.Configuration.GetValue("HttpPort", 5006);
