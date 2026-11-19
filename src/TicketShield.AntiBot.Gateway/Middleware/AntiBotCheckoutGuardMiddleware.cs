@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using TicketShield.AntiBot.Gateway.Models;
+using TicketShield.AntiBot.Gateway.Models.Network;
 using TicketShield.AntiBot.Gateway.Services;
 using TicketShield.AntiBot.Gateway.Services.Network;
 
@@ -63,6 +64,14 @@ public class ClientTelemetryDto
     public long? ClientTimestampCamel { get; set; }
 
     public long? ClientTimestamp => ClientTimestampSnake ?? ClientTimestampCamel;
+
+    [JsonPropertyName("client_user_agent")]
+    public string? ClientUserAgentSnake { get; set; }
+
+    [JsonPropertyName("clientUserAgent")]
+    public string? ClientUserAgentCamel { get; set; }
+
+    public string? ClientUserAgent => ClientUserAgentSnake ?? ClientUserAgentCamel;
 }
 
 /// <summary>
@@ -83,7 +92,8 @@ public class AntiBotCheckoutGuardMiddleware(
         IAntiBotGuardService guardService,
         INetworkConsistencyService networkService,
         ISessionTokenService tokenService,
-        INonceValidationService nonceService)
+        INonceValidationService nonceService,
+        IUserAgentCrossValidator uaValidator)
     {
         var path = context.Request.Path;
         var method = context.Request.Method;
@@ -120,6 +130,7 @@ public class AntiBotCheckoutGuardMiddleware(
             float? isWebdriver = null;
             string? clientNonce = null;
             long? clientTimestamp = null;
+            string? clientUserAgent = null;
 
             try
             {
@@ -175,11 +186,22 @@ public class AntiBotCheckoutGuardMiddleware(
                                 actionInterval = aiVal;
                         }
 
+                        if (te.TryGetProperty("client_user_agent", out var cua) || te.TryGetProperty("clientUserAgent", out cua))
+                        {
+                            clientUserAgent = cua.GetString();
+                        }
+
                         if (string.IsNullOrWhiteSpace(deviceFingerprint))
                         {
                             if (te.TryGetProperty("device_fingerprint", out var tdf) || te.TryGetProperty("deviceFingerprint", out tdf))
                                 deviceFingerprint = tdf.GetString();
                         }
+                    }
+
+                    if (string.IsNullOrWhiteSpace(clientUserAgent))
+                    {
+                        if (root.TryGetProperty("client_user_agent", out var rcua) || root.TryGetProperty("clientUserAgent", out rcua))
+                            clientUserAgent = rcua.GetString();
                     }
                 }
             }
@@ -193,6 +215,7 @@ public class AntiBotCheckoutGuardMiddleware(
             sessionToken ??= context.Request.Headers["X-Session-Token"].FirstOrDefault();
             deviceFingerprint ??= context.Request.Headers["X-Device-Fingerprint"].FirstOrDefault();
             clientNonce ??= context.Request.Headers["X-AntiBot-Nonce"].FirstOrDefault();
+            clientUserAgent ??= context.Request.Headers["X-Client-User-Agent"].FirstOrDefault();
 
             // 2. Xác thực SessionToken v2 & Chống Replay Nonce (US-13.2.3, SCRUM-376)
             if (!string.IsNullOrWhiteSpace(sessionToken))
@@ -315,6 +338,49 @@ public class AntiBotCheckoutGuardMiddleware(
             // Fallback sang headers nếu body không có
             sessionToken ??= context.Request.Headers["X-Session-Token"].FirstOrDefault();
             deviceFingerprint ??= context.Request.Headers["X-Device-Fingerprint"].FirstOrDefault();
+
+            // 3. Đối soát chéo User-Agent Client vs HTTP Header (US-13.2.4, SCRUM-377)
+            var headerUserAgent = context.Request.Headers.UserAgent.ToString();
+            var uaResult = uaValidator.Validate(clientUserAgent, headerUserAgent);
+
+            if (uaResult.IsBlatantMismatch)
+            {
+                logger.LogWarning(
+                    "AntiBot Gateway: BLATANT UA MISMATCH BLOCKED! Reason={Reason}, ClientPlat={CP}, HeaderPlat={HP}, ClientBrowser={CB}, HeaderBrowser={HB}",
+                    uaResult.Reason, uaResult.ClientPlatform, uaResult.HeaderPlatform, uaResult.ClientBrowser, uaResult.HeaderBrowser);
+
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                context.Response.ContentType = "application/json";
+                await context.Response.WriteAsJsonAsync(new
+                {
+                    message = $"User-Agent Impersonation detected: {uaResult.Reason}",
+                    code = "UserAgentMismatch",
+                    decision = "Block"
+                });
+                return;
+            }
+
+            if (!uaResult.IsConsistent)
+            {
+                logger.LogInformation(
+                    "AntiBot Gateway: Flagged UA Mismatch anomaly. Reason={Reason}",
+                    uaResult.Reason);
+
+                context.Request.Headers["X-AntiBot-UA-Mismatch"] = "True";
+                context.Request.Headers["X-AntiBot-UA-Mismatch-Reason"] = uaResult.Reason ?? "UA Mismatch";
+
+                // Cầu nối ONNX 6D: Khi phát hiện lệch pha UA nhẹ (Minor/Fuzzy mismatch),
+                // ép isWebdriver = 1.0f để mô hình AI đánh tụt điểm uy tín hoặc đưa vào Challenge
+                isWebdriver = 1.0f;
+            }
+            else
+            {
+                context.Request.Headers["X-AntiBot-UA-Consistent"] = "True";
+                if (!string.IsNullOrEmpty(uaResult.Reason))
+                {
+                    context.Request.Headers["X-AntiBot-UA-Note"] = uaResult.Reason;
+                }
+            }
 
             var clientIp = context.Request.Headers["X-Forwarded-For"].FirstOrDefault()
                            ?? context.Connection.RemoteIpAddress?.ToString();

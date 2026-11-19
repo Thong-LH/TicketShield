@@ -542,6 +542,7 @@ public static class AntiBotSelfTestRunner
             var dummyGuard = new DummySelfTestGuardService();
             var middlewareLogger = Microsoft.Extensions.Logging.Abstractions.NullLogger<AntiBotCheckoutGuardMiddleware>.Instance;
             var middleware = new AntiBotCheckoutGuardMiddleware((_) => Task.CompletedTask, middlewareLogger);
+            var uaValidator = new UserAgentCrossValidator();
 
             var tierId = Guid.NewGuid();
             var (validToken, validNonce, _, _) = tokenService.GenerateSessionTokenWithNonce(tierId, null, 300);
@@ -550,7 +551,7 @@ public static class AntiBotSelfTestRunner
             // TC-32: Middleware Allow Valid Request -> Nonce Consumed & Forwarded with Header
             sw.Restart();
             var ctxValid = CreateCheckoutContext(validToken, validNonce, tierId, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
-            middleware.InvokeAsync(ctxValid, dummyGuard, networkService, tokenService, nonceService).GetAwaiter().GetResult();
+            middleware.InvokeAsync(ctxValid, dummyGuard, networkService, tokenService, nonceService, uaValidator).GetAwaiter().GetResult();
             sw.Stop();
             var pass32 = ctxValid.Response.StatusCode == StatusCodes.Status200OK
                          && ctxValid.Request.Headers["X-AntiBot-Nonce-Verified"] == "True"
@@ -564,7 +565,7 @@ public static class AntiBotSelfTestRunner
             // TC-33: Middleware Block Replay Attack (Replay the exact same Token and Nonce of TC-32)
             sw.Restart();
             var ctxReplay = CreateCheckoutContext(validToken, validNonce, tierId, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
-            middleware.InvokeAsync(ctxReplay, dummyGuard, networkService, tokenService, nonceService).GetAwaiter().GetResult();
+            middleware.InvokeAsync(ctxReplay, dummyGuard, networkService, tokenService, nonceService, uaValidator).GetAwaiter().GetResult();
             sw.Stop();
             var pass33 = ctxReplay.Response.StatusCode == StatusCodes.Status429TooManyRequests;
             results.Add(new SelfTestResult(
@@ -578,7 +579,7 @@ public static class AntiBotSelfTestRunner
             var (tokenMismatched, serverNonce, _, _) = tokenService.GenerateSessionTokenWithNonce(tierId, null, 300);
             nonceService.RegisterNonceAsync(serverNonce, tierId, TimeSpan.FromMinutes(5)).GetAwaiter().GetResult();
             var ctxMismatch = CreateCheckoutContext(tokenMismatched, "forged_telemetry_nonce_abc", tierId, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
-            middleware.InvokeAsync(ctxMismatch, dummyGuard, networkService, tokenService, nonceService).GetAwaiter().GetResult();
+            middleware.InvokeAsync(ctxMismatch, dummyGuard, networkService, tokenService, nonceService, uaValidator).GetAwaiter().GetResult();
             sw.Stop();
             var pass34 = ctxMismatch.Response.StatusCode == StatusCodes.Status403Forbidden;
             results.Add(new SelfTestResult(
@@ -593,7 +594,7 @@ public static class AntiBotSelfTestRunner
             nonceService.RegisterNonceAsync(skewNonce, tierId, TimeSpan.FromMinutes(5)).GetAwaiter().GetResult();
             var skewedTimestamp = DateTimeOffset.UtcNow.AddSeconds(30).ToUnixTimeMilliseconds(); // 30s in the future
             var ctxSkew = CreateCheckoutContext(tokenSkew, skewNonce, tierId, skewedTimestamp);
-            middleware.InvokeAsync(ctxSkew, dummyGuard, networkService, tokenService, nonceService).GetAwaiter().GetResult();
+            middleware.InvokeAsync(ctxSkew, dummyGuard, networkService, tokenService, nonceService, uaValidator).GetAwaiter().GetResult();
             sw.Stop();
             var pass35 = ctxSkew.Response.StatusCode == StatusCodes.Status403Forbidden;
             results.Add(new SelfTestResult(
@@ -616,7 +617,13 @@ public static class AntiBotSelfTestRunner
             results);
     }
 
-    private static DefaultHttpContext CreateCheckoutContext(string token, string nonce, Guid tierId, long clientTimestampMs)
+    private static DefaultHttpContext CreateCheckoutContext(
+        string token,
+        string nonce,
+        Guid tierId,
+        long clientTimestampMs,
+        string? userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+        string? clientUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36")
     {
         var ctx = new DefaultHttpContext();
         ctx.Request.Method = "POST";
@@ -624,6 +631,11 @@ public static class AntiBotSelfTestRunner
         ctx.Request.ContentType = "application/json";
         ctx.Response.Body = new MemoryStream();
         ctx.Connection.RemoteIpAddress = System.Net.IPAddress.Loopback;
+
+        if (userAgent != null)
+        {
+            ctx.Request.Headers.UserAgent = userAgent;
+        }
 
         var bodyObj = new
         {
@@ -637,7 +649,8 @@ public static class AntiBotSelfTestRunner
                 prototype_tampered = 0,
                 device_fingerprint = "0123456789abcdef0123456789abcdef",
                 nonce = nonce,
-                client_timestamp = clientTimestampMs
+                client_timestamp = clientTimestampMs,
+                client_user_agent = clientUserAgent
             }
         };
 
