@@ -22,7 +22,7 @@ public class GetMyPayoutsQueryHandler : IRequestHandler<GetMyPayoutsQuery, ApiRe
         var sellerId = _currentUserService?.UserId ?? Guid.Empty;
         if (sellerId == Guid.Empty)
         {
-            throw new UnauthorizedException("Bạn phải đăng nhập để xem lịch sử tiền bán vé.");
+            throw new UnauthorizedException("You must be signed in to view payout history.");
         }
 
         var payouts = await _dbContext.PayoutTransactions
@@ -51,6 +51,6 @@ public class GetMyPayoutsQueryHandler : IRequestHandler<GetMyPayoutsQuery, ApiRe
             })
             .ToListAsync(cancellationToken);
 
-        return ApiResponse<List<MyPayoutDto>>.SuccessResponse(payouts, "Lấy lịch sử tiền bán vé thành công.");
+        return ApiResponse<List<MyPayoutDto>>.SuccessResponse(payouts, "Payout history retrieved successfully.");
     }
 }

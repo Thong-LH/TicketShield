@@ -40,7 +40,7 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
         var buyerId = _currentUserService?.UserId ?? Guid.Empty;
         if (buyerId == Guid.Empty)
         {
-            throw new UnauthorizedException("Bạn phải đăng nhập để giữ chỗ mua vé.");
+            throw new UnauthorizedException("You must be signed in to reserve tickets for purchase.");
         }
 
         var buyer = await _dbContext.ShadowUsers
@@ -66,13 +66,13 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
             }
             else
             {
-                throw new UnauthorizedException("Tài khoản người dùng không tồn tại hoặc chưa được đồng bộ.");
+                throw new UnauthorizedException("User account does not exist or has not been synced.");
             }
         }
 
         if (!buyer.IsActive)
         {
-            throw new UnauthorizedException("Tài khoản của bạn đã bị vô hiệu hóa.");
+            throw new UnauthorizedException("Your account has been deactivated.");
         }
 
         // 2. Route bundle listings before opening the single-listing transaction.
@@ -84,7 +84,7 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
 
         if (routingListing == null)
         {
-            throw new NotFoundException("Tin đăng bán vé", request.ListingId);
+            throw new NotFoundException("Ticket listing", request.ListingId);
         }
 
         var isBundle = routingListing.BundleId != null || routingListing.BundleTotalTickets >= 2;
@@ -106,13 +106,13 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
 
             if (listing == null)
             {
-                throw new NotFoundException("Tin đăng bán vé", request.ListingId);
+                throw new NotFoundException("Ticket listing", request.ListingId);
             }
 
             // 4. Business Rule Validation: Buyer cannot be Seller (BE-CORE-3.1.6)
             if (listing.SellerId == buyerId)
             {
-                throw new BadRequestException("Bạn không thể tự mua vé của chính mình.");
+                throw new BadRequestException("You cannot purchase your own ticket.");
             }
 
             // Ensure Seller exists in ShadowUsers table to prevent FK violations
@@ -123,7 +123,7 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
             {
                 if (string.IsNullOrWhiteSpace(request.PrivateAccessToken) || listing.PrivateAccessToken != request.PrivateAccessToken)
                 {
-                    throw new ForbiddenAccessException("Mã truy cập vé riêng tư không hợp lệ hoặc bị thiếu.");
+                    throw new ForbiddenAccessException("Invalid or missing private access token.");
                 }
             }
 
@@ -133,7 +133,7 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
                 listing.ListingStatus == ListingStatus.Cancelled ||
                 listing.ListingStatus == ListingStatus.Expired)
             {
-                throw new BusinessRuleViolationException($"Vé này hiện ở trạng thái '{listing.ListingStatus}' và không thể đặt mua.");
+                throw new BusinessRuleViolationException($"This ticket is currently in '{listing.ListingStatus}' status and cannot be purchased.");
             }
 
             // BR-L04: Enforce Event Resale Deadline — chặn nếu sự kiện cận giờ (< 2h) hoặc đã qua
@@ -141,7 +141,7 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
             if (eventStartAt.HasValue && eventStartAt.Value.AddHours(-2) <= now)
             {
                 throw new BusinessRuleViolationException(
-                    $"Không thể đặt mua vé. Sự kiện sẽ bắt đầu lúc {eventStartAt.Value:dd/MM/yyyy HH:mm} UTC và đã qua thời hạn mua vé (trước 2 giờ khai mạc).");
+                    $"Cannot purchase ticket. The event starts at {eventStartAt.Value:dd/MM/yyyy HH:mm} UTC and the purchase deadline has passed (2 hours before event start).");
             }
 
             // BE-12.1.6: Chặn đặt mua mới nếu vé có Escrow đang đối soát hoặc đã khóa thanh toán
@@ -152,7 +152,7 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
                     .Any(e => e.Status == EscrowStatus.TransferNeedsReview || e.Status == EscrowStatus.Locked);
             if (hasBlockingEscrow)
             {
-                throw new BusinessRuleViolationException("Vé này đang trong quá trình thanh toán hoặc đối soát, không thể đặt mua.");
+                throw new BusinessRuleViolationException("This ticket is currently undergoing payment processing or reconciliation and cannot be purchased.");
             }
 
             var activePendingEscrow = listing.EscrowTransactions
@@ -164,7 +164,7 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
             {
                 if (activePendingEscrow != null && activePendingEscrow.BuyerId != buyerId)
                 {
-                    throw new BusinessRuleViolationException("Vé này đang được giữ chỗ bởi người mua khác. Vui lòng thử lại sau.");
+                    throw new BusinessRuleViolationException("This ticket is currently reserved by another buyer. Please try again later.");
                 }
             }
 
@@ -266,7 +266,7 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
 
             return ApiResponse<HoldListingForPurchaseResponse>.SuccessResponse(
                 response,
-                "Giữ chỗ vé thành công! Vui lòng thanh toán trong vòng 10 phút.");
+                "Ticket reserved successfully! Please complete payment within 10 minutes.");
         }
         catch
         {
@@ -354,14 +354,14 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
             if (bundleListings.Count < 2 || bundleListings.Count > ResaleListing.MaxBundleTickets)
             {
                 throw new BusinessRuleViolationException(
-                    $"Gói vé này không hợp lệ (cần từ 2 đến {ResaleListing.MaxBundleTickets} vé, thực tế tìm thấy {bundleListings.Count} vé).");
+                    $"Invalid ticket bundle (requires 2 to {ResaleListing.MaxBundleTickets} tickets, found {bundleListings.Count} tickets).");
             }
 
             var claimedTotal = anchorListing.BundleTotalTickets;
             if (claimedTotal != bundleListings.Count)
             {
                 throw new BusinessRuleViolationException(
-                    $"Gói vé không hợp lệ: khai báo {claimedTotal} vé nhưng hệ thống chỉ tìm thấy {bundleListings.Count} vé thật. Vui lòng thử lại.");
+                    $"Invalid ticket bundle: claimed {claimedTotal} tickets but system found {bundleListings.Count} actual tickets. Please try again.");
             }
 
             var effectiveBundleTotal = bundleListings.Count;
@@ -373,7 +373,7 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
             {
                 if (request.SelectedListingIds.Distinct().Count() != request.SelectedListingIds.Count)
                 {
-                    throw new BusinessRuleViolationException("Danh sách vé chọn chứa mã trùng lặp.");
+                    throw new BusinessRuleViolationException("Selected tickets list contains duplicate IDs.");
                 }
 
                 var bundleMap = bundleListings.ToDictionary(l => l.Id);
@@ -381,13 +381,13 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
                 if (invalidIds.Count > 0)
                 {
                     throw new BusinessRuleViolationException(
-                        $"Danh sách vé chọn chứa vé không thuộc gói vé này (ListingId: {string.Join(", ", invalidIds)}).");
+                        $"Selected tickets list contains tickets not belonging to this bundle (ListingId: {string.Join(", ", invalidIds)}).");
                 }
 
                 if (anchorListing.IsBundleAllOrNothing && request.SelectedListingIds.Count != bundleListings.Count)
                 {
                     throw new BusinessRuleViolationException(
-                        $"Gói vé này yêu cầu mua toàn bộ gói ({bundleListings.Count} vé), không được chọn mua lẻ.");
+                        $"This bundle requires purchasing the entire bundle ({bundleListings.Count} tickets). Individual ticket selection is not allowed.");
                 }
 
                 selectedListings = request.SelectedListingIds.Select(id => bundleMap[id]).ToList();
@@ -419,7 +419,7 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
 
             if (hasBlockingSelectedEscrow)
             {
-                throw new BusinessRuleViolationException("Vé này đang trong quá trình thanh toán hoặc đối soát, không thể đặt mua.");
+                throw new BusinessRuleViolationException("This ticket is currently undergoing payment processing or reconciliation and cannot be purchased.");
             }
 
             // 3. Per-listing validation
@@ -440,12 +440,12 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
             if (otherActiveBundleHold)
             {
                 throw new BusinessRuleViolationException(
-                    "Gói vé này đang được giữ chỗ bởi người mua khác. Vui lòng thử lại sau.");
+                    "This ticket bundle is currently reserved by another buyer. Please try again later.");
             }
 
             if (bundleListings.Any(l => l.SellerId == buyerId))
             {
-                throw new BadRequestException("Bạn không thể tự mua vé của chính mình.");
+                throw new BadRequestException("You cannot purchase your own ticket.");
             }
 
             foreach (var listing in selectedListings)
@@ -458,7 +458,7 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
 
                     if (!isTokenValid)
                     {
-                        throw new ForbiddenAccessException("Mã truy cập vé riêng tư không hợp lệ hoặc bị thiếu.");
+                        throw new ForbiddenAccessException("Invalid or missing private access token.");
                     }
                 }
 
@@ -466,14 +466,14 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
                     listing.ListingStatus == ListingStatus.Cancelled ||
                     listing.ListingStatus == ListingStatus.Expired)
                 {
-                    throw new BusinessRuleViolationException($"Vé '{listing.OriginalTicketCode}' trong gói đang ở trạng thái '{listing.ListingStatus}' và không thể đặt mua.");
+                    throw new BusinessRuleViolationException($"Ticket '{listing.OriginalTicketCode}' in this bundle is currently in '{listing.ListingStatus}' status and cannot be purchased.");
                 }
 
                 var eventStartAt = listing.Event?.EventStartAt;
                 if (eventStartAt.HasValue && eventStartAt.Value.AddHours(-2) <= now)
                 {
                     throw new BusinessRuleViolationException(
-                        $"Không thể đặt mua gói vé. Sự kiện sẽ bắt đầu lúc {eventStartAt.Value:dd/MM/yyyy HH:mm} UTC và đã qua thời hạn mua vé.");
+                        $"Cannot purchase ticket bundle. The event starts at {eventStartAt.Value:dd/MM/yyyy HH:mm} UTC and the purchase deadline has passed.");
                 }
 
                 if (listing.ListingStatus == ListingStatus.Transacting)
@@ -482,7 +482,7 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
                         .Any(e => e.Status == EscrowStatus.Pending && e.UnlockAt.HasValue && e.UnlockAt.Value > now && e.BuyerId != buyerId);
                     if (otherHold)
                     {
-                        throw new BusinessRuleViolationException("Gói vé này đang được giữ chỗ bởi người mua khác. Vui lòng thử lại sau.");
+                        throw new BusinessRuleViolationException("This ticket bundle is currently reserved by another buyer. Please try again later.");
                     }
                 }
             }
@@ -495,7 +495,7 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
                         listing.ListingStatus == ListingStatus.Cancelled ||
                         listing.ListingStatus == ListingStatus.Expired)
                     {
-                        throw new BusinessRuleViolationException($"Vé '{listing.OriginalTicketCode}' trong gói đang ở trạng thái '{listing.ListingStatus}' và không thể đặt mua.");
+                        throw new BusinessRuleViolationException($"Ticket '{listing.OriginalTicketCode}' in this bundle is currently in '{listing.ListingStatus}' status and cannot be purchased.");
                     }
                 }
             }
@@ -659,7 +659,7 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
 
             return ApiResponse<HoldListingForPurchaseResponse>.SuccessResponse(
                 response,
-                $"Giữ chỗ {(selectedListings.Count > 1 ? $"gói {selectedListings.Count} vé" : "vé")} thành công! Vui lòng thanh toán trong vòng 10 phút.");
+                $"{(selectedListings.Count > 1 ? $"Ticket bundle ({selectedListings.Count} tickets)" : "Ticket")} reserved successfully! Please complete payment within 10 minutes.");
         }
         catch
         {
@@ -689,7 +689,7 @@ public class HoldListingForPurchaseCommandHandler : IRequestHandler<HoldListingF
             {
                 Id = userId,
                 Email = $"seller_{shortId}@ticketshield.vn",
-                FullName = "Người bán vé " + shortId,
+                FullName = "Ticket Seller " + shortId,
                 Role = UserRole.User,
                 IsActive = true,
                 CreatedAt = DateTimeOffset.UtcNow,

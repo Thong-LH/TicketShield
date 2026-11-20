@@ -31,7 +31,7 @@ public class ReleaseListingHoldCommandHandler : IRequestHandler<ReleaseListingHo
         var buyerId = _currentUserService?.UserId ?? Guid.Empty;
         if (buyerId == Guid.Empty)
         {
-            throw new UnauthorizedException("Bạn phải đăng nhập để hủy giữ chỗ vé.");
+            throw new UnauthorizedException("You must be signed in to cancel a ticket reservation.");
         }
 
         // Quick routing check (without heavy lock yet)
@@ -41,7 +41,7 @@ public class ReleaseListingHoldCommandHandler : IRequestHandler<ReleaseListingHo
 
         if (routingListing == null)
         {
-            throw new NotFoundException("Tin đăng bán vé", request.ListingId);
+            throw new NotFoundException("Ticket listing", request.ListingId);
         }
 
         // A flexible bundle can still be held as one bundle when the buyer
@@ -70,13 +70,13 @@ public class ReleaseListingHoldCommandHandler : IRequestHandler<ReleaseListingHo
 
             if (listing == null)
             {
-                throw new NotFoundException("Tin đăng bán vé", request.ListingId);
+                throw new NotFoundException("Ticket listing", request.ListingId);
             }
 
             // 3. Business Rule Validation: Must be in Transacting status
             if (listing.ListingStatus != ListingStatus.Transacting)
             {
-                throw new BusinessRuleViolationException($"Bài đăng bán vé hiện không ở trạng thái giữ chỗ (TRANSACTING). Trạng thái hiện tại: '{listing.ListingStatus}'.");
+                throw new BusinessRuleViolationException($"Ticket listing is currently not in holding state (TRANSACTING). Current status: '{listing.ListingStatus}'.");
             }
 
             // BE-12.1.6: Chặn hủy giữ chỗ nếu có Escrow đang đối soát hoặc đã thanh toán
@@ -97,7 +97,7 @@ public class ReleaseListingHoldCommandHandler : IRequestHandler<ReleaseListingHo
             if (nonReleasableEscrow != null)
             {
                 throw new BusinessRuleViolationException(
-                    $"Không thể hủy giữ chỗ bài đăng bán vé đang được xử lý hoặc thanh toán (Trạng thái Escrow: '{nonReleasableEscrow.Status}').");
+                    $"Cannot cancel ticket reservation while payment is processing or completed (Escrow status: '{nonReleasableEscrow.Status}').");
             }
 
             // SQL-level filter: chỉ lấy escrow Pending của listing này
@@ -108,13 +108,13 @@ public class ReleaseListingHoldCommandHandler : IRequestHandler<ReleaseListingHo
 
             if (activeEscrow == null)
             {
-                throw new BusinessRuleViolationException("Không tìm thấy phiên giữ chỗ hợp lệ để hủy.");
+                throw new BusinessRuleViolationException("No valid reservation session found to cancel.");
             }
 
             // 4. Validate Buyer Ownership: Only the holding buyer can cancel their hold
             if (activeEscrow.BuyerId != buyerId)
             {
-                throw new ForbiddenAccessException("Bạn không phải người đang giữ chỗ bài đăng bán vé này.");
+                throw new ForbiddenAccessException("You are not the buyer holding this ticket listing.");
             }
 
             // 5. Update Status & Release Hold Immediately
@@ -148,7 +148,7 @@ public class ReleaseListingHoldCommandHandler : IRequestHandler<ReleaseListingHo
 
             return ApiResponse<ReleaseListingHoldResponse>.SuccessResponse(
                 response,
-                "Hủy giữ chỗ vé thành công, vé đã được trả về chợ bán.");
+                "Ticket reservation cancelled successfully. Ticket has been returned to marketplace.");
         }
         catch
         {
@@ -193,7 +193,7 @@ public class ReleaseListingHoldCommandHandler : IRequestHandler<ReleaseListingHo
             if (nonReleasableBundleEscrow != null)
             {
                 throw new BusinessRuleViolationException(
-                    $"Không thể hủy giữ chỗ gói vé đang được xử lý hoặc thanh toán (Trạng thái Escrow: '{nonReleasableBundleEscrow.Status}').");
+                    $"Cannot cancel bundle reservation while payment is processing or completed (Escrow status: '{nonReleasableBundleEscrow.Status}').");
             }
 
             // Find the pending bundle escrow for this listing / buyer
@@ -221,13 +221,13 @@ public class ReleaseListingHoldCommandHandler : IRequestHandler<ReleaseListingHo
 
             if (bundleEscrow == null)
             {
-                throw new BusinessRuleViolationException("Không tìm thấy phiên giữ chỗ hợp lệ để hủy.");
+                throw new BusinessRuleViolationException("No valid reservation session found to cancel.");
             }
 
             // Validate buyer ownership
             if (bundleEscrow.BuyerId != buyerId)
             {
-                throw new ForbiddenAccessException("Bạn không phải người đang giữ chỗ gói vé này.");
+                throw new ForbiddenAccessException("You are not the buyer holding this ticket bundle.");
             }
 
             // Query all listings in the bundle
@@ -282,7 +282,7 @@ public class ReleaseListingHoldCommandHandler : IRequestHandler<ReleaseListingHo
 
             return ApiResponse<ReleaseListingHoldResponse>.SuccessResponse(
                 response,
-                $"Hủy giữ chỗ gói {bundleListings.Count} vé thành công, vé đã được trả về chợ bán.");
+                $"Bundle reservation for {bundleListings.Count} tickets cancelled successfully. Tickets have been returned to marketplace.");
         }
         catch
         {

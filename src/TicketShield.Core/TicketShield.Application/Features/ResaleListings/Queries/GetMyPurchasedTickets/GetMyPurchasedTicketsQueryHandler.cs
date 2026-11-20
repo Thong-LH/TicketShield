@@ -26,7 +26,7 @@ public class GetMyPurchasedTicketsQueryHandler : IRequestHandler<GetMyPurchasedT
 
         if (buyerId == Guid.Empty && string.IsNullOrWhiteSpace(buyerEmail))
         {
-            throw new UnauthorizedException("Bạn phải đăng nhập để xem danh sách vé đã mua.");
+            throw new UnauthorizedException("You must be signed in to view your purchased tickets.");
         }
 
         // Query successful purchases for this buyer (match by buyerId or recipientEmail or Buyer.Email)
@@ -106,7 +106,7 @@ public class GetMyPurchasedTicketsQueryHandler : IRequestHandler<GetMyPurchasedT
         foreach (var e in purchases)
         {
             var eventName = e.Listing?.Event?.Name ?? "Concert Pass";
-            var eventVenue = e.Listing?.Event?.Venue ?? "Sân Vận Động";
+            var eventVenue = e.Listing?.Event?.Venue ?? "Stadium";
             var eventStart = e.Listing?.Event?.EventStartAt ?? e.CreatedAt.AddDays(30);
             var tierName = e.Listing?.Tier?.TierName ?? "Standard Pass";
             var rawSeatZone = !string.IsNullOrWhiteSpace(e.Listing?.SeatZone) ? e.Listing.SeatZone : tierName;
@@ -232,7 +232,7 @@ public class GetMyPurchasedTicketsQueryHandler : IRequestHandler<GetMyPurchasedT
             });
         }
 
-        return ApiResponse<List<PurchasedTicketDto>>.SuccessResponse(dtos, "Lấy danh sách vé đã mua thành công.");
+        return ApiResponse<List<PurchasedTicketDto>>.SuccessResponse(dtos, "Purchased tickets retrieved successfully.");
     }
 
     private static List<string> SplitIssuedCodes(string? rawCodes)

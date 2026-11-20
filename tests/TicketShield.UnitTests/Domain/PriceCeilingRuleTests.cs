@@ -59,7 +59,7 @@ public class PriceCeilingRuleTests
 
         var exception = Assert.Throws<BusinessRuleViolationException>(() => listing.ValidatePriceCeiling(0m));
 
-        Assert.Contains("trần", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("ceiling", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

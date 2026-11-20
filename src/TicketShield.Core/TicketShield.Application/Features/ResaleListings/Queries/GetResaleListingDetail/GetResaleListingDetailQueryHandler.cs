@@ -28,7 +28,7 @@ public class GetResaleListingDetailQueryHandler : IRequestHandler<GetResaleListi
 
         if (listing == null)
         {
-            throw new NotFoundException("Tin bán vé", request.ListingId);
+            throw new NotFoundException("Ticket listing", request.ListingId);
         }
 
         // Validate Private Access Token
@@ -37,10 +37,10 @@ public class GetResaleListingDetailQueryHandler : IRequestHandler<GetResaleListi
             if (string.IsNullOrWhiteSpace(request.Token) ||
                 !string.Equals(listing.PrivateAccessToken, request.Token.Trim(), StringComparison.OrdinalIgnoreCase))
             {
-                throw new ForbiddenAccessException("Bạn không có quyền truy cập vé riêng tư này. Vui lòng kiểm tra lại liên kết bảo mật hoặc yêu cầu người bán cấp liên kết mới.");
+                throw new ForbiddenAccessException("You do not have permission to access this private ticket. Please verify your secure link or request a new link from the seller.");
             }
         }
 
-        return ApiResponse<ResaleListingDetailDto>.SuccessResponse(listing.ToDetailDto(), "Lấy thông tin vé thành công.");
+        return ApiResponse<ResaleListingDetailDto>.SuccessResponse(listing.ToDetailDto(), "Ticket details retrieved successfully.");
     }
 }

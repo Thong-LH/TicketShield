@@ -31,7 +31,7 @@ public class CancelResaleListingCommandHandler : IRequestHandler<CancelResaleLis
         // 1. Resolve seller ID from current authenticated user — no anonymous fallback
         var sellerId = _currentUserService?.UserId ?? Guid.Empty;
         if (sellerId == Guid.Empty)
-            throw new UnauthorizedException("Bạn phải đăng nhập để hủy tin đăng bán vé.");
+            throw new UnauthorizedException("You must be signed in to cancel a resale listing.");
 
         // 2. Initial lookup to determine lock scope (single listing vs. bundle)
         var routingListing = await _dbContext.ResaleListings
@@ -40,12 +40,12 @@ public class CancelResaleListingCommandHandler : IRequestHandler<CancelResaleLis
 
         if (routingListing == null)
         {
-            throw new NotFoundException("Tin đăng bán vé", request.ListingId);
+            throw new NotFoundException("Ticket listing", request.ListingId);
         }
 
         if (routingListing.SellerId != sellerId)
         {
-            throw new ForbiddenAccessException("Bạn không có quyền hủy tin đăng bán vé này.");
+            throw new ForbiddenAccessException("You do not have permission to cancel this resale listing.");
         }
 
         // 3. Concurrency Control: Advisory Lock transaction by BundleId or ListingId
@@ -63,18 +63,18 @@ public class CancelResaleListingCommandHandler : IRequestHandler<CancelResaleLis
 
             if (listing == null)
             {
-                throw new NotFoundException("Tin đăng bán vé", request.ListingId);
+                throw new NotFoundException("Ticket listing", request.ListingId);
             }
 
             if (listing.SellerId != sellerId)
             {
-                throw new ForbiddenAccessException("Bạn không có quyền hủy tin đăng bán vé này.");
+                throw new ForbiddenAccessException("You do not have permission to cancel this resale listing.");
             }
 
             if (listing.ListingStatus != ListingStatus.Verified)
             {
                 throw new BusinessRuleViolationException(
-                    $"Tin đăng bán vé hiện đang ở trạng thái '{listing.ListingStatus}'. Chỉ có thể hủy tin đăng khi vé chưa bị người mua đặt hoặc mua.");
+                    $"Ticket listing is currently in '{listing.ListingStatus}' status. A listing can only be cancelled when tickets have not been reserved or purchased by a buyer.");
             }
 
             var listingsToCancel = new List<ResaleListing> { listing };
@@ -87,7 +87,7 @@ public class CancelResaleListingCommandHandler : IRequestHandler<CancelResaleLis
                 if (bundleListings.Any(l => l.ListingStatus != ListingStatus.Verified && l.ListingStatus != ListingStatus.Cancelled))
                 {
                     throw new BusinessRuleViolationException(
-                        "Một hoặc nhiều vé trong gói vé (combo) này đang được giao dịch hoặc đã bán. Không thể hủy gói vé.");
+                        "One or more tickets in this bundle are currently transacting or sold. The bundle cannot be cancelled.");
                 }
 
                 listingsToCancel = bundleListings.Where(l => l.ListingStatus == ListingStatus.Verified).ToList();
@@ -111,7 +111,7 @@ public class CancelResaleListingCommandHandler : IRequestHandler<CancelResaleLis
                     // If unlock fails for any ticket midway, throw a clear exception.
                     // The DB transaction tx will be rolled back in the catch block below.
                     throw new BusinessRuleViolationException(
-                        $"Không thể mở khóa trọn gói vé với Ban Tổ Chức (đã mở khóa {unlockedItems.Count}/{listingsToCancel.Count} vé). Vui lòng thử lại sau.");
+                        $"Unable to unlock all tickets with the Organizer (unlocked {unlockedItems.Count}/{listingsToCancel.Count} tickets). Please try again later.");
                 }
             }
 
@@ -140,7 +140,7 @@ public class CancelResaleListingCommandHandler : IRequestHandler<CancelResaleLis
                 CancelledAt = DateTimeOffset.UtcNow
             };
 
-            return ApiResponse<CancelResaleListingResponse>.SuccessResponse(response, "Hủy tin đăng bán vé thành công và đã gửi yêu cầu mở khóa vé.");
+            return ApiResponse<CancelResaleListingResponse>.SuccessResponse(response, "Resale listing cancelled successfully and unlock request has been submitted.");
         }
         catch
         {

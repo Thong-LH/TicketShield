@@ -173,13 +173,13 @@ public class GetResaleListingDetailQueryHandlerTests
         var queryNoToken = new GetResaleListingDetailQuery(privateListing.Id, token: null);
         var exNoToken = await Assert.ThrowsAsync<ForbiddenAccessException>(
             () => handler.Handle(queryNoToken, CancellationToken.None));
-        Assert.Contains("Bạn không có quyền truy cập vé riêng tư này", exNoToken.Message);
+        Assert.Contains("You do not have permission to access this private ticket", exNoToken.Message);
 
         // 2. Wrong token
         var queryWrongToken = new GetResaleListingDetailQuery(privateListing.Id, token: "wrong_hacker_token");
         var exWrongToken = await Assert.ThrowsAsync<ForbiddenAccessException>(
             () => handler.Handle(queryWrongToken, CancellationToken.None));
-        Assert.Contains("Bạn không có quyền truy cập vé riêng tư này", exWrongToken.Message);
+        Assert.Contains("You do not have permission to access this private ticket", exWrongToken.Message);
     }
 
     [Fact]

@@ -24,7 +24,7 @@ public sealed class GetPaymentStatusQueryHandler : IRequestHandler<GetPaymentSta
         var buyerId = _currentUserService?.UserId ?? Guid.Empty;
         if (buyerId == Guid.Empty)
         {
-            throw new UnauthorizedException("Bạn phải đăng nhập để xem trạng thái thanh toán.");
+            throw new UnauthorizedException("You must be signed in to view payment status.");
         }
 
         // FIX Lỗi 13: EscrowTransaction chỉ lưu ListingId của vé đại diện (vé đầu tiên trong Combo).
@@ -63,7 +63,7 @@ public sealed class GetPaymentStatusQueryHandler : IRequestHandler<GetPaymentSta
 
             if (hasOtherEscrow)
             {
-                throw new ForbiddenAccessException("Bạn không có quyền xem trạng thái thanh toán của giao dịch này.");
+                throw new ForbiddenAccessException("You do not have permission to view the payment status of this transaction.");
             }
 
             var listingExists = await _dbContext.ResaleListings
@@ -72,12 +72,12 @@ public sealed class GetPaymentStatusQueryHandler : IRequestHandler<GetPaymentSta
 
             if (!listingExists)
             {
-                throw new NotFoundException("Tin đăng bán vé", request.ListingId);
+                throw new NotFoundException("Ticket listing", request.ListingId);
             }
 
-            throw new NotFoundException("Giao dịch ký quỹ", request.ListingId);
+            throw new NotFoundException("Escrow transaction", request.ListingId);
         }
 
-        return ApiResponse<GetPaymentStatusDto>.SuccessResponse(dto, "Lấy trạng thái thanh toán thành công.");
+        return ApiResponse<GetPaymentStatusDto>.SuccessResponse(dto, "Payment status retrieved successfully.");
     }
 }

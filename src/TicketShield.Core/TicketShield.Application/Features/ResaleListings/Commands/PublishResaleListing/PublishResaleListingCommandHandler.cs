@@ -27,7 +27,7 @@ public class PublishResaleListingCommandHandler : IRequestHandler<PublishResaleL
 
         if (string.IsNullOrWhiteSpace(request.Seller))
         {
-            throw new UnauthorizedException("Bạn phải đăng nhập để thực hiện đăng bán vé.");
+            throw new UnauthorizedException("You must be signed in to list tickets for sale.");
         }
 
         var result = await _verificationService.Publish(

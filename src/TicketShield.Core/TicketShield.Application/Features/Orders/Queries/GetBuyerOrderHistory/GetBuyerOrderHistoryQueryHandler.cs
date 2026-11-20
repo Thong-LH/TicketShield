@@ -29,7 +29,7 @@ public class GetBuyerOrderHistoryQueryHandler : IRequestHandler<GetBuyerOrderHis
         var buyerId = _currentUserService?.UserId ?? Guid.Empty;
         if (buyerId == Guid.Empty)
         {
-            throw new UnauthorizedException("Bạn phải đăng nhập để xem lịch sử đơn hàng.");
+            throw new UnauthorizedException("You must be signed in to view order history.");
         }
 
         var page = request.Page > 0 ? request.Page : 1;
@@ -120,8 +120,8 @@ public class GetBuyerOrderHistoryQueryHandler : IRequestHandler<GetBuyerOrderHis
                 : (isRefundQueued ? e.TotalBuyerPaid : 0m);
 
             var refundReason = e.Dispute != null
-                ? $"Tranh chấp: {e.Dispute.ReasonCode} - {e.Dispute.Description}"
-                : (isRefunded ? "Giao dịch đã được hoàn trả" : null);
+                ? $"Dispute: {e.Dispute.ReasonCode} - {e.Dispute.Description}"
+                : (isRefunded ? "Transaction has been refunded" : null);
 
             var orderCode = !string.IsNullOrWhiteSpace(e.PaymentReference)
                 ? $"ORD-{e.PaymentReference}"
@@ -129,15 +129,15 @@ public class GetBuyerOrderHistoryQueryHandler : IRequestHandler<GetBuyerOrderHis
 
             var statusDesc = e.Status switch
             {
-                EscrowStatus.Pending => "Chờ thanh toán",
-                EscrowStatus.Locked => "Đã thanh toán - Đang giữ ký quỹ an toàn",
-                EscrowStatus.Releasing => "Đang tiến hành giải ngân",
-                EscrowStatus.Released => "Giao dịch thành công - Đã sang tên vé",
-                EscrowStatus.Disputed => "Đang trong quá trình khiếu nại",
-                EscrowStatus.RefundQueued => "Đang xếp hàng chờ hoàn tiền",
-                EscrowStatus.Refunded => "Đã hoàn tiền cho người mua",
-                EscrowStatus.Cancelled => "Đã hủy",
-                EscrowStatus.Expired => "Đã hết hạn",
+                EscrowStatus.Pending => "Pending Payment",
+                EscrowStatus.Locked => "Paid - Held in Escrow",
+                EscrowStatus.Releasing => "Releasing Funds",
+                EscrowStatus.Released => "Transaction Successful - Ticket Transferred",
+                EscrowStatus.Disputed => "Under Dispute",
+                EscrowStatus.RefundQueued => "Queued for Refund",
+                EscrowStatus.Refunded => "Refunded to Buyer",
+                EscrowStatus.Cancelled => "Cancelled",
+                EscrowStatus.Expired => "Expired",
                 _ => e.Status.ToString()
             };
 
@@ -194,7 +194,7 @@ public class GetBuyerOrderHistoryQueryHandler : IRequestHandler<GetBuyerOrderHis
             }
         };
 
-        return ApiResponse<BuyerOrderHistoryResponseDto>.SuccessResponse(response, "Lấy lịch sử đơn hàng của người mua thành công.");
+        return ApiResponse<BuyerOrderHistoryResponseDto>.SuccessResponse(response, "Buyer order history retrieved successfully.");
     }
 
     /// <summary>

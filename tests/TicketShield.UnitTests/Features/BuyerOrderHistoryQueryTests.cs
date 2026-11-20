@@ -77,7 +77,7 @@ public class BuyerOrderHistoryQueryTests
         Assert.Equal(105_000m, order.RefundAmount);
         Assert.NotNull(order.RefundedAt);
         Assert.Contains("Vé không hợp lệ", order.RefundReason);
-        Assert.Equal("Đã hoàn tiền cho người mua", order.StatusDescription);
+        Assert.Equal("Refunded to Buyer", order.StatusDescription);
     }
 
     [Fact]
@@ -197,7 +197,7 @@ public class BuyerOrderHistoryQueryTests
         Assert.True(result.Success);
         var order = Assert.Single(result.Data!.Orders.Items);
         Assert.Equal(EscrowStatus.Locked, order.Status);
-        Assert.Equal("Đã thanh toán - Đang giữ ký quỹ an toàn", order.StatusDescription);
+        Assert.Equal("Paid - Held in Escrow", order.StatusDescription);
     }
 
     [Fact]

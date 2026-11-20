@@ -773,7 +773,7 @@ public class HoldBundleForPurchaseTests
 
         // Act & Assert
         var ex = await Assert.ThrowsAsync<BusinessRuleViolationException>(() => handler.Handle(command, CancellationToken.None));
-        Assert.Contains("toàn bộ", ex.Message);
+        Assert.Contains("entire bundle", ex.Message);
     }
 
     [Fact]
@@ -842,7 +842,7 @@ public class HoldBundleForPurchaseTests
 
         // Act & Assert
         var ex = await Assert.ThrowsAsync<BusinessRuleViolationException>(() => handler.Handle(command, CancellationToken.None));
-        Assert.Contains("không thuộc gói", ex.Message);
+        Assert.Contains("not belonging to this bundle", ex.Message);
     }
 
     [Fact]
@@ -1002,7 +1002,7 @@ public class HoldBundleForPurchaseTests
                     selectedListingIds: new List<Guid> { listings[2].Id }),
                 CancellationToken.None));
 
-        Assert.Contains("đang được giữ chỗ", error.Message);
+        Assert.Contains("reserved by another buyer", error.Message);
         Assert.Equal(1, await dbContext.EscrowTransactions.CountAsync(e => e.BundleId == bundleId && e.Status == EscrowStatus.Pending));
         Assert.Equal(ListingStatus.Transacting, (await dbContext.ResaleListings.FindAsync(listings[2].Id))!.ListingStatus);
     }

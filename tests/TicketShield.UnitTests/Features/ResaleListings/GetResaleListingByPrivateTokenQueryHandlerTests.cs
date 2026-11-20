@@ -116,7 +116,7 @@ public class GetResaleListingByPrivateTokenQueryHandlerTests
         // Act & Assert
         var ex = await Assert.ThrowsAsync<NotFoundException>(
             () => handler.Handle(query, CancellationToken.None));
-        Assert.Contains("Liên kết bán riêng tư không hợp lệ", ex.Message);
+        Assert.Contains("Invalid or cancelled private share link", ex.Message);
     }
 
     [Fact]

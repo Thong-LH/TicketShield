@@ -76,7 +76,7 @@ public class ResaleListing : BaseEntity
         if (ResalePrice > ceiling)
         {
             throw new BusinessRuleViolationException(
-                $"Giá bán lại ({ResalePrice:N0} VNĐ) không được vượt quá trần {ceiling:N0} VNĐ (giá gốc {OriginalPrice:N0} VNĐ + {percent:0.##}%).");
+                $"Resale price ({ResalePrice:N0} VNĐ) cannot exceed the price ceiling of {ceiling:N0} VNĐ (original price {OriginalPrice:N0} VNĐ + {percent:0.##}%).");
         }
     }
 
@@ -84,7 +84,7 @@ public class ResaleListing : BaseEntity
     {
         if (markupPercent < 0m || markupPercent > 100m)
         {
-            throw new BusinessRuleViolationException("Biên độ trần giá (markup) phải nằm trong khoảng 0% đến 100%.");
+            throw new BusinessRuleViolationException("Price ceiling markup percentage must be between 0% and 100%.");
         }
 
         return decimal.Truncate(originalPrice * (1m + markupPercent / 100m));
