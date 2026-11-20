@@ -25,19 +25,156 @@ public class AdminTransactionsQueryTests
         Assert.Equal(4, result.Data.Transactions.TotalCount);
         Assert.Equal(4, result.Data.Transactions.Items.Count);
 
-        // Check Summary metrics
-        // Locked + Buffer: NetSellerPayout 80_000 + 120_000 = 200_000
-        Assert.Equal(200_000m, result.Data.Summary.TotalEscrowLockedAmount);
+        // Check Summary metrics (no filter = every escrow)
+        // Inflow: buyer paid on escrow1 105_000 + escrow2 157_500 + escrow3 105_000 + escrow4 115_000
+        Assert.Equal(482_500m, result.Data.Summary.TotalInflowAmount);
+
+        // Held in escrow: buyer paid on the two Locked escrows 105_000 + 157_500
+        Assert.Equal(262_500m, result.Data.Summary.TotalEscrowLockedAmount);
         Assert.Equal(2, result.Data.Summary.TotalLockedCount);
 
-        // Released / Payout completed: NetSellerPayout 85_000
+        // Paid out: the Success payout row of escrow3
         Assert.Equal(85_000m, result.Data.Summary.TotalPayoutCompletedAmount);
 
         // Refunded: TotalBuyerPaid 115_000
         Assert.Equal(115_000m, result.Data.Summary.TotalRefundedAmount);
 
-        // Disputed: 1
-        Assert.Equal(1, result.Data.Summary.TotalDisputedCount);
+        // In dispute: escrow2 has an open dispute row but its status is still Locked, so nothing is Disputed
+        Assert.Equal(0, result.Data.Summary.TotalDisputedCount);
+    }
+
+    [Fact]
+    public async Task Handle_FilterByDate_SummaryFollowsTheFilteredRows()
+    {
+        await using var db = CreateDb();
+        await SeedSampleDataAsync(db);
+
+        var handler = new GetAdminTransactionsQueryHandler(db);
+        // Only escrow1 (-2h) and escrow2 (-5h) were created in the last day.
+        var query = new GetAdminTransactionsQuery { FromDate = DateTimeOffset.UtcNow.AddDays(-1) };
+
+        var result = await handler.Handle(query, CancellationToken.None);
+
+        Assert.Equal(2, result.Data!.Transactions.TotalCount);
+        Assert.Equal(262_500m, result.Data.Summary.TotalInflowAmount);
+        Assert.Equal(262_500m, result.Data.Summary.TotalEscrowLockedAmount);
+        Assert.Equal(2, result.Data.Summary.TotalLockedCount);
+        Assert.Equal(0m, result.Data.Summary.TotalPayoutCompletedAmount);
+        Assert.Equal(0m, result.Data.Summary.TotalRefundedAmount);
+    }
+
+    [Fact]
+    public async Task Handle_FilterByRefundedStatus_HeldAndPaidOutDropToZero()
+    {
+        await using var db = CreateDb();
+        await SeedSampleDataAsync(db);
+
+        var handler = new GetAdminTransactionsQueryHandler(db);
+        var query = new GetAdminTransactionsQuery { Status = EscrowStatus.Refunded };
+
+        var result = await handler.Handle(query, CancellationToken.None);
+
+        Assert.Equal(1, result.Data!.Transactions.TotalCount);
+        Assert.Equal(0m, result.Data.Summary.TotalEscrowLockedAmount);
+        Assert.Equal(0, result.Data.Summary.TotalLockedCount);
+        Assert.Equal(0m, result.Data.Summary.TotalPayoutCompletedAmount);
+        Assert.Equal(115_000m, result.Data.Summary.TotalRefundedAmount);
+        Assert.Equal(115_000m, result.Data.Summary.TotalInflowAmount);
+    }
+
+    [Fact]
+    public async Task Handle_SummaryCountsEveryPage_NotOnlyTheCurrentOne()
+    {
+        await using var db = CreateDb();
+        await SeedSampleDataAsync(db);
+
+        var handler = new GetAdminTransactionsQueryHandler(db);
+        var query = new GetAdminTransactionsQuery { Page = 2, Size = 2 };
+
+        var result = await handler.Handle(query, CancellationToken.None);
+
+        Assert.Equal(2, result.Data!.Transactions.Items.Count);
+        Assert.Equal(482_500m, result.Data.Summary.TotalInflowAmount);
+        Assert.Equal(2, result.Data.Summary.TotalLockedCount);
+    }
+
+    [Fact]
+    public async Task Handle_MoneyBuckets_ReconcileToNetRevenue()
+    {
+        await using var db = CreateDb();
+        await AdminMoneyTestData.SeedAsync(db, DateTimeOffset.UtcNow.AddHours(-3));
+
+        var handler = new GetAdminTransactionsQueryHandler(db);
+        var result = await handler.Handle(new GetAdminTransactionsQuery(), CancellationToken.None);
+        var summary = result.Data!.Summary;
+
+        Assert.Equal(AdminMoneyTestData.ExpectedInflow, summary.TotalInflowAmount);
+        // RefundQueued and Disputed money is still on the platform, so it is part of Held.
+        Assert.Equal(AdminMoneyTestData.ExpectedHeld, summary.TotalEscrowLockedAmount);
+        Assert.Equal(AdminMoneyTestData.ExpectedHeldCount, summary.TotalLockedCount);
+        Assert.Equal(AdminMoneyTestData.ExpectedPaidOut, summary.TotalPayoutCompletedAmount);
+        Assert.Equal(AdminMoneyTestData.ExpectedRefunded, summary.TotalRefundedAmount);
+        Assert.Equal(
+            AdminMoneyTestData.ExpectedNetRevenue,
+            summary.TotalInflowAmount - summary.TotalPayoutCompletedAmount - summary.TotalRefundedAmount - summary.TotalEscrowLockedAmount);
+    }
+
+    [Fact]
+    public async Task Handle_InDispute_CountsOnlyEscrowsStillDisputed()
+    {
+        await using var db = CreateDb();
+        await AdminMoneyTestData.SeedAsync(db, DateTimeOffset.UtcNow.AddHours(-3));
+
+        var handler = new GetAdminTransactionsQueryHandler(db);
+        var result = await handler.Handle(new GetAdminTransactionsQuery(), CancellationToken.None);
+
+        // The Released escrow carries a rejected dispute row; only the Disputed escrow counts.
+        Assert.Equal(AdminMoneyTestData.ExpectedInDispute, result.Data!.Summary.TotalDisputedCount);
+    }
+
+    [Fact]
+    public async Task Handle_PayoutInFlight_IsHeldNotPaidOut()
+    {
+        await using var db = CreateDb();
+        await SeedSampleDataAsync(db);
+
+        // A Releasing escrow whose payout is still Processing.
+        var anyListing = db.ResaleListings.First();
+        var releasing = new EscrowTransaction
+        {
+            Id = Guid.NewGuid(),
+            ListingId = anyListing.Id,
+            BuyerId = db.ShadowUsers.First().Id,
+            SellerId = anyListing.SellerId,
+            TotalBuyerPaid = 210_000m,
+            NetSellerPayout = 190_000m,
+            Status = EscrowStatus.Releasing,
+            InSettlementBuffer = true,
+            PaymentReference = "PAY-RELEASING-001",
+            CreatedAt = DateTimeOffset.UtcNow.AddHours(-1)
+        };
+        db.EscrowTransactions.Add(releasing);
+        db.PayoutTransactions.Add(new PayoutTransaction
+        {
+            Id = Guid.NewGuid(),
+            EscrowId = releasing.Id,
+            SellerId = anyListing.SellerId,
+            PayoutCode = "PO-RELEASING-001",
+            Amount = 190_000m,
+            Status = PayoutStatus.Processing,
+            RecipientBankCode = "VCB",
+            RecipientAccountNumber = "1234567890",
+            RecipientAccountName = "SELLER",
+            CreatedAt = DateTimeOffset.UtcNow.AddHours(-1)
+        });
+        await db.SaveChangesAsync();
+
+        var handler = new GetAdminTransactionsQueryHandler(db);
+        var result = await handler.Handle(new GetAdminTransactionsQuery(), CancellationToken.None);
+
+        Assert.Equal(262_500m + 210_000m, result.Data!.Summary.TotalEscrowLockedAmount);
+        Assert.Equal(3, result.Data.Summary.TotalLockedCount);
+        Assert.Equal(85_000m, result.Data.Summary.TotalPayoutCompletedAmount);
     }
 
     [Fact]

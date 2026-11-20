@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using TicketShield.Domain.Common;
 using TicketShield.Domain.Enums;
 using TicketShield.Domain.Exceptions;
@@ -79,6 +80,17 @@ public class ResaleListing : BaseEntity
                 $"Resale price ({ResalePrice:N0} VNĐ) cannot exceed the price ceiling of {ceiling:N0} VNĐ (original price {OriginalPrice:N0} VNĐ + {percent:0.##}%).");
         }
     }
+
+    /// <summary>
+    /// Admin price-ceiling inspection ("At cap only" filter and the "At cap" card): the listing is at or over
+    /// its ceiling. A 0% ceiling sold exactly at face value does not count, because that is not a markup;
+    /// selling above face value on a 0% ceiling is still over the cap and does count.
+    /// Uses the same formula as <see cref="ComputePriceCeiling"/> so it translates to SQL.
+    /// </summary>
+    public static readonly Expression<Func<ResaleListing, bool>> IsAtOrOverCeiling = l =>
+        l.ResalePrice > Math.Truncate(l.OriginalPrice * (1m + l.AppliedMarkupPercentage / 100m)) ||
+        (l.AppliedMarkupPercentage > 0m &&
+         l.ResalePrice >= Math.Truncate(l.OriginalPrice * (1m + l.AppliedMarkupPercentage / 100m)));
 
     public static decimal ComputePriceCeiling(decimal originalPrice, decimal markupPercent)
     {
