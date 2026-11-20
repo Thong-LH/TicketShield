@@ -199,8 +199,31 @@ if (args.Contains("--test-shadow-components"))
 
     Console.WriteLine($"[{(guardPass ? "PASS" : "FAIL")}] AntiBotGuardService Shadow Evaluation (Mode={guardResult.ExecutionMode}, Cohort={guardResult.ShadowCohort}, V2Score={guardResult.ShadowRiskScore:F4})");
 
-    bool allOk = aggPass && resetPass && loggerPass && guardPass;
-    Console.WriteLine(allOk ? "STATUS: SUCCESS (All 13.3.4.2 & 13.3.4.3 Components Verified)" : "STATUS: FAILED");
+    // Test 5: Hot-Switching & Admin Security (ML-13.3.4.4)
+    var testCtxLocal = new DefaultHttpContext();
+    testCtxLocal.Connection.RemoteIpAddress = System.Net.IPAddress.Loopback;
+    bool localAuth = IsAuthorizedAdmin(testCtxLocal, testOptions.Value);
+
+    var testCtxRemoteNoKey = new DefaultHttpContext();
+    testCtxRemoteNoKey.Connection.RemoteIpAddress = System.Net.IPAddress.Parse("198.51.100.25");
+    bool remoteReject = !IsAuthorizedAdmin(testCtxRemoteNoKey, testOptions.Value);
+
+    var testCtxRemoteWithKey = new DefaultHttpContext();
+    testCtxRemoteWithKey.Connection.RemoteIpAddress = System.Net.IPAddress.Parse("198.51.100.25");
+    testCtxRemoteWithKey.Request.Headers["X-TicketShield-Admin-Key"] = testOptions.Value.AdminApiKey;
+    bool remoteKeyAuth = IsAuthorizedAdmin(testCtxRemoteWithKey, testOptions.Value);
+
+    var prevMode = testOptions.Value.ExecutionMode;
+    testOptions.Value.ExecutionMode = AntiBotExecutionMode.Enforce;
+    bool switch1 = testOptions.Value.ExecutionMode == AntiBotExecutionMode.Enforce;
+    testOptions.Value.ExecutionMode = AntiBotExecutionMode.Shadow;
+    bool switch2 = testOptions.Value.ExecutionMode == AntiBotExecutionMode.Shadow;
+
+    bool adminSecPass = localAuth && remoteReject && remoteKeyAuth && switch1 && switch2;
+    Console.WriteLine($"[{(adminSecPass ? "PASS" : "FAIL")}] Secured Hot-Switching & Observability Authorization (Local={localAuth}, RemoteBlock={remoteReject}, RemoteKey={remoteKeyAuth}, HotSwitch={switch1 && switch2})");
+
+    bool allOk = aggPass && resetPass && loggerPass && guardPass && adminSecPass;
+    Console.WriteLine(allOk ? "STATUS: SUCCESS (All 13.3.4.2, 13.3.4.3 & 13.3.4.4 Components Verified)" : "STATUS: FAILED");
     Environment.Exit(allOk ? 0 : 1);
 }
 
@@ -407,6 +430,105 @@ app.MapGet("/api/antibot/self-test", (
     return report.AllPassed ? Results.Ok(report) : Results.Problem(title: "Self-Test Failed", statusCode: 500);
 });
 
+// =========================================================================
+// OBSERVABILITY & HOT-SWITCHING APIS CHO SHADOW MODE (ML-13.3.4.4, SCRUM-382)
+// =========================================================================
+
+// Endpoint tra cứu số liệu đối chứng Shadow Mode theo thời gian thực
+app.MapGet("/api/anti-bot/metrics/shadow-mode", (
+    [FromServices] IShadowMetricsAggregator aggregator,
+    [FromQuery] bool? reset) =>
+{
+    var snapshot = aggregator.GetSnapshot();
+    if (reset == true)
+    {
+        aggregator.Reset();
+    }
+
+    return Results.Ok(new
+    {
+        execution_mode = snapshot.ExecutionMode,
+        total_evaluations = snapshot.TotalEvaluations,
+        agreement_count = snapshot.AgreementCount,
+        agreement_rate = snapshot.AgreementRate,
+        rescued_false_positives = snapshot.RescuedFalsePositives,
+        rescued_false_positive_rate = snapshot.RescuedFalsePositiveRate,
+        friction_reduction = snapshot.FrictionReduction,
+        friction_reduction_rate = snapshot.FrictionReductionRate,
+        caught_stealth_bots = snapshot.CaughtStealthBots,
+        caught_stealth_bot_rate = snapshot.CaughtStealthBotRate,
+        captcha_bot_elimination = snapshot.CaptchaBotElimination,
+        captcha_bot_elimination_rate = snapshot.CaptchaBotEliminationRate,
+        v2_evaluation_errors = snapshot.V2EvaluationErrors,
+        average_risk_score_delta = snapshot.AverageRiskScoreDelta,
+        cohort_breakdown = snapshot.CohortMatrix,
+        snapshot_timestamp_utc = snapshot.SnapshotTimestampUtc
+    });
+});
+
+// Endpoint chuyển đổi nóng ExecutionMode (Shadow <-> Enforce <-> Audit)
+// Được bảo vệ nghiêm ngặt bằng Localhost IP hoặc Header X-TicketShield-Admin-Key
+app.MapPost("/api/anti-bot/config/execution-mode", (
+    HttpContext ctx,
+    [FromBody] UpdateExecutionModeRequest request,
+    [FromServices] Microsoft.Extensions.Options.IOptions<AntiBotScoringOptions> options) =>
+{
+    if (!IsAuthorizedAdmin(ctx, options.Value))
+    {
+        return Results.Json(new
+        {
+            error = "Forbidden",
+            message = "Access restricted to Localhost or requires a valid X-TicketShield-Admin-Key header."
+        }, statusCode: StatusCodes.Status403Forbidden);
+    }
+
+    if (!Enum.TryParse<AntiBotExecutionMode>(request.Mode, ignoreCase: true, out var newMode))
+    {
+        return Results.BadRequest(new
+        {
+            error = "InvalidExecutionMode",
+            message = $"ExecutionMode '{request.Mode}' is invalid. Valid values: Shadow, Enforce, Audit."
+        });
+    }
+
+    var previousMode = options.Value.ExecutionMode;
+    options.Value.ExecutionMode = newMode;
+
+    return Results.Ok(new
+    {
+        success = true,
+        previous_mode = previousMode.ToString(),
+        current_mode = newMode.ToString(),
+        updated_at_utc = DateTimeOffset.UtcNow,
+        message = $"ExecutionMode successfully changed from {previousMode} to {newMode}."
+    });
+});
+
+// Endpoint reset bộ đếm thống kê đối chứng
+app.MapPost("/api/anti-bot/metrics/shadow-mode/reset", (
+    HttpContext ctx,
+    [FromServices] IShadowMetricsAggregator aggregator,
+    [FromServices] Microsoft.Extensions.Options.IOptions<AntiBotScoringOptions> options) =>
+{
+    if (!IsAuthorizedAdmin(ctx, options.Value))
+    {
+        return Results.Json(new
+        {
+            error = "Forbidden",
+            message = "Access restricted to Localhost or requires a valid X-TicketShield-Admin-Key header."
+        }, statusCode: StatusCodes.Status403Forbidden);
+    }
+
+    aggregator.Reset();
+
+    return Results.Ok(new
+    {
+        success = true,
+        message = "Shadow Mode metrics aggregator reset successfully.",
+        timestamp_utc = DateTimeOffset.UtcNow
+    });
+});
+
 // Interceptor Guard Middleware chạy trước YARP Reverse Proxy
 app.UseMiddleware<AntiBotCheckoutGuardMiddleware>();
 
@@ -416,3 +538,26 @@ app.MapReverseProxy();
 app.Run();
 
 public record SessionRequestDto(Guid TierId);
+
+public record UpdateExecutionModeRequest(string Mode);
+
+public static partial class Program
+{
+    public static bool IsAuthorizedAdmin(HttpContext ctx, AntiBotScoringOptions options)
+    {
+        var remoteIp = ctx.Connection.RemoteIpAddress;
+        if (remoteIp != null && System.Net.IPAddress.IsLoopback(remoteIp))
+        {
+            return true;
+        }
+
+        if (ctx.Request.Headers.TryGetValue("X-TicketShield-Admin-Key", out var headerKey) &&
+            !string.IsNullOrWhiteSpace(options.AdminApiKey) &&
+            string.Equals(headerKey.ToString(), options.AdminApiKey, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        return false;
+    }
+}
