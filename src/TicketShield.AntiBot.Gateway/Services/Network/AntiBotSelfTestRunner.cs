@@ -39,7 +39,9 @@ public static class AntiBotSelfTestRunner
         INonceValidationService? nonceService = null,
         ISessionTokenService? tokenService = null,
         IUserAgentCrossValidator? uaValidator = null,
-        IAntiBotScoringService? scoringService = null)
+        IAntiBotScoringService? scoringService = null,
+        IShadowMetricsAggregator? metricsAggregator = null,
+        IFprMetricLogger? fprLogger = null)
     {
         var results = new List<SelfTestResult>();
         var sw = new Stopwatch();
@@ -896,6 +898,238 @@ public static class AntiBotSelfTestRunner
                 avgV2BenchmarkUs));
         }
 
+        // =========================================================================
+        // US-13.3 & ML-13.3.4: SHADOW MODE, FPR LOGGER & HOT-SWITCHING TESTS (TC-49 -> TC-55)
+        // =========================================================================
+        var shadowOptionsObj = new AntiBotScoringOptions
+        {
+            ExecutionMode = AntiBotExecutionMode.Shadow,
+            EnableStructuredFprLogging = true,
+            StructuredLogPath = "logs/selftest_shadow_{yyyyMMdd}.jsonl",
+            AdminApiKey = "TicketShield_SelfTest_Secret_Admin_Key!"
+        };
+        var shadowOptions = Microsoft.Extensions.Options.Options.Create(shadowOptionsObj);
+        metricsAggregator ??= new ShadowMetricsAggregator(shadowOptions);
+        fprLogger ??= new FprMetricLogger(shadowOptions, Microsoft.Extensions.Logging.Abstractions.NullLogger<FprMetricLogger>.Instance);
+        var testTokenSvc = tokenService ?? new SessionTokenService(new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build());
+        var testRedisSvc = new AntiBotRedisService();
+        var testScorer = scoringService ?? new AntiBotScoringService(shadowOptions, Microsoft.Extensions.Logging.Abstractions.NullLogger<AntiBotScoringService>.Instance);
+        var guardService = new AntiBotGuardService(
+            testTokenSvc, testRedisSvc, testScorer, shadowOptions,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<AntiBotGuardService>.Instance,
+            metricsAggregator, fprLogger);
+
+        // TC-49: Shadow Mode - Brave Farbling False Positive Rescue (v1_block_v2_allow)
+        sw.Restart();
+        var braveFarblingContext = new CheckoutTelemetryContext
+        {
+            ClientIp = "127.0.0.1",
+            BuyerEmail = "brave_user@ticketshield.io",
+            DeviceFingerprint = "brave_fp_987654",
+            CanvasTampered = 1.0f,
+            PrototypeTampered = 0.0f,
+            VirtualGpuDetected = 0.0f,
+            IsWebDriver = 0.0f,
+            ActionIntervalStdDev = 165.0f,
+            TimeToCheckout = 15.2f,
+            BurstRate10s = 1.0f,
+            NetworkInconsistencyScore = 0.0f
+        };
+        var res49 = guardService.EvaluateCheckoutGuardAsync(braveFarblingContext).GetAwaiter().GetResult();
+        sw.Stop();
+        bool pass49 = res49.ExecutionMode == AntiBotExecutionMode.Shadow &&
+                      res49.ShadowDecision == "Allow" &&
+                      res49.ShadowRiskScore < 0.35f;
+        results.Add(new SelfTestResult(
+            "TC-49: Shadow Mode - Brave Farbling FP Rescue (V2 Allow < 0.35)",
+            pass49,
+            $"Mode={res49.ExecutionMode}, PrimaryDec={res49.Decision}, ShadowDec={res49.ShadowDecision}, V2Risk={res49.ShadowRiskScore:F4}, Cohort={res49.ShadowCohort}",
+            sw.Elapsed.TotalMilliseconds * 1000.0));
+
+        // TC-50: Shadow Mode - PowerUser Human Friction Reduction (v1_challenge_v2_allow)
+        sw.Restart();
+        var powerUserContext = new CheckoutTelemetryContext
+        {
+            ClientIp = "127.0.0.1",
+            BuyerEmail = "fast_human@ticketshield.io",
+            DeviceFingerprint = "fast_human_fp_123",
+            CanvasTampered = 0.0f,
+            PrototypeTampered = 0.0f,
+            VirtualGpuDetected = 0.0f,
+            IsWebDriver = 0.0f,
+            ActionIntervalStdDev = 165.0f,
+            TimeToCheckout = 14.0f,
+            BurstRate10s = 1.0f,
+            NetworkInconsistencyScore = 0.0f
+        };
+        var res50 = guardService.EvaluateCheckoutGuardAsync(powerUserContext).GetAwaiter().GetResult();
+        sw.Stop();
+        bool pass50 = res50.ExecutionMode == AntiBotExecutionMode.Shadow &&
+                      res50.ShadowDecision == "Allow" &&
+                      res50.ShadowRiskScore < 0.35f;
+        results.Add(new SelfTestResult(
+            "TC-50: Shadow Mode - PowerUser Human Friction Reduction (V2 Allow < 0.35)",
+            pass50,
+            $"Mode={res50.ExecutionMode}, PrimaryDec={res50.Decision}, ShadowDec={res50.ShadowDecision}, V2Risk={res50.ShadowRiskScore:F4}, Cohort={res50.ShadowCohort}",
+            sw.Elapsed.TotalMilliseconds * 1000.0));
+
+        // TC-51: Shadow Mode - Adversarial Stealth Bot Detection (V2 Block >= 0.75)
+        sw.Restart();
+        var stealthBotContext = new CheckoutTelemetryContext
+        {
+            ClientIp = "198.51.100.55",
+            BuyerEmail = "stealth_bot@adversary.com",
+            DeviceFingerprint = "stealth_bot_fp_999",
+            CanvasTampered = 0.0f,
+            PrototypeTampered = 0.0f,
+            VirtualGpuDetected = 1.0f,
+            IsWebDriver = 0.0f,
+            ActionIntervalStdDev = 8.0f,
+            UaMatchLevel = 1.0f,
+            NetworkInconsistencyScore = 0.6f,
+            TimeToCheckout = 0.4f,
+            BurstRate10s = 15.0f,
+            ConcurrentHold = 4.0f,
+            DeviceAccountOverlap = 0.7f
+        };
+        var res51 = guardService.EvaluateCheckoutGuardAsync(stealthBotContext).GetAwaiter().GetResult();
+        sw.Stop();
+        bool pass51 = res51.ExecutionMode == AntiBotExecutionMode.Shadow &&
+                      res51.ShadowDecision == "Block" &&
+                      res51.ShadowRiskScore >= 0.75f;
+        results.Add(new SelfTestResult(
+            "TC-51: Shadow Mode - Adversarial Stealth Bot Detection (V2 Block >= 0.75)",
+            pass51,
+            $"Mode={res51.ExecutionMode}, PrimaryDec={res51.Decision}, ShadowDec={res51.ShadowDecision}, V2Risk={res51.ShadowRiskScore:F4}, Cohort={res51.ShadowCohort}",
+            sw.Elapsed.TotalMilliseconds * 1000.0));
+
+        // TC-52: Shadow Mode - Fault Isolation Resilience (V2 Exception Intercepted)
+        sw.Restart();
+        var faultScorer = new FaultyModelV2ScoringService(testScorer);
+        var faultGuardService = new AntiBotGuardService(
+            testTokenSvc, testRedisSvc, faultScorer, shadowOptions,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<AntiBotGuardService>.Instance,
+            metricsAggregator, fprLogger);
+        var normalContext = new CheckoutTelemetryContext
+        {
+            ClientIp = "127.0.0.1",
+            BuyerEmail = "normal_buyer@ticketshield.io",
+            ActionIntervalStdDev = 160.0f,
+            TimeToCheckout = 10.0f
+        };
+        var res52 = faultGuardService.EvaluateCheckoutGuardAsync(normalContext).GetAwaiter().GetResult();
+        sw.Stop();
+        bool pass52 = res52.Decision == AntiBotDecision.Allow &&
+                      res52.ShadowCohort?.Contains("error") == true &&
+                      res52.IsFailOpen == false;
+        results.Add(new SelfTestResult(
+            "TC-52: Shadow Mode - Fault Isolation Resilience (V2 Exception Intercepted)",
+            pass52,
+            $"PrimaryDecision={res52.Decision}, Cohort={res52.ShadowCohort}, IsFailOpen={res52.IsFailOpen}",
+            sw.Elapsed.TotalMilliseconds * 1000.0));
+
+        // TC-53: Real-Time Metrics Aggregator Atomic Precision & Snapshot Calculation
+        sw.Restart();
+        metricsAggregator.Reset();
+        metricsAggregator.RecordEvaluation("v1_block_v2_allow", false, 0.85);
+        metricsAggregator.RecordEvaluation("v1_challenge_v2_allow", false, 0.40);
+        metricsAggregator.RecordEvaluation("v1_allow_v2_block", false, 0.75);
+        metricsAggregator.RecordEvaluation("v1_challenge_v2_block", false, 0.35);
+        metricsAggregator.RecordEvaluation("v1_allow_v2_allow", true, 0.02);
+        metricsAggregator.RecordEvaluation("v1_block_v2_block", true, 0.01, isError: true);
+        var snap53 = metricsAggregator.GetSnapshot();
+        sw.Stop();
+        bool pass53 = snap53.TotalEvaluations == 6 &&
+                      snap53.AgreementCount == 2 &&
+                      snap53.RescuedFalsePositives == 1 &&
+                      snap53.FrictionReduction == 1 &&
+                      snap53.CaughtStealthBots == 1 &&
+                      snap53.CaptchaBotElimination == 1 &&
+                      snap53.V2EvaluationErrors == 1 &&
+                      Math.Abs(snap53.AgreementRate - 0.3333) < 0.001;
+        results.Add(new SelfTestResult(
+            "TC-53: Real-Time Metrics Aggregator Atomic Precision & Snapshot Calculation",
+            pass53,
+            $"Total={snap53.TotalEvaluations}, AgreeRate={snap53.AgreementRate:P1}, Rescued={snap53.RescuedFalsePositives}, Stealth={snap53.CaughtStealthBots}",
+            sw.Elapsed.TotalMilliseconds * 1000.0));
+
+        // TC-54: Non-Blocking Structured JSONL FPR Logger End-to-End Validation
+        sw.Restart();
+        var logEntry = ShadowEvaluationLogEntry.Create(
+            "REQ-SELFTEST-54",
+            AntiBotExecutionMode.Shadow,
+            braveFarblingContext,
+            new AntiBotScoreResponse { RiskScore = 0.82f, Decision = "Block" },
+            new AntiBotScoreResponse { RiskScore = 0.05f, Decision = "Allow" },
+            "v1_block_v2_allow",
+            evaluationMs: 0.035,
+            totalGuardMs: 1.15);
+        bool logged = fprLogger.LogEvaluation(logEntry);
+        fprLogger.FlushAsync().GetAwaiter().GetResult();
+        string logFile = ((FprMetricLogger)fprLogger).ResolveLogFilePath();
+        bool fileExists = File.Exists(logFile);
+        bool validJson = false;
+        if (fileExists)
+        {
+            var lastLine = File.ReadAllLines(logFile).LastOrDefault(l => l.Contains("REQ-SELFTEST-54"));
+            validJson = lastLine != null && lastLine.Contains("\"is_false_positive_candidate\":true");
+            try { File.Delete(logFile); } catch {}
+        }
+        sw.Stop();
+        bool pass54 = logged && fileExists && validJson;
+        results.Add(new SelfTestResult(
+            "TC-54: Non-Blocking Structured JSONL FPR Logger End-to-End Validation",
+            pass54,
+            $"Queued={logged}, FileExists={fileExists}, ValidJson={validJson}",
+            sw.Elapsed.TotalMilliseconds * 1000.0));
+
+        // TC-55: Dynamic Hot-Switching & Dual-Layer Security Verification
+        sw.Restart();
+        var localCtx = new DefaultHttpContext();
+        localCtx.Connection.RemoteIpAddress = System.Net.IPAddress.Loopback;
+        bool isLocalOk = Program.IsAuthorizedAdmin(localCtx, shadowOptionsObj);
+
+        var remoteBadCtx = new DefaultHttpContext();
+        remoteBadCtx.Connection.RemoteIpAddress = System.Net.IPAddress.Parse("198.51.100.12");
+        bool isRemoteBlocked = !Program.IsAuthorizedAdmin(remoteBadCtx, shadowOptionsObj);
+
+        var remoteGoodCtx = new DefaultHttpContext();
+        remoteGoodCtx.Connection.RemoteIpAddress = System.Net.IPAddress.Parse("198.51.100.12");
+        remoteGoodCtx.Request.Headers["X-TicketShield-Admin-Key"] = shadowOptionsObj.AdminApiKey;
+        bool isKeyAuthorized = Program.IsAuthorizedAdmin(remoteGoodCtx, shadowOptionsObj);
+
+        shadowOptionsObj.ExecutionMode = AntiBotExecutionMode.Enforce;
+        var enforceContext = new CheckoutTelemetryContext
+        {
+            ClientIp = "127.0.0.1",
+            BuyerEmail = "enforce_user@ticketshield.io",
+            DeviceFingerprint = "enforce_fp_unique_99",
+            CanvasTampered = 0.0f,
+            PrototypeTampered = 0.0f,
+            VirtualGpuDetected = 0.0f,
+            IsWebDriver = 0.0f,
+            ActionIntervalStdDev = 175.0f,
+            UaMatchLevel = 0.0f,
+            NetworkInconsistencyScore = 0.0f,
+            TimeToCheckout = 16.0f,
+            BurstRate10s = 1.0f,
+            ConcurrentHold = 0.0f,
+            DeviceAccountOverlap = 0.0f
+        };
+        var enforceRes = guardService.EvaluateCheckoutGuardAsync(enforceContext).GetAwaiter().GetResult();
+        bool isEnforceActive = enforceRes.ExecutionMode == AntiBotExecutionMode.Enforce && enforceRes.Decision == AntiBotDecision.Allow;
+
+        shadowOptionsObj.ExecutionMode = AntiBotExecutionMode.Shadow;
+        bool isReverted = shadowOptionsObj.ExecutionMode == AntiBotExecutionMode.Shadow;
+        sw.Stop();
+
+        bool pass55 = isLocalOk && isRemoteBlocked && isKeyAuthorized && isEnforceActive && isReverted;
+        results.Add(new SelfTestResult(
+            "TC-55: Dynamic Hot-Switching & Dual-Layer Security Verification",
+            pass55,
+            $"Local={isLocalOk}, RemoteBlock={isRemoteBlocked}, KeyAuth={isKeyAuthorized}, EnforceActive={isEnforceActive}, Mode={enforceRes.ExecutionMode}, Dec={enforceRes.Decision}",
+            sw.Elapsed.TotalMilliseconds * 1000.0));
+
         var allPassed = results.All(r => r.Passed);
         var passedCount = results.Count(r => r.Passed);
 
@@ -990,5 +1224,14 @@ public static class AntiBotSelfTestRunner
                 }
             });
         }
+    }
+
+    private class FaultyModelV2ScoringService(IAntiBotScoringService inner) : IAntiBotScoringService
+    {
+        public bool IsModelV2Ready => inner.IsModelV2Ready;
+        public string? ModelV2Sha256 => inner.ModelV2Sha256;
+        public AntiBotScoreResponse Evaluate(BotRiskVector vector) => inner.Evaluate(vector);
+        public AntiBotScoreResponse EvaluateV2(BotRiskVectorV2 vector) => throw new InvalidOperationException("Simulated Model v2 inference fault for Fault Isolation resilience test.");
+        public ShadowEvaluationResult EvaluateShadow(BotRiskVector v1, BotRiskVectorV2 v2) => inner.EvaluateShadow(v1, v2);
     }
 }
