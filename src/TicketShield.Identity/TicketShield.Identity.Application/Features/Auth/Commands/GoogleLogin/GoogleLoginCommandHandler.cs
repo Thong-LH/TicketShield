@@ -99,6 +99,6 @@ public class GoogleLoginCommandHandler : IRequestHandler<GoogleLoginCommand, Api
             User = UserProfileDto.FromUser(user)
         };
 
-        return ApiResponse<AuthResponse>.SuccessResponse(response, "Đăng nhập Google thành công.");
+        return ApiResponse<AuthResponse>.SuccessResponse(response, "Signed in with Google successfully.");
     }
 }

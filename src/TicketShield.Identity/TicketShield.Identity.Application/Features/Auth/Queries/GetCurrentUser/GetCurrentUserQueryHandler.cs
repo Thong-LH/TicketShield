@@ -22,7 +22,7 @@ public class GetCurrentUserQueryHandler : IRequestHandler<GetCurrentUserQuery, A
     {
         if (!_currentUserService.UserId.HasValue)
         {
-            throw new UnauthorizedException("Phiên làm việc không hợp lệ hoặc bạn chưa đăng nhập.");
+            throw new UnauthorizedException("Session is invalid or you are not signed in.");
         }
 
         var userId = _currentUserService.UserId.Value;
@@ -32,14 +32,14 @@ public class GetCurrentUserQueryHandler : IRequestHandler<GetCurrentUserQuery, A
 
         if (user == null)
         {
-            throw new NotFoundException("Người dùng", userId);
+            throw new NotFoundException("User", userId);
         }
 
         if (!user.IsActive)
         {
-            throw new UnauthorizedException("Tài khoản của bạn đã bị vô hiệu hóa.");
+            throw new UnauthorizedException("Your account has been deactivated.");
         }
 
-        return ApiResponse<UserProfileDto>.SuccessResponse(UserProfileDto.FromUser(user), "Lấy thông tin tài khoản thành công.");
+        return ApiResponse<UserProfileDto>.SuccessResponse(UserProfileDto.FromUser(user), "Account profile retrieved successfully.");
     }
 }

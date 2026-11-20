@@ -7,15 +7,15 @@ public class RegisterCommandValidator : AbstractValidator<RegisterCommand>
     public RegisterCommandValidator()
     {
         RuleFor(v => v.Email)
-            .NotEmpty().WithMessage("Email không được để trống.")
-            .EmailAddress().WithMessage("Email không đúng định dạng.");
+            .NotEmpty().WithMessage("Email is required.")
+            .EmailAddress().WithMessage("Invalid email format.");
 
         RuleFor(v => v.Password)
-            .NotEmpty().WithMessage("Mật khẩu không được để trống.")
-            .MinimumLength(6).WithMessage("Mật khẩu phải có ít nhất 6 ký tự.");
+            .NotEmpty().WithMessage("Password is required.")
+            .MinimumLength(6).WithMessage("Password must be at least 6 characters.");
 
         RuleFor(v => v.FullName)
-            .NotEmpty().WithMessage("Họ và tên không được để trống.")
-            .MaximumLength(100).WithMessage("Họ và tên không được vượt quá 100 ký tự.");
+            .NotEmpty().WithMessage("Full name is required.")
+            .MaximumLength(100).WithMessage("Full name cannot exceed 100 characters.");
     }
 }

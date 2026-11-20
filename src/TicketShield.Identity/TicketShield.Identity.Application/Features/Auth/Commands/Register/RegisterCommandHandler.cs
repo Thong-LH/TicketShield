@@ -81,6 +81,6 @@ public class RegisterCommandHandler : IRequestHandler<RegisterCommand, ApiRespon
             User = UserProfileDto.FromUser(user)
         };
 
-        return ApiResponse<AuthResponse>.SuccessResponse(response, "Đăng ký tài khoản thành công.");
+        return ApiResponse<AuthResponse>.SuccessResponse(response, "Account registered successfully.");
     }
 }

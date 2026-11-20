@@ -30,7 +30,7 @@ public class UpdateProfileCommandHandler : IRequestHandler<UpdateProfileCommand,
         var userId = request.UserId ?? _currentUserService.UserId;
         if (!userId.HasValue || userId.Value == Guid.Empty)
         {
-            throw new UnauthorizedException("Phiên làm việc không hợp lệ hoặc bạn chưa đăng nhập.");
+            throw new UnauthorizedException("Session is invalid or you are not signed in.");
         }
 
         var user = await _context.Users
@@ -38,12 +38,12 @@ public class UpdateProfileCommandHandler : IRequestHandler<UpdateProfileCommand,
 
         if (user == null)
         {
-            throw new NotFoundException("Người dùng", userId.Value);
+            throw new NotFoundException("User", userId.Value);
         }
 
         if (!user.IsActive)
         {
-            throw new UnauthorizedException("Tài khoản của bạn đã bị vô hiệu hóa.");
+            throw new UnauthorizedException("Your account has been deactivated.");
         }
 
         user.FullName = request.FullName.Trim();
@@ -65,7 +65,7 @@ public class UpdateProfileCommandHandler : IRequestHandler<UpdateProfileCommand,
 
         return ApiResponse<UserProfileDto>.SuccessResponse(
             UserProfileDto.FromUser(user),
-            "Cập nhật thông tin tài khoản thành công."
+            "User profile updated successfully."
         );
     }
 }

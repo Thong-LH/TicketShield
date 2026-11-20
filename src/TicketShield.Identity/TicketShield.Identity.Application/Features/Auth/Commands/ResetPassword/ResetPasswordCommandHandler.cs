@@ -28,14 +28,14 @@ public class ResetPasswordCommandHandler : IRequestHandler<ResetPasswordCommand,
             user.PasswordResetOtpExpiresAt == null ||
             user.PasswordResetOtpExpiresAt < DateTimeOffset.UtcNow)
         {
-            throw new BadRequestException("Mã OTP không chính xác hoặc đã hết hiệu lực.");
+            throw new BadRequestException("OTP code is invalid or has expired.");
         }
 
         user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.NewPassword);
         user.PasswordResetOtp = null;
         user.PasswordResetOtpExpiresAt = null;
 
-        // Vô hiệu hóa toàn bộ Refresh Tokens cũ của User để đảm bảo an toàn sau khi đổi mật khẩu
+        // Invalidate all active Refresh Tokens for security
         var activeTokens = await _context.RefreshTokens
             .Where(r => r.UserId == user.Id && r.RevokedAt == null && r.ExpiresAt > DateTimeOffset.UtcNow)
             .ToListAsync(cancellationToken);
@@ -48,6 +48,6 @@ public class ResetPasswordCommandHandler : IRequestHandler<ResetPasswordCommand,
 
         await _context.SaveChangesAsync(cancellationToken);
 
-        return ApiResponse<string>.SuccessResponse("Mật khẩu của bạn đã được đặt lại thành công. Vui lòng đăng nhập với mật khẩu mới.", "Đặt lại mật khẩu thành công.");
+        return ApiResponse<string>.SuccessResponse("Your password has been reset successfully. Please sign in with your new password.", "Password reset successfully.");
     }
 }
