@@ -418,7 +418,7 @@ public class BundleAndSettlementEndToEndIntegrationTests
         var scan1Result = await ticketUsedHandler.Handle(scan1Request, CancellationToken.None);
 
         Assert.True(scan1Result.Success);
-        Assert.Contains("Đang chờ các vé còn lại", scan1Result.Message);
+        Assert.Contains("Waiting for remaining tickets", scan1Result.Message);
 
         // Escrow vẫn đang Locked (chưa đủ điều kiện giải ngân sớm)
         db.ChangeTracker.Clear();
@@ -430,7 +430,7 @@ public class BundleAndSettlementEndToEndIntegrationTests
         var scan2Result = await ticketUsedHandler.Handle(scan2Request, CancellationToken.None);
 
         Assert.True(scan2Result.Success);
-        Assert.Contains("Kích hoạt giải ngân sớm thành công", scan2Result.Message);
+        Assert.Contains("Early payout release triggered successfully", scan2Result.Message);
 
         // Escrow được chuyển sang Releasing thành công
         db.ChangeTracker.Clear();

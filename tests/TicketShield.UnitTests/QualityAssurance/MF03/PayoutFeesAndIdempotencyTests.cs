@@ -217,7 +217,7 @@ public class PayoutFeesAndIdempotencyTests
         var ex = await Assert.ThrowsAsync<BusinessRuleViolationException>(() =>
             calculator.CalculateFeeAsync(4_000m, isPrivate: false));
 
-        Assert.Contains("phải lớn hơn hoặc bằng phí sàn tối thiểu", ex.Message);
+        Assert.Contains("minimum platform fee", ex.Message);
     }
 
     [Theory]

@@ -36,7 +36,7 @@ public class WebhooksController : ApiControllerBase
         var authHeader = Request.Headers["Authorization"].FirstOrDefault();
         if (string.IsNullOrWhiteSpace(authHeader))
         {
-            return Unauthorized(ApiResponse<object>.FailureResponse("Truy cập bị từ chối: Thiếu header Authorization."));
+            return Unauthorized(ApiResponse<object>.FailureResponse("Access denied: Missing Authorization header."));
         }
 
         var token = authHeader.Trim();
@@ -51,7 +51,7 @@ public class WebhooksController : ApiControllerBase
 
         if (!string.Equals(token, _vietQrSettings.WebhookSecret, StringComparison.Ordinal))
         {
-            return Unauthorized(ApiResponse<object>.FailureResponse("Truy cập bị từ chối: Secret Webhook không hợp lệ."));
+            return Unauthorized(ApiResponse<object>.FailureResponse("Access denied: Invalid Webhook secret."));
         }
 
         // 2. Process Webhook Command

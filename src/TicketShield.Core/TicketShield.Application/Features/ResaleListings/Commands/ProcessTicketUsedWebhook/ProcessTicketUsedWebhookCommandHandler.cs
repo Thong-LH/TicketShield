@@ -28,7 +28,7 @@ public class ProcessTicketUsedWebhookCommandHandler : IRequestHandler<ProcessTic
     {
         if (string.IsNullOrWhiteSpace(request.Payload.TicketCode))
         {
-            throw new BusinessRuleViolationException("TicketCode không được để trống.");
+            throw new BusinessRuleViolationException("TicketCode is required.");
         }
 
         var ticketCode = request.Payload.TicketCode.Trim();
@@ -53,9 +53,9 @@ public class ProcessTicketUsedWebhookCommandHandler : IRequestHandler<ProcessTic
                         EscrowId = Guid.Empty,
                         EscrowStatus = "None"
                     },
-                    $"Đã ghi nhận vé {ticketCode} được sử dụng qua cổng soát vé.");
+                    $"Recorded ticket {ticketCode} as used at venue entrance.");
             }
-            throw new NotFoundException("Giao dịch ký quỹ chứa vé", ticketCode);
+            throw new NotFoundException("Escrow transaction containing ticket", ticketCode);
         }
 
         if (escrow.Status == EscrowStatus.Locked)
@@ -101,7 +101,7 @@ public class ProcessTicketUsedWebhookCommandHandler : IRequestHandler<ProcessTic
                             EscrowId = escrow.Id,
                             EscrowStatus = escrow.Status.ToString()
                         },
-                        $"Đã ghi nhận vé {ticketCode} được sử dụng ({usedCodes.Count}/{allCodes.Count} vé trong gói combo). Đang chờ các vé còn lại soát vé tại cửa trước khi giải ngân.");
+                        $"Recorded ticket {ticketCode} as used ({usedCodes.Count}/{allCodes.Count} tickets in combo bundle). Waiting for remaining tickets to scan before payout release.");
                 }
             }
 
@@ -129,7 +129,7 @@ public class ProcessTicketUsedWebhookCommandHandler : IRequestHandler<ProcessTic
                     EscrowId = escrow.Id,
                     EscrowStatus = status.ToString()
                 },
-                "Đã nhận webhook báo vé sử dụng. Kích hoạt giải ngân sớm thành công.");
+                "Ticket used webhook received. Early payout release triggered successfully.");
         }
 
         return ApiResponse<ProcessTicketUsedWebhookResponse>.SuccessResponse(
@@ -138,7 +138,7 @@ public class ProcessTicketUsedWebhookCommandHandler : IRequestHandler<ProcessTic
                 EscrowId = escrow.Id,
                 EscrowStatus = escrow.Status.ToString()
             },
-            $"Webhook ghi nhận thành công, nhưng giao dịch ký quỹ hiện đang ở trạng thái {escrow.Status}.");
+            $"Webhook recorded successfully, but escrow transaction is currently in {escrow.Status} status.");
     }
 
     private async Task<EscrowTransaction?> FindEscrowAsync(string ticketCode, CancellationToken cancellationToken)

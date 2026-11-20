@@ -42,7 +42,7 @@ public class UserBankAccountLinkedConsumer : IConsumer<IUserBankAccountLinkedEve
         seller.UpdatedAt = DateTimeOffset.UtcNow;
         await _context.SaveChangesAsync(context.CancellationToken);
         _logger.LogInformation(
-            "[EventBus] Đã ghi số tài khoản nhận tiền lên ShadowUser cho UserId: {UserId}",
+            "[EventBus] Recorded payout bank account for ShadowUser UserId: {UserId}",
             message.UserId);
     }
 }

@@ -906,7 +906,7 @@ public class IdempotentWebhookAndAcidEscrowTests
         // Act & Assert
         var ex = await Assert.ThrowsAsync<BusinessRuleViolationException>(() =>
             handler.Handle(new ProcessSePayWebhookCommand(payload), CancellationToken.None));
-        Assert.Contains("nhỏ hơn tổng số tiền cần trả", ex.Message);
+        Assert.Contains("is less than total required amount", ex.Message);
 
         // Database không bị ảnh hưởng: Escrow vẫn Pending, Listing vẫn Transacting, không có vé mới
         db.ChangeTracker.Clear();

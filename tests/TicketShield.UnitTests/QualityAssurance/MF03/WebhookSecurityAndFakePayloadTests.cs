@@ -214,7 +214,7 @@ public class WebhookSecurityAndFakePayloadTests
 
         var apiResponse = Assert.IsType<ApiResponse<object>>(unauthorizedResult.Value);
         Assert.False(apiResponse.Success);
-        Assert.Contains("Thiếu header Authorization", apiResponse.Message);
+        Assert.Contains("Missing Authorization header", apiResponse.Message);
 
         // Verify Mediator TUYỆT ĐỐI KHÔNG được gọi
         mediatorMock.Verify(m => m.Send(It.IsAny<ProcessSePayWebhookCommand>(), It.IsAny<CancellationToken>()), Times.Never);
@@ -256,7 +256,7 @@ public class WebhookSecurityAndFakePayloadTests
 
         var apiResponse = Assert.IsType<ApiResponse<object>>(unauthorizedResult.Value);
         Assert.False(apiResponse.Success);
-        Assert.Contains("Secret Webhook không hợp lệ", apiResponse.Message);
+        Assert.Contains("Invalid Webhook secret", apiResponse.Message);
 
         mediatorMock.Verify(m => m.Send(It.IsAny<ProcessSePayWebhookCommand>(), It.IsAny<CancellationToken>()), Times.Never);
     }
@@ -314,7 +314,7 @@ public class WebhookSecurityAndFakePayloadTests
 
         var apiResponse = Assert.IsType<ApiResponse<object>>(unauthorizedResult.Value);
         Assert.False(apiResponse.Success);
-        Assert.Contains("không hợp lệ", apiResponse.Message);
+        Assert.Contains("Invalid", apiResponse.Message);
 
         mediatorMock.Verify(m => m.Send(It.IsAny<ProcessTicketUsedWebhookCommand>(), It.IsAny<CancellationToken>()), Times.Never);
     }
@@ -396,7 +396,7 @@ public class WebhookSecurityAndFakePayloadTests
         // Act & Assert
         var ex = await Assert.ThrowsAsync<BusinessRuleViolationException>(() =>
             handler.Handle(new ProcessSePayWebhookCommand(payload), CancellationToken.None));
-        Assert.Contains("Không thể tìm thấy mã thanh toán hợp lệ", ex.Message);
+        Assert.Contains("Unable to find a valid payment reference", ex.Message);
     }
 
     [Theory]
@@ -475,7 +475,7 @@ public class WebhookSecurityAndFakePayloadTests
         // Act & Assert
         var ex = await Assert.ThrowsAsync<BusinessRuleViolationException>(() =>
             handler.Handle(new ProcessSePayWebhookCommand(payload), CancellationToken.None));
-        Assert.Contains("nhỏ hơn tổng số tiền cần trả", ex.Message);
+        Assert.Contains("is less than total required amount", ex.Message);
 
         // Verification DB: Escrow vẫn Pending, Listing vẫn Transacting, gRPC không được gọi
         db.ChangeTracker.Clear();
@@ -518,7 +518,7 @@ public class WebhookSecurityAndFakePayloadTests
         Assert.True(response.Success);
         Assert.Equal("Ignored", response.Data!.EscrowStatus);
         Assert.Equal("Ignored", response.Data.ListingStatus);
-        Assert.Contains("không phải giao dịch tiền vào", response.Message);
+        Assert.Contains("not an incoming payment transaction", response.Message);
 
         // DB hoàn toàn không bị ảnh hưởng
         db.ChangeTracker.Clear();
@@ -590,7 +590,7 @@ public class WebhookSecurityAndFakePayloadTests
         // Act & Assert
         var ex = await Assert.ThrowsAsync<BusinessRuleViolationException>(() =>
             handler.Handle(new ProcessSePayWebhookCommand(payload), CancellationToken.None));
-        Assert.Contains("không thể khóa", ex.Message);
+        Assert.Contains("cannot be locked", ex.Message);
     }
 
     [Fact]
@@ -654,7 +654,7 @@ public class WebhookSecurityAndFakePayloadTests
         // Act & Assert
         var ex = await Assert.ThrowsAsync<BusinessRuleViolationException>(() =>
             handler.Handle(command, CancellationToken.None));
-        Assert.Contains("TicketCode không được để trống", ex.Message);
+        Assert.Contains("TicketCode is required", ex.Message);
         mockSettler.Verify(s => s.TrySettleAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 

@@ -58,7 +58,7 @@ public class SettlementPayoutService
     {
         if (string.IsNullOrWhiteSpace(command.AccountNumber) || command.Amount <= 0 || string.IsNullOrWhiteSpace(command.IdempotencyKey))
         {
-            return new AcceptResult { Accepted = false, Error = "Lệnh thiếu số tài khoản hoặc số tiền." };
+            return new AcceptResult { Accepted = false, Error = "Payout request is missing account number or amount." };
         }
 
         var existing = await _db.TransferOrders.SingleOrDefaultAsync(row => row.IdempotencyKey == command.IdempotencyKey, cancellationToken);
@@ -176,12 +176,12 @@ public class SettlementPayoutService
         if (transfer.Outcome == GatewayOutcome.InvalidAccount)
         {
             order.State = TransferState.Failed;
-            order.LastError = "STK không hợp lệ";
+            order.LastError = "Invalid bank account number";
             order.NextAttemptAt = null;
             return true;
         }
 
-        order.LastError = "Ngân hàng timeout";
+        order.LastError = "Bank timeout";
         if (order.AttemptCount >= MaxAttempts)
         {
             order.State = TransferState.Exhausted;

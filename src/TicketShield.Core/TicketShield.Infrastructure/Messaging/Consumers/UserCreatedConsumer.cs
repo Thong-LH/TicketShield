@@ -25,7 +25,7 @@ public class UserCreatedConsumer : IConsumer<IUserCreatedEvent>
     public async Task Consume(ConsumeContext<IUserCreatedEvent> context)
     {
         var msg = context.Message;
-        _logger.LogInformation("[EventBus] Nhận UserCreatedEvent cho UserId: {UserId}, Email: {Email}", msg.UserId, msg.Email);
+        _logger.LogInformation("[EventBus] Received UserCreatedEvent for UserId: {UserId}, Email: {Email}", msg.UserId, msg.Email);
 
         var existingShadowUser = await _context.ShadowUsers
             .FirstOrDefaultAsync(u => u.Id == msg.UserId);
@@ -58,6 +58,6 @@ public class UserCreatedConsumer : IConsumer<IUserCreatedEvent>
         }
 
         await _context.SaveChangesAsync(context.CancellationToken);
-        _logger.LogInformation("[EventBus] Đã đồng bộ thành công ShadowUser cho UserId: {UserId}", msg.UserId);
+        _logger.LogInformation("[EventBus] Successfully synced ShadowUser for UserId: {UserId}", msg.UserId);
     }
 }

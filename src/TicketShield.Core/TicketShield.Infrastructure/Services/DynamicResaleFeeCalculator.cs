@@ -79,7 +79,7 @@ public class DynamicResaleFeeCalculator : IResaleFeeCalculator
         if (resalePrice < minimumSellerFee)
         {
             throw new BusinessRuleViolationException(
-                $"Giá bán lại ({resalePrice:N0} VNĐ) phải lớn hơn hoặc bằng phí sàn tối thiểu ({minimumSellerFee:N0} VNĐ).");
+                $"Resale price ({resalePrice:N0} VNĐ) must be greater than or equal to the minimum platform fee ({minimumSellerFee:N0} VNĐ).");
         }
 
         // UNIFORM FEE CALCULATION FORMULA (Applies identically for both Public & Private Resale)
