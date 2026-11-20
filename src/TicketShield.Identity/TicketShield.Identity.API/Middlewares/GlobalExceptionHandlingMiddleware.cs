@@ -24,7 +24,7 @@ public class GlobalExceptionHandlingMiddleware
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Đã xảy ra lỗi không xử lý trong Identity API: {Message}", ex.Message);
+            _logger.LogError(ex, "An unhandled exception occurred in Identity API: {Message}", ex.Message);
             await HandleExceptionAsync(context, ex);
         }
     }
@@ -57,12 +57,12 @@ public class GlobalExceptionHandlingMiddleware
 
             ValidationException vEx => (
                 (int)HttpStatusCode.BadRequest,
-                "Dữ liệu đầu vào không hợp lệ.",
+                "Validation failed.",
                 vEx.Errors),
 
             _ => (
                 (int)HttpStatusCode.InternalServerError,
-                "Đã xảy ra lỗi máy chủ nội bộ. Vui lòng thử lại sau.",
+                "An unexpected internal error occurred. Please try again later.",
                 null as IDictionary<string, string[]>)
         };
 

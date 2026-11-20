@@ -2,7 +2,7 @@ namespace TicketShield.Identity.Domain.Exceptions;
 
 public class UnauthorizedException : Exception
 {
-    public UnauthorizedException(string message = "Yêu cầu xác thực tài khoản không hợp lệ hoặc phiên làm việc đã hết hạn.")
+    public UnauthorizedException(string message = "Authentication request is invalid or your session has expired.")
         : base(message)
     {
     }

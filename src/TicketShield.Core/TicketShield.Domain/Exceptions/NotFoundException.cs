@@ -7,7 +7,7 @@ public class NotFoundException : DomainException
     }
 
     public NotFoundException(string entityName, object key)
-        : base($"Không tìm thấy {entityName} với mã định danh '{key}'.")
+        : base($"Entity '{entityName}' with identifier '{key}' was not found.")
     {
     }
 }
