@@ -164,8 +164,43 @@ if (args.Contains("--test-shadow-components"))
     Console.WriteLine($"[{(loggerPass ? "PASS" : "FAIL")}] FprMetricLogger Non-blocking Write, JSONL Formatting & Flush");
     Console.WriteLine($"       Queued={writeQueued}, FileExists={fileExists}, JsonValid={jsonValid}");
 
-    bool allOk = aggPass && resetPass && loggerPass;
-    Console.WriteLine(allOk ? "STATUS: SUCCESS (All 13.3.4.2 Components Verified)" : "STATUS: FAILED");
+    // Test 4: AntiBotGuardService Shadow Mode & Fault Isolation (ML-13.3.4.3)
+    var dummyRedis = new AntiBotRedisService();
+    var dummyToken = new SessionTokenService(new ConfigurationBuilder().Build());
+    var scoringService = new AntiBotScoringService(testOptions, Microsoft.Extensions.Logging.Abstractions.NullLogger<AntiBotScoringService>.Instance);
+    var guardService = new AntiBotGuardService(
+        dummyToken,
+        dummyRedis,
+        scoringService,
+        testOptions,
+        Microsoft.Extensions.Logging.Abstractions.NullLogger<AntiBotGuardService>.Instance,
+        aggregator,
+        testLogger);
+
+    var braveContext = new CheckoutTelemetryContext
+    {
+        ClientIp = "127.0.0.1",
+        BuyerEmail = "brave_user@ticketshield.io",
+        DeviceFingerprint = "brave_fingerprint_abc",
+        CanvasTampered = 1.0f,
+        PrototypeTampered = 0.0f,
+        VirtualGpuDetected = 0.0f,
+        IsWebDriver = 0.0f,
+        ActionIntervalStdDev = 165.0f,
+        TimeToCheckout = 15.2f,
+        BurstRate10s = 1.0f
+    };
+
+    var guardResult = await guardService.EvaluateCheckoutGuardAsync(braveContext);
+    bool guardPass = guardResult.ExecutionMode == AntiBotExecutionMode.Shadow &&
+                     !string.IsNullOrEmpty(guardResult.ShadowCohort) &&
+                     guardResult.ShadowRiskScore.HasValue &&
+                     guardResult.VectorV2 != null;
+
+    Console.WriteLine($"[{(guardPass ? "PASS" : "FAIL")}] AntiBotGuardService Shadow Evaluation (Mode={guardResult.ExecutionMode}, Cohort={guardResult.ShadowCohort}, V2Score={guardResult.ShadowRiskScore:F4})");
+
+    bool allOk = aggPass && resetPass && loggerPass && guardPass;
+    Console.WriteLine(allOk ? "STATUS: SUCCESS (All 13.3.4.2 & 13.3.4.3 Components Verified)" : "STATUS: FAILED");
     Environment.Exit(allOk ? 0 : 1);
 }
 

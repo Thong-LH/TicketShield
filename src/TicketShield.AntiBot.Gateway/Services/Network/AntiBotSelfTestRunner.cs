@@ -958,6 +958,20 @@ public static class AntiBotSelfTestRunner
     private class DummySelfTestGuardService : IAntiBotGuardService
     {
         public Task<AntiBotGuardResult> EvaluateCheckoutGuardAsync(
+            CheckoutTelemetryContext context,
+            CancellationToken ct = default)
+        {
+            return EvaluateCheckoutGuardAsync(
+                context.SessionToken,
+                context.BuyerEmail,
+                context.ClientIp,
+                context.DeviceFingerprint,
+                context.ActionIntervalStdDev,
+                context.IsWebDriver,
+                ct);
+        }
+
+        public Task<AntiBotGuardResult> EvaluateCheckoutGuardAsync(
             string? sessionToken, string? buyerEmail, string? clientIp,
             string? deviceFingerprint, float? actionIntervalStdDev, float? isWebdriver,
             CancellationToken ct = default)

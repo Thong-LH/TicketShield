@@ -476,15 +476,63 @@ public class AntiBotCheckoutGuardMiddleware(
             var clientIp = context.Request.Headers["X-Forwarded-For"].FirstOrDefault()
                            ?? context.Connection.RemoteIpAddress?.ToString();
 
-            // Chấm điểm qua AntiBotGuardService với SLA 20ms & Fail-Open
+            // Cầu nối tín hiệu 3 tầng (Browser, Protocol, Behavioral) sang CheckoutTelemetryContext (ML-13.3.4.1)
+            float uaMatchFloat = uaResult.MatchLevel switch
+            {
+                UserAgentMatchLevel.ExactMatch => 0.0f,
+                UserAgentMatchLevel.CanonicalMatch => 0.0f,
+                UserAgentMatchLevel.NotApplicable => 0.0f,
+                UserAgentMatchLevel.MinorMismatch => 0.5f,
+                UserAgentMatchLevel.BlatantMismatch => 1.0f,
+                _ => 0.0f
+            };
+
+            var telemetryContext = new CheckoutTelemetryContext
+            {
+                IsWebDriver = isWebdriver ?? -1.0f,
+                VirtualGpuDetected = virtualGpuDetected ?? -1.0f,
+                PrototypeTampered = prototypeTampered ?? -1.0f,
+                CanvasTampered = canvasTampered ?? -1.0f,
+                ActionIntervalStdDev = actionInterval ?? -1.0f,
+                UaMatchLevel = uaMatchFloat,
+                NetworkInconsistencyScore = (float)networkSummary.OverallInconsistencyScore,
+                ClientIp = clientIp,
+                BuyerEmail = buyerEmail,
+                SessionToken = sessionToken,
+                DeviceFingerprint = deviceFingerprint,
+                ClientNonce = clientNonce,
+                ClientTimestamp = clientTimestamp,
+                ClientUserAgent = clientUserAgent,
+                HeaderUserAgent = headerUserAgent,
+                CanvasHash = canvasHash,
+                WebglRenderer = webglRenderer,
+                WebglVendor = webglVendor,
+                Ja4Fingerprint = networkSummary.Tls?.Ja4?.RawJa4,
+                Http2Fingerprint = networkSummary.Http2?.Settings?.RawSettings ?? networkSummary.Http2?.PseudoHeaderOrder
+            };
+
+            // Chấm điểm qua AntiBotGuardService với SLA 20ms, Shadow/Enforce mode & Fail-Open
             var guardResult = await guardService.EvaluateCheckoutGuardAsync(
-                sessionToken,
-                buyerEmail,
-                clientIp,
-                deviceFingerprint,
-                actionInterval,
-                isWebdriver,
+                telemetryContext,
                 context.RequestAborted);
+
+            // Gắn các response header audit phục vụ đo lường Shadow Mode & FPR (Jira SCRUM-382)
+            if (!context.Response.HasStarted)
+            {
+                context.Response.Headers["X-AntiBot-Execution-Mode"] = guardResult.ExecutionMode.ToString();
+                if (!string.IsNullOrEmpty(guardResult.ShadowCohort))
+                {
+                    context.Response.Headers["X-AntiBot-Shadow-Cohort"] = guardResult.ShadowCohort;
+                }
+                if (guardResult.ShadowRiskScore.HasValue)
+                {
+                    context.Response.Headers["X-AntiBot-V2-Score"] = guardResult.ShadowRiskScore.Value.ToString("F4");
+                }
+                if (!string.IsNullOrEmpty(guardResult.ShadowDecision))
+                {
+                    context.Response.Headers["X-AntiBot-V2-Decision"] = guardResult.ShadowDecision;
+                }
+            }
 
             // =========================================================================
             // CHẾ ĐỘ THU THẬP DỮ LIỆU ĐỐI KHÁNG (US-13.3, ML-13.3.1 DataCollectionMode)
@@ -600,8 +648,13 @@ public class AntiBotCheckoutGuardMiddleware(
             }
 
             // 3. Allow -> Gắn header xác thực và chuyển tiếp trong suốt qua YARP sang MockOrganizer
+            context.Request.Headers["X-AntiBot-Execution-Mode"] = guardResult.ExecutionMode.ToString();
             context.Request.Headers["X-AntiBot-Verified"] = "True";
             context.Request.Headers["X-AntiBot-Score"] = guardResult.RiskScore.ToString("F4");
+            if (guardResult.ShadowRiskScore.HasValue)
+            {
+                context.Request.Headers["X-AntiBot-V2-Score"] = guardResult.ShadowRiskScore.Value.ToString("F4");
+            }
         }
 
         await next(context);

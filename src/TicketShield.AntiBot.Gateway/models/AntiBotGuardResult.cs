@@ -15,5 +15,11 @@ public record AntiBotGuardResult
     public bool IsFailOpen { get; init; } = false;
     public double ExecutionDurationMs { get; init; }
     public BotRiskVector Vector { get; init; } = null!;
+    public BotRiskVectorV2? VectorV2 { get; init; }
     public string Reason { get; init; } = string.Empty;
+    public AntiBotExecutionMode ExecutionMode { get; init; } = AntiBotExecutionMode.Shadow;
+    public string? ShadowCohort { get; init; }
+    public float? ShadowRiskScore { get; init; }
+    public string? ShadowDecision { get; init; }
+    public CheckoutTelemetryContext? TelemetryContext { get; init; }
 }
