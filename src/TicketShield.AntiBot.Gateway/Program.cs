@@ -77,6 +77,98 @@ if (args.Contains("--eval-v2-batch"))
     Environment.Exit(0);
 }
 
+// CLI Component Test Runner cho ML-13.3.4.2 (ShadowMetricsAggregator & FprMetricLogger)
+if (args.Contains("--test-shadow-components"))
+{
+    Console.WriteLine("==========================================================");
+    Console.WriteLine(" ML-13.3.4.2: SHADOW METRICS AGGREGATOR & FPR LOGGER TEST ");
+    Console.WriteLine("==========================================================");
+
+    var testOptions = Microsoft.Extensions.Options.Options.Create(new AntiBotScoringOptions
+    {
+        ExecutionMode = AntiBotExecutionMode.Shadow,
+        EnableStructuredFprLogging = true,
+        StructuredLogPath = "logs/test_shadow_{yyyyMMdd}.jsonl"
+    });
+
+    var aggregator = new ShadowMetricsAggregator(testOptions);
+
+    // Test 1: Record cohorts
+    aggregator.RecordEvaluation("v1_block_v2_allow", false, 0.84);
+    aggregator.RecordEvaluation("v1_challenge_v2_allow", false, 0.40);
+    aggregator.RecordEvaluation("v1_allow_v2_block", false, 0.70);
+    aggregator.RecordEvaluation("v1_challenge_v2_block", false, 0.35);
+    aggregator.RecordEvaluation("v1_allow_v2_allow", true, 0.05);
+    aggregator.RecordEvaluation("v1_block_v2_block", true, 0.02, isError: true);
+
+    var snap = aggregator.GetSnapshot();
+    bool aggPass = snap.TotalEvaluations == 6 &&
+                   snap.AgreementCount == 2 &&
+                   snap.RescuedFalsePositives == 1 &&
+                   snap.FrictionReduction == 1 &&
+                   snap.CaughtStealthBots == 1 &&
+                   snap.CaptchaBotElimination == 1 &&
+                   snap.V2EvaluationErrors == 1 &&
+                   Math.Abs(snap.AverageRiskScoreDelta - Math.Round((0.84 + 0.40 + 0.70 + 0.35 + 0.05 + 0.02) / 6.0, 4)) < 0.001;
+
+    Console.WriteLine($"[{(aggPass ? "PASS" : "FAIL")}] ShadowMetricsAggregator atomic counters & snapshot calculation");
+    Console.WriteLine($"       Total={snap.TotalEvaluations}, Agree={snap.AgreementCount}, RescuedFp={snap.RescuedFalsePositives}, Stealth={snap.CaughtStealthBots}, Errors={snap.V2EvaluationErrors}");
+
+    // Test 2: Reset
+    aggregator.Reset();
+    var resetSnap = aggregator.GetSnapshot();
+    bool resetPass = resetSnap.TotalEvaluations == 0 && resetSnap.AgreementCount == 0 && resetSnap.CohortMatrix.Count == 0;
+    Console.WriteLine($"[{(resetPass ? "PASS" : "FAIL")}] ShadowMetricsAggregator.Reset()");
+
+    // Test 3: FprMetricLogger Non-blocking channel and JSONL output
+    var testLogger = new FprMetricLogger(testOptions, Microsoft.Extensions.Logging.Abstractions.NullLogger<FprMetricLogger>.Instance);
+    var dummyContext = new CheckoutTelemetryContext
+    {
+        ClientIp = "127.0.0.1",
+        BuyerEmail = "tester@ticketshield.io",
+        DeviceFingerprint = "fingerprint_12345",
+        CanvasTampered = 1.0f,
+        ActionIntervalStdDev = 145.0f,
+        TimeToCheckout = 12.5f
+    };
+    var dummyPrimary = new AntiBotScoreResponse { RiskScore = 0.85f, Decision = "Block", InferenceTimeMs = 0.5 };
+    var dummyShadow = new AntiBotScoreResponse { RiskScore = 0.02f, Decision = "Allow", InferenceTimeMs = 0.03 };
+
+    var entry = ShadowEvaluationLogEntry.Create(
+        "REQ-TEST-001",
+        AntiBotExecutionMode.Shadow,
+        dummyContext,
+        dummyPrimary,
+        dummyShadow,
+        "v1_block_v2_allow",
+        evaluationMs: 0.035,
+        totalGuardMs: 1.25);
+
+    bool writeQueued = testLogger.LogEvaluation(entry);
+    await testLogger.FlushAsync();
+
+    string writtenPath = testLogger.ResolveLogFilePath();
+    bool fileExists = File.Exists(writtenPath);
+    bool jsonValid = false;
+    if (fileExists)
+    {
+        string[] lines = await File.ReadAllLinesAsync(writtenPath);
+        if (lines.Length > 0 && lines[^1].Contains("\"request_id\":\"REQ-TEST-001\"") && lines[^1].Contains("\"is_false_positive_candidate\":true"))
+        {
+            jsonValid = true;
+        }
+        try { File.Delete(writtenPath); } catch { }
+    }
+
+    bool loggerPass = writeQueued && fileExists && jsonValid;
+    Console.WriteLine($"[{(loggerPass ? "PASS" : "FAIL")}] FprMetricLogger Non-blocking Write, JSONL Formatting & Flush");
+    Console.WriteLine($"       Queued={writeQueued}, FileExists={fileExists}, JsonValid={jsonValid}");
+
+    bool allOk = aggPass && resetPass && loggerPass;
+    Console.WriteLine(allOk ? "STATUS: SUCCESS (All 13.3.4.2 Components Verified)" : "STATUS: FAILED");
+    Environment.Exit(allOk ? 0 : 1);
+}
+
 var builder = WebApplication.CreateBuilder(args);
 
 var port = builder.Configuration.GetValue("HttpPort", 5006);
@@ -127,6 +219,10 @@ builder.Services.AddSingleton<INonceValidationService, NonceValidationService>()
 builder.Services.AddSingleton<IAntiBotRedisService, AntiBotRedisService>();
 builder.Services.AddSingleton<IAntiBotScoringService, AntiBotScoringService>();
 builder.Services.AddSingleton<IAntiBotGuardService, AntiBotGuardService>();
+builder.Services.AddSingleton<IShadowMetricsAggregator, ShadowMetricsAggregator>();
+builder.Services.AddSingleton<FprMetricLogger>();
+builder.Services.AddSingleton<IFprMetricLogger>(sp => sp.GetRequiredService<FprMetricLogger>());
+builder.Services.AddHostedService(sp => sp.GetRequiredService<FprMetricLogger>());
 builder.Services.AddSingleton<IJa4Parser, Ja4Parser>();
 builder.Services.AddSingleton<ITlsProfileExtractor, TlsProfileExtractor>();
 builder.Services.AddSingleton<IPseudoHeaderInspector, PseudoHeaderInspector>();

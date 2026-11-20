@@ -1,10 +1,16 @@
+using System.Text.Json.Serialization;
+
 namespace TicketShield.AntiBot.Gateway.Models;
 
 public class AntiBotScoringOptions
 {
     public const string SectionName = "AntiBotScoring";
 
-    // Model v1.0 (Baseline)
+    // Execution Mode (ML-13.3.4, Jira SCRUM-382)
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public AntiBotExecutionMode ExecutionMode { get; set; } = AntiBotExecutionMode.Shadow;
+
+    // Model v1.0 (Baseline 6D)
     public string ModelPath { get; set; } = "models/anti_bot_model.onnx";
     public string InputNodeName { get; set; } = "float_input";
     public string OutputNodeName { get; set; } = "probabilities";
@@ -22,4 +28,12 @@ public class AntiBotScoringOptions
     // Shadow Mode Evaluation (Hỗ trợ ML-13.3.4)
     public bool EnableShadowMode { get; set; } = true;
     public bool PrimaryModelIsV2 { get; set; } = false;
+
+    // Asynchronous Structured FPR Logging (ML-13.3.4)
+    public bool EnableStructuredFprLogging { get; set; } = true;
+    public string StructuredLogPath { get; set; } = "logs/shadow_mode_evaluations_{yyyyMMdd}.jsonl";
+    public int LogChannelCapacity { get; set; } = 10000;
+
+    // Security for Hot-Switching API
+    public string AdminApiKey { get; set; } = "TicketShield_Secret_Admin_Key_2026!";
 }
