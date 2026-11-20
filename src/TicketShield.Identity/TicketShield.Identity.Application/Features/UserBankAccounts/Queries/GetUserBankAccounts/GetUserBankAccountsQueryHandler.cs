@@ -30,8 +30,9 @@ public class GetUserBankAccountsQueryHandler : IRequestHandler<GetUserBankAccoun
 
         var bankAccounts = await _dbContext.UserBankAccounts
             .Where(b => b.UserId == userId)
-            .OrderByDescending(b => b.IsDefault)
-            .ThenByDescending(b => b.CreatedAt)
+            // Preserve a stable, chronological layout in the UI. The selected payout
+            // account is communicated by IsDefault rather than being moved to the top.
+            .OrderByDescending(b => b.CreatedAt)
             .Select(b => new UserBankAccountDto
             {
                 Id = b.Id,

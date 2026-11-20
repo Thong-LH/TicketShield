@@ -51,7 +51,7 @@ public class DeleteUserBankAccountCommandHandler : IRequestHandler<DeleteUserBan
         if (targetAccount.IsDefault && !remainingAccounts.Any())
         {
             throw new BadRequestException(
-                "Không thể xóa tài khoản mặc định duy nhất. Vui lòng thêm tài khoản khác hoặc đặt tài khoản khác làm mặc định trước.");
+                "You cannot remove your only default payout account. Add another account or make a different account the default first.");
         }
 
         // Step 4: Xóa TK khỏi DB
