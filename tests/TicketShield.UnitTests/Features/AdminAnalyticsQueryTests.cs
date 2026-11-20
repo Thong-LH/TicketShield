@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using TicketShield.Application.Features.Admin.Analytics.Queries.GetAdminPlatformAnalytics;
+using TicketShield.Application.Features.Admin.Transactions.Queries.GetAdminTransactions;
 using TicketShield.Domain.Entities;
 using TicketShield.Domain.Enums;
 using TicketShield.Infrastructure.Persistence;
@@ -129,6 +130,85 @@ public class AdminAnalyticsQueryTests
         Assert.Equal(0m, resultFuture.Data!.Revenue.TotalNetRevenue);
         Assert.Equal(0, resultFuture.Data.Users.TotalBuyers);
         Assert.Equal(0, resultFuture.Data.Users.TotalSellers);
+    }
+
+    [Fact]
+    public async Task Handle_CashflowCards_ReconcileToNetRevenue()
+    {
+        await using var db = CreateDb();
+        await AdminMoneyTestData.SeedAsync(db, DateTimeOffset.UtcNow.AddHours(-3));
+
+        var handler = new GetAdminPlatformAnalyticsQueryHandler(db);
+        var result = await handler.Handle(new GetAdminPlatformAnalyticsQuery(), CancellationToken.None);
+        var revenue = result.Data!.Revenue;
+
+        Assert.Equal(AdminMoneyTestData.ExpectedInflow, revenue.TotalInflow);
+        Assert.Equal(AdminMoneyTestData.ExpectedHeld, revenue.TotalHeldInEscrow);
+        Assert.Equal(AdminMoneyTestData.ExpectedPaidOut, revenue.TotalPayout);
+        Assert.Equal(AdminMoneyTestData.ExpectedRefunded, revenue.TotalRefundedAmount);
+        Assert.Equal(AdminMoneyTestData.ExpectedNetRevenue, revenue.TotalNetRevenue);
+        Assert.Equal(AdminMoneyTestData.ExpectedGmv, revenue.TotalGmv);
+        Assert.Equal(
+            revenue.TotalNetRevenue,
+            revenue.TotalInflow - revenue.TotalPayout - revenue.TotalRefundedAmount - revenue.TotalHeldInEscrow);
+    }
+
+    [Fact]
+    public async Task Handle_CashflowCards_MatchTheAdminTransactionsPage()
+    {
+        await using var db = CreateDb();
+        await AdminMoneyTestData.SeedAsync(db, DateTimeOffset.UtcNow.AddHours(-3));
+
+        var analytics = await new GetAdminPlatformAnalyticsQueryHandler(db)
+            .Handle(new GetAdminPlatformAnalyticsQuery(), CancellationToken.None);
+        var transactions = await new GetAdminTransactionsQueryHandler(db)
+            .Handle(new GetAdminTransactionsQuery(), CancellationToken.None);
+
+        var revenue = analytics.Data!.Revenue;
+        var summary = transactions.Data!.Summary;
+        Assert.Equal(summary.TotalInflowAmount, revenue.TotalInflow);
+        Assert.Equal(summary.TotalEscrowLockedAmount, revenue.TotalHeldInEscrow);
+        Assert.Equal(summary.TotalPayoutCompletedAmount, revenue.TotalPayout);
+        Assert.Equal(summary.TotalRefundedAmount, revenue.TotalRefundedAmount);
+    }
+
+    [Fact]
+    public async Task Handle_DailyRevenue_GroupsByVietnamDay()
+    {
+        await using var db = CreateDb();
+        // 23:30 on 13/11 in Vietnam, and 00:30 on 14/11 in Vietnam (both still 13/11 in UTC).
+        await AdminMoneyTestData.SeedAsync(db, new DateTimeOffset(2026, 11, 13, 16, 30, 0, TimeSpan.Zero));
+        await AdminMoneyTestData.SeedAsync(db, new DateTimeOffset(2026, 11, 13, 17, 30, 0, TimeSpan.Zero));
+
+        var handler = new GetAdminPlatformAnalyticsQueryHandler(db);
+        var result = await handler.Handle(new GetAdminPlatformAnalyticsQuery(), CancellationToken.None);
+        var days = result.Data!.DailyRevenue;
+
+        // Only days with revenue are returned, oldest first.
+        Assert.Equal(2, days.Count);
+        Assert.Equal("2026-11-13", days[0].Date);
+        Assert.Equal("2026-11-14", days[1].Date);
+        Assert.All(days, day =>
+        {
+            Assert.Equal(AdminMoneyTestData.ExpectedNetRevenue, day.NetRevenue);
+            Assert.Equal(AdminMoneyTestData.ExpectedGmv, day.Gmv);
+        });
+    }
+
+    [Fact]
+    public async Task Handle_DailyRevenue_FollowsTheDateRange()
+    {
+        await using var db = CreateDb();
+        await AdminMoneyTestData.SeedAsync(db, new DateTimeOffset(2026, 11, 13, 16, 30, 0, TimeSpan.Zero));
+        await AdminMoneyTestData.SeedAsync(db, new DateTimeOffset(2026, 11, 13, 17, 30, 0, TimeSpan.Zero));
+
+        var handler = new GetAdminPlatformAnalyticsQueryHandler(db);
+        // From 14/11 00:00 Vietnam time
+        var query = new GetAdminPlatformAnalyticsQuery { FromDate = new DateTimeOffset(2026, 11, 13, 17, 0, 0, TimeSpan.Zero) };
+        var result = await handler.Handle(query, CancellationToken.None);
+
+        var day = Assert.Single(result.Data!.DailyRevenue);
+        Assert.Equal("2026-11-14", day.Date);
     }
 
     private static TicketShieldDbContext CreateDb()

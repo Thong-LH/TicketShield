@@ -10,5 +10,11 @@ public class AdminPlatformAnalyticsResponseDto
     public UserAnalyticsDto Users { get; set; } = new();
     public TicketInventoryAnalyticsDto Inventory { get; set; } = new();
     public List<EventTransactionAnalyticsDto> EventTransactions { get; set; } = new();
+
+    /// <summary>
+    /// Days that have revenue inside the requested range, oldest first. Days without revenue are omitted;
+    /// the client fills them with zero because it knows the selected range and today in local time.
+    /// </summary>
+    public List<DailyRevenueDto> DailyRevenue { get; set; } = new();
 }
 

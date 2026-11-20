@@ -35,5 +35,23 @@ public class PlatformRevenueStatsDto
     /// Tổng số tiền đã hoàn trả cho người mua do tranh chấp/hủy lệnh (Status == Refunded).
     /// </summary>
     public decimal TotalRefundedAmount { get; set; }
+
+    /// <summary>
+    /// Inflow (SCRUM-392): total paid by buyers on escrows whose money reached the platform.
+    /// Same bucket as the Inflow card of the Admin Transactions page.
+    /// </summary>
+    public decimal TotalInflow { get; set; }
+
+    /// <summary>
+    /// Payout (SCRUM-392): total amount of seller payouts whose status is Success.
+    /// Same number as the Paid out card of the Admin Transactions page.
+    /// </summary>
+    public decimal TotalPayout { get; set; }
+
+    /// <summary>
+    /// Held in escrow (SCRUM-393): total paid by buyers on escrows the platform still holds.
+    /// Inflow - Payout - Refunded - Held in escrow equals Net revenue.
+    /// </summary>
+    public decimal TotalHeldInEscrow { get; set; }
 }
 
