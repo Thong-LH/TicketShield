@@ -26,102 +26,27 @@ public class GetAdminListingsQueryHandler : IRequestHandler<GetAdminListingsQuer
         var page = request.Page > 0 ? request.Page : 1;
         var size = request.Size > 0 ? request.Size : 20;
 
-        // 1. Thống kê tổng hợp (Summary Metrics) toàn hệ thống cho Admin
-        var baseAllQuery = _dbContext.ResaleListings.AsNoTracking();
+        // 1. Every filter the table applies. The summary cards and the table read the same rows.
+        var query = ApplyFilters(_dbContext.ResaleListings.AsNoTracking(), request);
 
-        var totalListings = await baseAllQuery.CountAsync(cancellationToken);
-        var totalSingleTickets = await baseAllQuery.CountAsync(l => l.BundleId == null, cancellationToken);
+        // 2. Summary cards over the filtered rows, across all pages.
+        var totalListings = await query.CountAsync(cancellationToken);
+        var totalSingleTickets = await query.CountAsync(l => l.BundleId == null, cancellationToken);
         // Đếm số gói Combo (mỗi BundleId một gói), không đếm số vé nằm trong gói.
-        var totalBundles = await baseAllQuery
+        var totalBundles = await query
             .Where(l => l.BundleId != null)
             .Select(l => l.BundleId)
             .Distinct()
             .CountAsync(cancellationToken);
-        var totalActiveListings = await baseAllQuery.CountAsync(l => l.ListingStatus == ListingStatus.Verified, cancellationToken);
-        var totalSoldListings = await baseAllQuery.CountAsync(l => l.ListingStatus == ListingStatus.Sold, cancellationToken);
-
-        var totalAtCeilingListings = await baseAllQuery
-            .CountAsync(l => l.ResalePrice >= Math.Truncate(l.OriginalPrice * (1m + l.AppliedMarkupPercentage / 100m)), cancellationToken);
-
-        // 2. Xây dựng truy vấn lọc danh sách tin đăng
-        var query = _dbContext.ResaleListings
-            .AsNoTracking()
-            .Include(l => l.Event)
-            .Include(l => l.Tier)
-            .Include(l => l.Seller)
-            .AsQueryable();
-
-        // Lọc trạng thái tin bán
-        if (request.Status.HasValue)
-        {
-            query = query.Where(l => l.ListingStatus == request.Status.Value);
-        }
-
-        // Lọc trạng thái xác thực
-        if (request.VerificationStatus.HasValue)
-        {
-            query = query.Where(l => l.VerificationStatus == request.VerificationStatus.Value);
-        }
-
-        // Lọc gói combo hoặc tin lẻ
-        if (request.IsBundleOnly.HasValue && request.IsBundleOnly.Value)
-        {
-            query = query.Where(l => l.BundleId != null);
-        }
-        else if (request.IsSingleOnly.HasValue && request.IsSingleOnly.Value)
-        {
-            query = query.Where(l => l.BundleId == null);
-        }
-
-        // Lọc đủ các vé con của một gói Combo
-        if (request.BundleId.HasValue && request.BundleId.Value != Guid.Empty)
-        {
-            query = query.Where(l => l.BundleId == request.BundleId.Value);
-        }
-
-        // Lọc theo sự kiện
-        if (request.EventId.HasValue && request.EventId.Value != Guid.Empty)
-        {
-            query = query.Where(l => l.EventId == request.EventId.Value);
-        }
-
-        // Lọc theo người bán
-        if (request.SellerId.HasValue && request.SellerId.Value != Guid.Empty)
-        {
-            query = query.Where(l => l.SellerId == request.SellerId.Value);
-        }
-
-        // Lọc theo chạm trần giá
-        if (request.IsAtPriceCeilingOnly.HasValue && request.IsAtPriceCeilingOnly.Value)
-        {
-            query = query.Where(l => l.ResalePrice >= Math.Truncate(l.OriginalPrice * (1m + l.AppliedMarkupPercentage / 100m)));
-        }
-
-        // Lọc theo ngày tạo
-        if (request.FromDate.HasValue)
-        {
-            query = query.Where(l => l.CreatedAt >= request.FromDate.Value);
-        }
-
-        if (request.ToDate.HasValue)
-        {
-            query = query.Where(l => l.CreatedAt <= request.ToDate.Value);
-        }
-
-        // Tìm kiếm từ khóa
-        if (!string.IsNullOrWhiteSpace(request.Keyword))
-        {
-            var kw = request.Keyword.Trim().ToLower();
-            query = query.Where(l =>
-                l.OriginalTicketCode.ToLower().Contains(kw) ||
-                (l.Event != null && l.Event.Name.ToLower().Contains(kw)) ||
-                (l.Seller != null && (l.Seller.FullName.ToLower().Contains(kw) || l.Seller.Email.ToLower().Contains(kw))));
-        }
-
-        var totalCount = await query.CountAsync(cancellationToken);
+        var totalActiveListings = await query.CountAsync(l => l.ListingStatus == ListingStatus.Verified, cancellationToken);
+        var totalSoldListings = await query.CountAsync(l => l.ListingStatus == ListingStatus.Sold, cancellationToken);
+        var totalAtCeilingListings = await query.Where(ResaleListing.IsAtOrOverCeiling).CountAsync(cancellationToken);
 
         // 3. Phân trang và sắp xếp mới nhất lên đầu
         var items = await query
+            .Include(l => l.Event)
+            .Include(l => l.Tier)
+            .Include(l => l.Seller)
             .OrderByDescending(l => l.CreatedAt)
             .Skip((page - 1) * size)
             .Take(size)
@@ -131,7 +56,8 @@ public class GetAdminListingsQueryHandler : IRequestHandler<GetAdminListingsQuer
         var dtos = items.Select(l =>
         {
             var maxAllowedPrice = ResaleListing.ComputePriceCeiling(l.OriginalPrice, l.AppliedMarkupPercentage);
-            var isAtCeiling = l.ResalePrice >= maxAllowedPrice;
+            // A 0% ceiling sold at face value is not "at cap"; selling above it is still exceeded.
+            var isAtCeiling = l.AppliedMarkupPercentage > 0m && l.ResalePrice >= maxAllowedPrice;
             var isExceeded = l.ResalePrice > maxAllowedPrice;
             var actualMarkup = l.OriginalPrice > 0
                 ? Math.Round(((l.ResalePrice - l.OriginalPrice) / l.OriginalPrice) * 100m, 2)
@@ -173,7 +99,7 @@ public class GetAdminListingsQueryHandler : IRequestHandler<GetAdminListingsQuer
             };
         }).ToList();
 
-        var paginatedList = new PaginatedList<AdminListingDto>(dtos, totalCount, page, size);
+        var paginatedList = new PaginatedList<AdminListingDto>(dtos, totalListings, page, size);
 
         var result = new AdminListingsResponseDto
         {
@@ -191,5 +117,78 @@ public class GetAdminListingsQueryHandler : IRequestHandler<GetAdminListingsQuer
 
         return ApiResponse<AdminListingsResponseDto>.SuccessResponse(result, "Lấy danh sách tin bán lẻ và gói combo thành công.");
     }
-}
 
+    private static IQueryable<ResaleListing> ApplyFilters(IQueryable<ResaleListing> query, GetAdminListingsQuery request)
+    {
+        // Lọc trạng thái tin bán
+        if (request.Status.HasValue)
+        {
+            query = query.Where(l => l.ListingStatus == request.Status.Value);
+        }
+
+        // Lọc trạng thái xác thực
+        if (request.VerificationStatus.HasValue)
+        {
+            query = query.Where(l => l.VerificationStatus == request.VerificationStatus.Value);
+        }
+
+        // Lọc gói combo hoặc tin lẻ
+        if (request.IsBundleOnly.HasValue && request.IsBundleOnly.Value)
+        {
+            query = query.Where(l => l.BundleId != null);
+        }
+        else if (request.IsSingleOnly.HasValue && request.IsSingleOnly.Value)
+        {
+            query = query.Where(l => l.BundleId == null);
+        }
+
+        // Lọc đủ các vé con của một gói Combo
+        if (request.BundleId.HasValue && request.BundleId.Value != Guid.Empty)
+        {
+            query = query.Where(l => l.BundleId == request.BundleId.Value);
+        }
+
+        // Lọc theo sự kiện
+        if (request.EventId.HasValue && request.EventId.Value != Guid.Empty)
+        {
+            query = query.Where(l => l.EventId == request.EventId.Value);
+        }
+
+        // Lọc theo người bán
+        if (request.SellerId.HasValue && request.SellerId.Value != Guid.Empty)
+        {
+            query = query.Where(l => l.SellerId == request.SellerId.Value);
+        }
+
+        // Lọc theo chạm hoặc vượt trần giá (trần 0% bán đúng giá gốc không tính)
+        if (request.IsAtPriceCeilingOnly.HasValue && request.IsAtPriceCeilingOnly.Value)
+        {
+            query = query.Where(ResaleListing.IsAtOrOverCeiling);
+        }
+
+        // Lọc theo ngày tạo (chuẩn hóa về UTC phòng thủ múi giờ)
+        if (request.FromDate.HasValue)
+        {
+            var fromUtc = request.FromDate.Value.ToUniversalTime();
+            query = query.Where(l => l.CreatedAt >= fromUtc);
+        }
+
+        if (request.ToDate.HasValue)
+        {
+            var toUtc = request.ToDate.Value.ToUniversalTime();
+            query = query.Where(l => l.CreatedAt <= toUtc);
+        }
+
+        // Tìm kiếm từ khóa
+        if (!string.IsNullOrWhiteSpace(request.Keyword))
+        {
+            var kw = request.Keyword.Trim().ToLower();
+            query = query.Where(l =>
+                l.OriginalTicketCode.ToLower().Contains(kw) ||
+                (l.Event != null && l.Event.Name.ToLower().Contains(kw)) ||
+                (l.Seller != null && (l.Seller.FullName.ToLower().Contains(kw) || l.Seller.Email.ToLower().Contains(kw))));
+        }
+
+        return query;
+    }
+}
