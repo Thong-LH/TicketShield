@@ -1,0 +1,718 @@
+{
+  "report_metadata": {
+    "title": "Adversarial Testing Empirical Report (TicketShield Anti-Bot Gateway)",
+    "task_id": "ML-13.3.5",
+    "epic_id": "US-13.3",
+    "jira_keys": [
+      "SCRUM-378",
+      "SCRUM-383"
+    ],
+    "generated_at": "2026-11-20T05:09:30Z",
+    "dataset_file": "merged_training_dataset_v2.csv",
+    "total_dataset_samples": 2000,
+    "model_v1_file": "anti_bot_model.onnx",
+    "model_v2_file": "model_v2_rf.joblib",
+    "operational_thresholds": {
+      "allow_threshold": 0.35,
+      "block_threshold": 0.75
+    }
+  },
+  "tier1_holdout_test_evaluation": {
+    "description": "Đánh giá ngoài tập huấn luyện (Hold-out Test Set 400 mẫu unseen, Stratified 80/20)",
+    "model_v1": {
+      "model_name": "Model v1.0 Baseline (Hold-out 400)",
+      "sample_count": 400,
+      "bot_count": 200,
+      "human_count": 200,
+      "binary_metrics_at_0_50": {
+        "roc_auc": 1.0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1_score": 1.0,
+        "confusion_matrix": {
+          "true_negatives": 200,
+          "false_positives": 0,
+          "false_negatives": 0,
+          "true_positives": 200
+        }
+      },
+      "operational_3zone_metrics": {
+        "thresholds": {
+          "allow": 0.35,
+          "block": 0.75
+        },
+        "bot_performance": {
+          "total_bots": 200,
+          "hard_blocked_count": 116,
+          "hard_block_rate_pct": 58.0,
+          "challenged_count": 84,
+          "challenge_rate_pct": 42.0,
+          "evaded_count": 0,
+          "evasion_rate_pct": 0.0,
+          "total_intercepted_count": 200,
+          "interception_rate_pct": 100.0
+        },
+        "human_performance": {
+          "total_humans": 200,
+          "smooth_allowed_count": 200,
+          "smooth_allow_rate_pct": 100.0,
+          "friction_challenged_count": 0,
+          "friction_challenge_rate_pct": 0.0,
+          "false_positive_blocked_count": 0,
+          "false_positive_rate_pct": 0.0
+        }
+      }
+    },
+    "model_v2": {
+      "model_name": "Model v2.0 Advanced (Hold-out 400)",
+      "sample_count": 400,
+      "bot_count": 200,
+      "human_count": 200,
+      "binary_metrics_at_0_50": {
+        "roc_auc": 1.0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1_score": 1.0,
+        "confusion_matrix": {
+          "true_negatives": 200,
+          "false_positives": 0,
+          "false_negatives": 0,
+          "true_positives": 200
+        }
+      },
+      "operational_3zone_metrics": {
+        "thresholds": {
+          "allow": 0.35,
+          "block": 0.75
+        },
+        "bot_performance": {
+          "total_bots": 200,
+          "hard_blocked_count": 200,
+          "hard_block_rate_pct": 100.0,
+          "challenged_count": 0,
+          "challenge_rate_pct": 0.0,
+          "evaded_count": 0,
+          "evasion_rate_pct": 0.0,
+          "total_intercepted_count": 200,
+          "interception_rate_pct": 100.0
+        },
+        "human_performance": {
+          "total_humans": 200,
+          "smooth_allowed_count": 200,
+          "smooth_allow_rate_pct": 100.0,
+          "friction_challenged_count": 0,
+          "friction_challenge_rate_pct": 0.0,
+          "false_positive_blocked_count": 0,
+          "false_positive_rate_pct": 0.0
+        }
+      }
+    }
+  },
+  "tier2_loco_experiments": {
+    "description": "Thí nghiệm Rút nhóm Leave-One-Cohort-Out (Kiểm chứng năng lực bắt Bot Zero-Day và dung nạp Trình duyệt mới)",
+    "loco_results": {
+      "brave_farbling_holdout": {
+        "total_brave_samples": 200,
+        "allowed_count": 200,
+        "allow_rate": 100.0,
+        "challenged_count": 0,
+        "challenge_rate": 0.0,
+        "blocked_count": 0,
+        "false_positive_rate": 0.0,
+        "mean_risk_score": 0.01,
+        "passed": true
+      },
+      "stealth_bot_holdout": {
+        "puppeteer_stealth": {
+          "total_samples": 250,
+          "detected_at_0_50": 250,
+          "recall_at_0_50": 100.0,
+          "intercepted_at_0_35": 250,
+          "interception_rate": 100.0,
+          "mean_risk_score": 0.9974,
+          "passed": true
+        },
+        "undetected_chromedriver": {
+          "total_samples": 250,
+          "detected_at_0_50": 250,
+          "recall_at_0_50": 100.0,
+          "intercepted_at_0_35": 250,
+          "interception_rate": 100.0,
+          "mean_risk_score": 0.961,
+          "passed": true
+        },
+        "joint_stealth_holdout": {
+          "total_samples": 500,
+          "detected_at_0_50": 486,
+          "recall_at_0_50": 97.2,
+          "intercepted_at_0_35": 496,
+          "interception_rate": 99.2,
+          "mean_risk_score": 0.8323,
+          "passed": true
+        },
+        "all_passed": true,
+        "recall_rate": 100.0
+      }
+    }
+  },
+  "tier3_full_adversarial_testbed": {
+    "description": "Đánh giá toàn phổ tấn công 2,000 mẫu (1,000 Bot đối kháng vs 1,000 Human Telemetry)",
+    "overall_v1": {
+      "model_name": "Model v1.0 Baseline (Full 2,000)",
+      "sample_count": 2000,
+      "bot_count": 1000,
+      "human_count": 1000,
+      "binary_metrics_at_0_50": {
+        "roc_auc": 1.0,
+        "precision": 1.0,
+        "recall": 0.993,
+        "f1_score": 0.9965,
+        "confusion_matrix": {
+          "true_negatives": 1000,
+          "false_positives": 0,
+          "false_negatives": 7,
+          "true_positives": 993
+        }
+      },
+      "operational_3zone_metrics": {
+        "thresholds": {
+          "allow": 0.35,
+          "block": 0.75
+        },
+        "bot_performance": {
+          "total_bots": 1000,
+          "hard_blocked_count": 558,
+          "hard_block_rate_pct": 55.8,
+          "challenged_count": 442,
+          "challenge_rate_pct": 44.2,
+          "evaded_count": 0,
+          "evasion_rate_pct": 0.0,
+          "total_intercepted_count": 1000,
+          "interception_rate_pct": 100.0
+        },
+        "human_performance": {
+          "total_humans": 1000,
+          "smooth_allowed_count": 1000,
+          "smooth_allow_rate_pct": 100.0,
+          "friction_challenged_count": 0,
+          "friction_challenge_rate_pct": 0.0,
+          "false_positive_blocked_count": 0,
+          "false_positive_rate_pct": 0.0
+        }
+      }
+    },
+    "overall_v2": {
+      "model_name": "Model v2.0 Advanced (Full 2,000)",
+      "sample_count": 2000,
+      "bot_count": 1000,
+      "human_count": 1000,
+      "binary_metrics_at_0_50": {
+        "roc_auc": 1.0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1_score": 1.0,
+        "confusion_matrix": {
+          "true_negatives": 1000,
+          "false_positives": 0,
+          "false_negatives": 0,
+          "true_positives": 1000
+        }
+      },
+      "operational_3zone_metrics": {
+        "thresholds": {
+          "allow": 0.35,
+          "block": 0.75
+        },
+        "bot_performance": {
+          "total_bots": 1000,
+          "hard_blocked_count": 1000,
+          "hard_block_rate_pct": 100.0,
+          "challenged_count": 0,
+          "challenge_rate_pct": 0.0,
+          "evaded_count": 0,
+          "evasion_rate_pct": 0.0,
+          "total_intercepted_count": 1000,
+          "interception_rate_pct": 100.0
+        },
+        "human_performance": {
+          "total_humans": 1000,
+          "smooth_allowed_count": 1000,
+          "smooth_allow_rate_pct": 100.0,
+          "friction_challenged_count": 0,
+          "friction_challenge_rate_pct": 0.0,
+          "false_positive_blocked_count": 0,
+          "false_positive_rate_pct": 0.0
+        }
+      }
+    },
+    "bot_tools_breakdown": {
+      "playwright": {
+        "total_samples": 250,
+        "v1": {
+          "block_count": 246,
+          "challenge_count": 4,
+          "allow_count": 0,
+          "hard_block_rate_pct": 98.4,
+          "challenge_rate_pct": 1.6,
+          "evasion_rate_pct": 0.0,
+          "mean_risk_score": 0.9764
+        },
+        "v2": {
+          "block_count": 250,
+          "challenge_count": 0,
+          "allow_count": 0,
+          "hard_block_rate_pct": 100.0,
+          "challenge_rate_pct": 0.0,
+          "evasion_rate_pct": 0.0,
+          "mean_risk_score": 1.0
+        },
+        "attack_modes": {
+          "headless_standard": {
+            "sample_count": 250,
+            "v1": {
+              "block_count": 246,
+              "challenge_count": 4,
+              "allow_count": 0,
+              "hard_block_rate_pct": 98.4,
+              "challenge_rate_pct": 1.6,
+              "evasion_rate_pct": 0.0,
+              "mean_risk_score": 0.9764
+            },
+            "v2": {
+              "block_count": 250,
+              "challenge_count": 0,
+              "allow_count": 0,
+              "hard_block_rate_pct": 100.0,
+              "challenge_rate_pct": 0.0,
+              "evasion_rate_pct": 0.0,
+              "mean_risk_score": 1.0
+            }
+          }
+        }
+      },
+      "puppeteer_stealth": {
+        "total_samples": 250,
+        "v1": {
+          "block_count": 37,
+          "challenge_count": 213,
+          "allow_count": 0,
+          "hard_block_rate_pct": 14.8,
+          "challenge_rate_pct": 85.2,
+          "evasion_rate_pct": 0.0,
+          "mean_risk_score": 0.6754
+        },
+        "v2": {
+          "block_count": 250,
+          "challenge_count": 0,
+          "allow_count": 0,
+          "hard_block_rate_pct": 100.0,
+          "challenge_rate_pct": 0.0,
+          "evasion_rate_pct": 0.0,
+          "mean_risk_score": 0.9998
+        },
+        "attack_modes": {
+          "evasion_canvas_noise": {
+            "sample_count": 62,
+            "v1": {
+              "block_count": 9,
+              "challenge_count": 53,
+              "allow_count": 0,
+              "hard_block_rate_pct": 14.52,
+              "challenge_rate_pct": 85.48,
+              "evasion_rate_pct": 0.0,
+              "mean_risk_score": 0.6713
+            },
+            "v2": {
+              "block_count": 62,
+              "challenge_count": 0,
+              "allow_count": 0,
+              "hard_block_rate_pct": 100.0,
+              "challenge_rate_pct": 0.0,
+              "evasion_rate_pct": 0.0,
+              "mean_risk_score": 1.0
+            }
+          },
+          "evasion_prototype_tamper": {
+            "sample_count": 63,
+            "v1": {
+              "block_count": 10,
+              "challenge_count": 53,
+              "allow_count": 0,
+              "hard_block_rate_pct": 15.87,
+              "challenge_rate_pct": 84.13,
+              "evasion_rate_pct": 0.0,
+              "mean_risk_score": 0.6737
+            },
+            "v2": {
+              "block_count": 63,
+              "challenge_count": 0,
+              "allow_count": 0,
+              "hard_block_rate_pct": 100.0,
+              "challenge_rate_pct": 0.0,
+              "evasion_rate_pct": 0.0,
+              "mean_risk_score": 0.999
+            }
+          },
+          "evasion_webgl_fake": {
+            "sample_count": 63,
+            "v1": {
+              "block_count": 10,
+              "challenge_count": 53,
+              "allow_count": 0,
+              "hard_block_rate_pct": 15.87,
+              "challenge_rate_pct": 84.13,
+              "evasion_rate_pct": 0.0,
+              "mean_risk_score": 0.6748
+            },
+            "v2": {
+              "block_count": 63,
+              "challenge_count": 0,
+              "allow_count": 0,
+              "hard_block_rate_pct": 100.0,
+              "challenge_rate_pct": 0.0,
+              "evasion_rate_pct": 0.0,
+              "mean_risk_score": 1.0
+            }
+          },
+          "stealth_grey_zone": {
+            "sample_count": 62,
+            "v1": {
+              "block_count": 8,
+              "challenge_count": 54,
+              "allow_count": 0,
+              "hard_block_rate_pct": 12.9,
+              "challenge_rate_pct": 87.1,
+              "evasion_rate_pct": 0.0,
+              "mean_risk_score": 0.682
+            },
+            "v2": {
+              "block_count": 62,
+              "challenge_count": 0,
+              "allow_count": 0,
+              "hard_block_rate_pct": 100.0,
+              "challenge_rate_pct": 0.0,
+              "evasion_rate_pct": 0.0,
+              "mean_risk_score": 1.0
+            }
+          }
+        }
+      },
+      "undetected_chromedriver": {
+        "total_samples": 250,
+        "v1": {
+          "block_count": 137,
+          "challenge_count": 113,
+          "allow_count": 0,
+          "hard_block_rate_pct": 54.8,
+          "challenge_rate_pct": 45.2,
+          "evasion_rate_pct": 0.0,
+          "mean_risk_score": 0.8295
+        },
+        "v2": {
+          "block_count": 250,
+          "challenge_count": 0,
+          "allow_count": 0,
+          "hard_block_rate_pct": 100.0,
+          "challenge_rate_pct": 0.0,
+          "evasion_rate_pct": 0.0,
+          "mean_risk_score": 1.0
+        },
+        "attack_modes": {
+          "aggressive_scalper": {
+            "sample_count": 125,
+            "v1": {
+              "block_count": 125,
+              "challenge_count": 0,
+              "allow_count": 0,
+              "hard_block_rate_pct": 100.0,
+              "challenge_rate_pct": 0.0,
+              "evasion_rate_pct": 0.0,
+              "mean_risk_score": 0.9962
+            },
+            "v2": {
+              "block_count": 125,
+              "challenge_count": 0,
+              "allow_count": 0,
+              "hard_block_rate_pct": 100.0,
+              "challenge_rate_pct": 0.0,
+              "evasion_rate_pct": 0.0,
+              "mean_risk_score": 1.0
+            }
+          },
+          "stealth_scalper": {
+            "sample_count": 125,
+            "v1": {
+              "block_count": 12,
+              "challenge_count": 113,
+              "allow_count": 0,
+              "hard_block_rate_pct": 9.6,
+              "challenge_rate_pct": 90.4,
+              "evasion_rate_pct": 0.0,
+              "mean_risk_score": 0.6627
+            },
+            "v2": {
+              "block_count": 125,
+              "challenge_count": 0,
+              "allow_count": 0,
+              "hard_block_rate_pct": 100.0,
+              "challenge_rate_pct": 0.0,
+              "evasion_rate_pct": 0.0,
+              "mean_risk_score": 1.0
+            }
+          }
+        }
+      },
+      "curl_cffi": {
+        "total_samples": 250,
+        "v1": {
+          "block_count": 138,
+          "challenge_count": 112,
+          "allow_count": 0,
+          "hard_block_rate_pct": 55.2,
+          "challenge_rate_pct": 44.8,
+          "evasion_rate_pct": 0.0,
+          "mean_risk_score": 0.8197
+        },
+        "v2": {
+          "block_count": 250,
+          "challenge_count": 0,
+          "allow_count": 0,
+          "hard_block_rate_pct": 100.0,
+          "challenge_rate_pct": 0.0,
+          "evasion_rate_pct": 0.0,
+          "mean_risk_score": 1.0
+        },
+        "attack_modes": {
+          "burst_rate": {
+            "sample_count": 62,
+            "v1": {
+              "block_count": 62,
+              "challenge_count": 0,
+              "allow_count": 0,
+              "hard_block_rate_pct": 100.0,
+              "challenge_rate_pct": 0.0,
+              "evasion_rate_pct": 0.0,
+              "mean_risk_score": 1.0
+            },
+            "v2": {
+              "block_count": 62,
+              "challenge_count": 0,
+              "allow_count": 0,
+              "hard_block_rate_pct": 100.0,
+              "challenge_rate_pct": 0.0,
+              "evasion_rate_pct": 0.0,
+              "mean_risk_score": 1.0
+            }
+          },
+          "protocol_impersonation": {
+            "sample_count": 62,
+            "v1": {
+              "block_count": 53,
+              "challenge_count": 9,
+              "allow_count": 0,
+              "hard_block_rate_pct": 85.48,
+              "challenge_rate_pct": 14.52,
+              "evasion_rate_pct": 0.0,
+              "mean_risk_score": 0.8375
+            },
+            "v2": {
+              "block_count": 62,
+              "challenge_count": 0,
+              "allow_count": 0,
+              "hard_block_rate_pct": 100.0,
+              "challenge_rate_pct": 0.0,
+              "evasion_rate_pct": 0.0,
+              "mean_risk_score": 1.0
+            }
+          },
+          "raw_api_bot": {
+            "sample_count": 63,
+            "v1": {
+              "block_count": 8,
+              "challenge_count": 55,
+              "allow_count": 0,
+              "hard_block_rate_pct": 12.7,
+              "challenge_rate_pct": 87.3,
+              "evasion_rate_pct": 0.0,
+              "mean_risk_score": 0.7131
+            },
+            "v2": {
+              "block_count": 63,
+              "challenge_count": 0,
+              "allow_count": 0,
+              "hard_block_rate_pct": 100.0,
+              "challenge_rate_pct": 0.0,
+              "evasion_rate_pct": 0.0,
+              "mean_risk_score": 1.0
+            }
+          },
+          "replay_bot": {
+            "sample_count": 63,
+            "v1": {
+              "block_count": 15,
+              "challenge_count": 48,
+              "allow_count": 0,
+              "hard_block_rate_pct": 23.81,
+              "challenge_rate_pct": 76.19,
+              "evasion_rate_pct": 0.0,
+              "mean_risk_score": 0.7313
+            },
+            "v2": {
+              "block_count": 63,
+              "challenge_count": 0,
+              "allow_count": 0,
+              "hard_block_rate_pct": 100.0,
+              "challenge_rate_pct": 0.0,
+              "evasion_rate_pct": 0.0,
+              "mean_risk_score": 1.0
+            }
+          }
+        }
+      }
+    },
+    "human_cohorts_breakdown": {
+      "brave_privacy": {
+        "total_samples": 200,
+        "v1": {
+          "allow_count": 200,
+          "challenge_count": 0,
+          "block_count": 0,
+          "allow_rate_pct": 100.0,
+          "friction_challenge_rate_pct": 0.0,
+          "false_positive_rate_pct": 0.0,
+          "mean_risk_score": 0.0014
+        },
+        "v2": {
+          "allow_count": 200,
+          "challenge_count": 0,
+          "block_count": 0,
+          "allow_rate_pct": 100.0,
+          "friction_challenge_rate_pct": 0.0,
+          "false_positive_rate_pct": 0.0,
+          "mean_risk_score": 0.0
+        }
+      },
+      "chrome_desktop": {
+        "total_samples": 200,
+        "v1": {
+          "allow_count": 200,
+          "challenge_count": 0,
+          "block_count": 0,
+          "allow_rate_pct": 100.0,
+          "friction_challenge_rate_pct": 0.0,
+          "false_positive_rate_pct": 0.0,
+          "mean_risk_score": 0.0016
+        },
+        "v2": {
+          "allow_count": 200,
+          "challenge_count": 0,
+          "block_count": 0,
+          "allow_rate_pct": 100.0,
+          "friction_challenge_rate_pct": 0.0,
+          "false_positive_rate_pct": 0.0,
+          "mean_risk_score": 0.0
+        }
+      },
+      "firefox_desktop": {
+        "total_samples": 200,
+        "v1": {
+          "allow_count": 200,
+          "challenge_count": 0,
+          "block_count": 0,
+          "allow_rate_pct": 100.0,
+          "friction_challenge_rate_pct": 0.0,
+          "false_positive_rate_pct": 0.0,
+          "mean_risk_score": 0.0016
+        },
+        "v2": {
+          "allow_count": 200,
+          "challenge_count": 0,
+          "block_count": 0,
+          "allow_rate_pct": 100.0,
+          "friction_challenge_rate_pct": 0.0,
+          "false_positive_rate_pct": 0.0,
+          "mean_risk_score": 0.0
+        }
+      },
+      "mobile_webview": {
+        "total_samples": 200,
+        "v1": {
+          "allow_count": 200,
+          "challenge_count": 0,
+          "block_count": 0,
+          "allow_rate_pct": 100.0,
+          "friction_challenge_rate_pct": 0.0,
+          "false_positive_rate_pct": 0.0,
+          "mean_risk_score": 0.0012
+        },
+        "v2": {
+          "allow_count": 200,
+          "challenge_count": 0,
+          "block_count": 0,
+          "allow_rate_pct": 100.0,
+          "friction_challenge_rate_pct": 0.0,
+          "false_positive_rate_pct": 0.0,
+          "mean_risk_score": 0.0
+        }
+      },
+      "safari_macos": {
+        "total_samples": 200,
+        "v1": {
+          "allow_count": 200,
+          "challenge_count": 0,
+          "block_count": 0,
+          "allow_rate_pct": 100.0,
+          "friction_challenge_rate_pct": 0.0,
+          "false_positive_rate_pct": 0.0,
+          "mean_risk_score": 0.001
+        },
+        "v2": {
+          "allow_count": 200,
+          "challenge_count": 0,
+          "block_count": 0,
+          "allow_rate_pct": 100.0,
+          "friction_challenge_rate_pct": 0.0,
+          "false_positive_rate_pct": 0.0,
+          "mean_risk_score": 0.0
+        }
+      }
+    },
+    "shadow_mode_cohort_distribution": {
+      "counts": {
+        "v1_allow_v2_allow": 1000,
+        "v1_block_v2_block": 558,
+        "v1_challenge_v2_block": 442
+      },
+      "semantic_meaning": {
+        "v1_allow_v2_allow": "Đồng thuận cho phép người dùng hợp lệ (Smooth Pass)",
+        "v1_block_v2_block": "Đồng thuận chặn bot rõ ràng (Hard Block)",
+        "v1_challenge_v2_block": "Nâng cấp bảo mật: v1 chỉ nghi ngờ challenge, v2 nhận diện chính xác chặn đứng bot",
+        "v1_allow_v2_block": "Bắt thêm bot đối kháng: v1 bị qua mặt (Allow), v2 tóm gọn bot (Block)",
+        "v1_challenge_v2_allow": "Giảm ma sát người dùng: v1 challenge oan, v2 dung nạp mượt mà",
+        "v1_block_v2_allow": "Cứu nguy chặn nhầm (Rescued False Positive): v1 chặn nhầm, v2 giải oan bảo vệ khách hàng"
+      }
+    }
+  },
+  "key_takeaways_for_thesis": {
+    "brave_farbling_fpr": {
+      "model_v1": "0.0%",
+      "model_v2": "0.0%",
+      "verdict": "Model v2 dung nạp hoàn hảo người dùng Brave Privacy với 0.0% False Positive."
+    },
+    "puppeteer_stealth_hard_block": {
+      "model_v1": "14.8% (Challenge: 85.2%)",
+      "model_v2": "100.0% (Block dứt khoát)",
+      "verdict": "Model v1 bị kẹt trong Challenge Grey Zone (85.2%), trong khi Model v2 đạt 100% Hard Block."
+    },
+    "undetected_chromedriver_stealth_hard_block": {
+      "model_v1": "9.6% (Challenge: 90.4%)",
+      "model_v2": "100.0% (Block dứt khoát)",
+      "verdict": "Model v1 chỉ chặn được 9.6% stealth scalper, còn Model v2 chặn dứt điểm 100%."
+    },
+    "curl_cffi_protocol_hard_block": {
+      "model_v1": "55.2% (Challenge: 44.8%)",
+      "model_v2": "100.0% (Block dứt khoát)",
+      "verdict": "Nhờ Network Inconsistency Score và UA Match, Model v2 chặn đứng 100% curl_cffi giả lập TLS."
+    }
+  }
+}

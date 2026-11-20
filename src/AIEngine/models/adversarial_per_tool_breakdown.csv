@@ -1,0 +1,12 @@
+category,tool_name,attack_mode,sample_count,v1_block_count,v1_challenge_count,v1_allow_count,v1_hard_block_rate_pct,v1_challenge_rate_pct,v1_evasion_rate_pct,v1_mean_risk,v2_block_count,v2_challenge_count,v2_allow_count,v2_hard_block_rate_pct,v2_challenge_rate_pct,v2_evasion_rate_pct,v2_mean_risk
+bot_tool_mode,playwright,headless_standard,250,246,4,0,98.4,1.6,0.0,0.9764,250,0,0,100.0,0.0,0.0,1.0
+bot_tool_mode,puppeteer_stealth,evasion_canvas_noise,62,9,53,0,14.52,85.48,0.0,0.6713,62,0,0,100.0,0.0,0.0,1.0
+bot_tool_mode,puppeteer_stealth,evasion_prototype_tamper,63,10,53,0,15.87,84.13,0.0,0.6737,63,0,0,100.0,0.0,0.0,0.999
+bot_tool_mode,puppeteer_stealth,evasion_webgl_fake,63,10,53,0,15.87,84.13,0.0,0.6748,63,0,0,100.0,0.0,0.0,1.0
+bot_tool_mode,puppeteer_stealth,stealth_grey_zone,62,8,54,0,12.9,87.1,0.0,0.682,62,0,0,100.0,0.0,0.0,1.0
+bot_tool_mode,undetected_chromedriver,aggressive_scalper,125,125,0,0,100.0,0.0,0.0,0.9962,125,0,0,100.0,0.0,0.0,1.0
+bot_tool_mode,undetected_chromedriver,stealth_scalper,125,12,113,0,9.6,90.4,0.0,0.6627,125,0,0,100.0,0.0,0.0,1.0
+bot_tool_mode,curl_cffi,burst_rate,62,62,0,0,100.0,0.0,0.0,1.0,62,0,0,100.0,0.0,0.0,1.0
+bot_tool_mode,curl_cffi,protocol_impersonation,62,53,9,0,85.48,14.52,0.0,0.8375,62,0,0,100.0,0.0,0.0,1.0
+bot_tool_mode,curl_cffi,raw_api_bot,63,8,55,0,12.7,87.3,0.0,0.7131,63,0,0,100.0,0.0,0.0,1.0
+bot_tool_mode,curl_cffi,replay_bot,63,15,48,0,23.81,76.19,0.0,0.7313,63,0,0,100.0,0.0,0.0,1.0

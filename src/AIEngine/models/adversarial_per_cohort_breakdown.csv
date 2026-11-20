@@ -1,0 +1,6 @@
+cohort_name,sample_count,v1_allow_count,v1_challenge_count,v1_block_count,v1_allow_rate_pct,v1_friction_rate_pct,v1_false_positive_rate_pct,v1_mean_risk,v2_allow_count,v2_challenge_count,v2_block_count,v2_allow_rate_pct,v2_friction_rate_pct,v2_false_positive_rate_pct,v2_mean_risk
+brave_privacy,200,200,0,0,100.0,0.0,0.0,0.0014,200,0,0,100.0,0.0,0.0,0.0
+chrome_desktop,200,200,0,0,100.0,0.0,0.0,0.0016,200,0,0,100.0,0.0,0.0,0.0
+firefox_desktop,200,200,0,0,100.0,0.0,0.0,0.0016,200,0,0,100.0,0.0,0.0,0.0
+mobile_webview,200,200,0,0,100.0,0.0,0.0,0.0012,200,0,0,100.0,0.0,0.0,0.0
+safari_macos,200,200,0,0,100.0,0.0,0.0,0.001,200,0,0,100.0,0.0,0.0,0.0
