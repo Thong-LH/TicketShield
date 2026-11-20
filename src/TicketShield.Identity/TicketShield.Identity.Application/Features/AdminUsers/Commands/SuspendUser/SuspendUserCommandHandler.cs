@@ -30,7 +30,7 @@ public class SuspendUserCommandHandler : IRequestHandler<SuspendUserCommand, Api
     {
         if (!_currentUser.IsAuthenticated || _currentUser.UserId is not { } callerId || callerId == Guid.Empty)
         {
-            throw new UnauthorizedException("Bạn phải đăng nhập để khóa tài khoản.");
+            throw new UnauthorizedException("You must be signed in to suspend an account.");
         }
 
         var user = await _context.Users
@@ -38,17 +38,17 @@ public class SuspendUserCommandHandler : IRequestHandler<SuspendUserCommand, Api
 
         if (user == null)
         {
-            throw new NotFoundException("Người dùng", request.UserId);
+            throw new NotFoundException("User", request.UserId);
         }
 
         if (callerId == user.Id)
         {
-            throw new ForbiddenAccessException("Bạn không thể khóa chính tài khoản của mình.");
+            throw new ForbiddenAccessException("You cannot suspend your own account.");
         }
 
         if (user.Role != UserRole.User)
         {
-            throw new ForbiddenAccessException("Chỉ được khóa tài khoản người dùng.");
+            throw new ForbiddenAccessException("Only standard user accounts can be suspended.");
         }
 
         user.IsActive = false;
@@ -76,6 +76,6 @@ public class SuspendUserCommandHandler : IRequestHandler<SuspendUserCommand, Api
 
         await _context.SaveChangesAsync(cancellationToken);
 
-        return ApiResponse<AdminUserDto>.SuccessResponse(AdminUserDto.FromUser(user), "Đã khóa tài khoản.");
+        return ApiResponse<AdminUserDto>.SuccessResponse(AdminUserDto.FromUser(user), "User account suspended successfully.");
     }
 }

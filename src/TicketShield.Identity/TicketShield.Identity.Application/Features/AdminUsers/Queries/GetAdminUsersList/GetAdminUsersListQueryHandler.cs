@@ -24,6 +24,6 @@ public class GetAdminUsersListQueryHandler : IRequestHandler<GetAdminUsersListQu
             .ToListAsync(cancellationToken);
 
         var result = users.Select(AdminUserDto.FromUser).ToList();
-        return ApiResponse<List<AdminUserDto>>.SuccessResponse(result, "Lấy danh sách người dùng thành công.");
+        return ApiResponse<List<AdminUserDto>>.SuccessResponse(result, "Users list retrieved successfully.");
     }
 }

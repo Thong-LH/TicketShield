@@ -31,35 +31,35 @@ public class CreateUserBankAccountCommandHandler : IRequestHandler<CreateUserBan
         var userId = _currentUserService.UserId ?? Guid.Empty;
         if (userId == Guid.Empty)
         {
-            throw new UnauthorizedException("Bạn phải đăng nhập để thêm tài khoản ngân hàng.");
+            throw new UnauthorizedException("You must be signed in to add a bank account.");
         }
 
         if (string.IsNullOrWhiteSpace(request.BankCode))
         {
-            throw new BadRequestException("Mã ngân hàng (BankCode) không được để trống.");
+            throw new BadRequestException("Bank code is required.");
         }
 
         if (string.IsNullOrWhiteSpace(request.BankAccountNumber))
         {
-            throw new BadRequestException("Số tài khoản ngân hàng không được để trống.");
+            throw new BadRequestException("Bank account number is required.");
         }
 
         if (string.IsNullOrWhiteSpace(request.AccountHolderName))
         {
-            throw new BadRequestException("Tên chủ tài khoản ngân hàng không được để trống.");
+            throw new BadRequestException("Account holder name is required.");
         }
 
         var existingAccounts = await _dbContext.UserBankAccounts
             .Where(b => b.UserId == userId)
             .ToListAsync(cancellationToken);
 
-        // Guard 1: Giới hạn tối đa 5 tài khoản ngân hàng / user
+        // Guard 1: Limit maximum 5 bank accounts / user
         if (existingAccounts.Count >= 5)
         {
-            throw new BadRequestException("Bạn chỉ có thể liên kết tối đa 5 tài khoản ngân hàng.");
+            throw new BadRequestException("You can link up to 5 bank accounts.");
         }
 
-        // Guard 2: Chặn trùng lặp cùng BankCode + AccountNumber của cùng user
+        // Guard 2: Prevent duplicate BankCode + AccountNumber for same user
         var normalizedAccountNumber = request.BankAccountNumber.Trim();
         var normalizedBankCode = request.BankCode.Trim();
 
@@ -69,7 +69,7 @@ public class CreateUserBankAccountCommandHandler : IRequestHandler<CreateUserBan
 
         if (isDuplicate)
         {
-            throw new BadRequestException("Tài khoản ngân hàng này đã được liên kết trước đó.");
+            throw new BadRequestException("This bank account has already been linked.");
         }
 
         // If this is the user's first bank account, force it to be default
@@ -120,6 +120,6 @@ public class CreateUserBankAccountCommandHandler : IRequestHandler<CreateUserBan
             CreatedAt = bankAccount.CreatedAt
         };
 
-        return ApiResponse<UserBankAccountDto>.SuccessResponse(dto, "Liên kết tài khoản ngân hàng thành công.");
+        return ApiResponse<UserBankAccountDto>.SuccessResponse(dto, "Bank account linked successfully.");
     }
 }

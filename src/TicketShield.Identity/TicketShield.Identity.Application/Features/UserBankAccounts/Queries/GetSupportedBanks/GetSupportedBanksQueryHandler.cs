@@ -37,7 +37,7 @@ public sealed class GetSupportedBanksQueryHandler
                         string.IsNullOrWhiteSpace(bank.ShortName) ? bank.Code : bank.ShortName))
                     .ToList();
 
-                return ApiResponse<List<BankDirectoryItem>>.SuccessResponse(banks, "Lấy danh mục ngân hàng thành công.");
+                return ApiResponse<List<BankDirectoryItem>>.SuccessResponse(banks, "Bank directory retrieved successfully.");
             }
         }
         catch (HttpRequestException)
@@ -50,7 +50,7 @@ public sealed class GetSupportedBanksQueryHandler
         }
 
         return ApiResponse<List<BankDirectoryItem>>.FailureResponse(
-            "Không thể tải danh mục ngân hàng từ BankLookup. Vui lòng thử lại.");
+            "Unable to load bank directory from BankLookup. Please try again later.");
     }
 
     private sealed class BankLookupDirectoryResponse

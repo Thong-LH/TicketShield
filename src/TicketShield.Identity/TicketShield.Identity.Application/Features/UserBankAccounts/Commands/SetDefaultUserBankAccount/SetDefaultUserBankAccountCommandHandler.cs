@@ -30,7 +30,7 @@ public class SetDefaultUserBankAccountCommandHandler : IRequestHandler<SetDefaul
         var userId = _currentUserService.UserId ?? Guid.Empty;
         if (userId == Guid.Empty)
         {
-            throw new UnauthorizedException("Bạn phải đăng nhập để thực hiện thao tác này.");
+            throw new UnauthorizedException("You must be signed in to perform this action.");
         }
 
         var userAccounts = await _dbContext.UserBankAccounts
@@ -40,10 +40,10 @@ public class SetDefaultUserBankAccountCommandHandler : IRequestHandler<SetDefaul
         var targetAccount = userAccounts.FirstOrDefault(b => b.Id == request.BankAccountId);
         if (targetAccount is null)
         {
-            throw new NotFoundException("Tài khoản ngân hàng", request.BankAccountId);
+            throw new NotFoundException("Bank account", request.BankAccountId);
         }
 
-        // Idempotent: Nếu tài khoản đã là Default rồi thì không cần cập nhật lại
+        // Idempotent: If account is already Default, no update needed
         if (!targetAccount.IsDefault)
         {
             foreach (var account in userAccounts)
@@ -53,7 +53,7 @@ public class SetDefaultUserBankAccountCommandHandler : IRequestHandler<SetDefaul
 
             targetAccount.IsDefault = true;
 
-            // Publish event để Core cập nhật snapshot Payout cho Seller
+            // Publish event so Core can update Seller Payout snapshot
             await _publishEndpoint.Publish<IUserBankAccountLinkedEvent>(new UserBankAccountLinkedEvent(
                 UserId: userId,
                 BankCode: targetAccount.BankCode,
@@ -75,6 +75,6 @@ public class SetDefaultUserBankAccountCommandHandler : IRequestHandler<SetDefaul
             CreatedAt = targetAccount.CreatedAt
         };
 
-        return ApiResponse<UserBankAccountDto>.SuccessResponse(dto, "Đặt tài khoản ngân hàng mặc định thành công.");
+        return ApiResponse<UserBankAccountDto>.SuccessResponse(dto, "Default bank account set successfully.");
     }
 }

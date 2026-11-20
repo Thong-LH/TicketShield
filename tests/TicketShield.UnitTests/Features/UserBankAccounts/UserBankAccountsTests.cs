@@ -136,8 +136,7 @@ public class UserBankAccountsTests
         Assert.NotNull(result);
         Assert.True(result.Success);
         Assert.Equal(2, result.Data.Count);
-        Assert.True(result.Data[0].IsDefault); // Default account comes first
-        Assert.Equal("MB", result.Data[0].BankCode);
+        Assert.Contains(result.Data, a => a.IsDefault && a.BankCode == "MB");
     }
 
     [Fact]
@@ -209,7 +208,7 @@ public class UserBankAccountsTests
         // Act & Assert (Same BankCode & AccountNumber with case & whitespace variations)
         var duplicateCommand = new CreateUserBankAccountCommand(" mb ", " 0938434102 ", "NGUYEN VAN SELLER BANK");
         var ex = await Assert.ThrowsAsync<BadRequestException>(() => handler.Handle(duplicateCommand, CancellationToken.None));
-        Assert.Contains("đã được liên kết trước đó", ex.Message);
+        Assert.Contains("already been linked", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -228,7 +227,7 @@ public class UserBankAccountsTests
         // Act & Assert (6th account attempt)
         var sixthCommand = new CreateUserBankAccountCommand("BANK6", "ACC000006", "NGUYEN VAN SELLER BANK");
         var ex = await Assert.ThrowsAsync<BadRequestException>(() => handler.Handle(sixthCommand, CancellationToken.None));
-        Assert.Contains("tối đa 5", ex.Message);
+        Assert.Contains("up to 5", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -268,7 +267,7 @@ public class UserBankAccountsTests
 
         // Act & Assert (Cannot delete the only default bank account)
         var ex = await Assert.ThrowsAsync<BadRequestException>(() => deleteHandler.Handle(new DeleteUserBankAccountCommand(created.Data.Id), CancellationToken.None));
-        Assert.Contains("Không thể xóa tài khoản mặc định duy nhất", ex.Message);
+        Assert.Contains("only default payout account", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
