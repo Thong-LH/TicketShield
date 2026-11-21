@@ -497,6 +497,13 @@ public static class DatabaseSeeder
         await context.SaveChangesAsync();
 
         // 5.2 Seed Mock Purchased EscrowTransactions for Seller account (3 vé sẵn sàng cho combo)
+        // Purpose: Allow `linhtranlatao2004@gmail.com` (Seller) to see their tickets
+        //          in the "My Tickets" wallet on the Sell Ticket page.
+        // These simulate tickets the seller previously purchased from a resale market.
+        var seedEscrow1Id = Guid.Parse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeee01");
+        var seedEscrow2Id = Guid.Parse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeee02");
+
+        // Placeholder listings for seller's escrow records (Cancelled = won't block eligibility filter)
         var spl1 = await context.ResaleListings.FirstOrDefaultAsync(l => l.Id == sellerPlaceholderListing1Id);
         if (spl1 == null)
         {

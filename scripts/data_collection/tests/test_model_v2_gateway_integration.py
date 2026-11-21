@@ -18,17 +18,18 @@ import unittest
 from typing import Dict, Any, List
 
 CUR_DIR = os.path.dirname(os.path.abspath(__file__))
-WORKSPACE_ROOT = os.path.abspath(os.path.join(CUR_DIR, "../../../.."))
-AI_ENGINE_DIR = os.path.join(WORKSPACE_ROOT, "TicketShield", "src", "AIEngine")
+REPO_CANDIDATE = os.path.abspath(os.path.join(CUR_DIR, "../../.."))
+TICKETSHIELD_ROOT = os.path.join(REPO_CANDIDATE, "TicketShield") if os.path.exists(os.path.join(REPO_CANDIDATE, "TicketShield", "TicketShield.sln")) else REPO_CANDIDATE
+AI_ENGINE_DIR = os.path.join(TICKETSHIELD_ROOT, "src", "AIEngine")
 
-for p in [AI_ENGINE_DIR, WORKSPACE_ROOT]:
+for p in [AI_ENGINE_DIR, TICKETSHIELD_ROOT]:
     if p not in sys.path:
         sys.path.insert(0, p)
 
 import onnxruntime as ort  # type: ignore
 
 DEFAULT_ONNX_PATH = os.path.join(AI_ENGINE_DIR, "models", "anti_bot_model_v2.onnx")
-GATEWAY_EXE_PATH = os.path.join(WORKSPACE_ROOT, "TicketShield", "src", "TicketShield.AntiBot.Gateway", "bin", "Debug", "net8.0", "TicketShield.AntiBot.Gateway.exe")
+GATEWAY_EXE_PATH = os.path.join(TICKETSHIELD_ROOT, "src", "TicketShield.AntiBot.Gateway", "bin", "Debug", "net8.0", "TicketShield.AntiBot.Gateway.exe")
 
 
 # 10 Vector Biên Đại Diện Toàn Bộ Các Cohort Đối Kháng & Khách Hàng Hợp Lệ
