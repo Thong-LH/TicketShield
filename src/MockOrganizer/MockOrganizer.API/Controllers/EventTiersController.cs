@@ -25,10 +25,10 @@ public class EventTiersController(OrganizerDbContext db) : ControllerBase
                 "Anh Trai Say Hi Concert 2026",
                 "Anh Trai Say Hi All-Stars",
                 "CONCERT",
-                "Hà Nội",
-                "Sân vận động Quốc gia Mỹ Đình",
-                "Đêm nhạc quy tụ toàn bộ 30 Anh Trai với sân khấu hoành tráng hàng đầu Việt Nam.",
-                30
+                "TP. Hồ Chí Minh",
+                "Van Hanh Mall Stadium, TP.HCM",
+                "Mega Concert Vietnam 2026 quy tụ dàn nghệ sĩ đỉnh cao",
+                0
             ),
             ["mixtape-hanoi-2026"] = (
                 "SpaceSpeakers Mixtape Hanoi 2026",
@@ -59,7 +59,10 @@ public class EventTiersController(OrganizerDbContext db) : ControllerBase
                 .Select(t => new OrganizerTierCatalogDto(t.TierName, t.Price, $"Khu vực {t.TierName}"))
                 .ToList();
 
-            var startAt = now.AddDays(kv.Value.DaysOffset);
+            // Match DatabaseSeeder's deterministic demo slot exactly.  This makes
+            // a Core/Organizer catalog sync idempotent throughout the day.
+            var demoEventStart = new DateTimeOffset(now.UtcDateTime.Date.AddDays(1).AddHours(12), TimeSpan.Zero);
+            var startAt = kv.Key == "atsh-2026" ? demoEventStart : now.AddDays(kv.Value.DaysOffset);
             return new OrganizerEventCatalogDto(
                 kv.Key,
                 kv.Value.Name,
