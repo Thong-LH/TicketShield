@@ -9,10 +9,10 @@ public class ResolveDisputeCommandValidator : AbstractValidator<ResolveDisputeCo
         RuleFor(v => v.Decision)
             .NotNull()
             .IsInEnum()
-            .WithMessage("Quyết định không hợp lệ.");
+            .WithMessage("Invalid decision.");
 
         RuleFor(v => v.Reason)
             .NotEmpty()
-            .WithMessage("Lý do xử lý không được để trống.");
+            .WithMessage("Resolution reason must not be empty.");
     }
 }

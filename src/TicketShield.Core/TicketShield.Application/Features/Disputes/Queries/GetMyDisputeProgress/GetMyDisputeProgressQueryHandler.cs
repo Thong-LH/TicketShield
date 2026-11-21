@@ -21,7 +21,7 @@ public class GetMyDisputeProgressQueryHandler : IRequestHandler<GetMyDisputeProg
     {
         if (_currentUser is not { IsAuthenticated: true, UserId: { } userId } || userId == Guid.Empty)
         {
-            throw new UnauthorizedException("Bạn phải đăng nhập để xem tiến độ khiếu nại.");
+            throw new UnauthorizedException("You must be logged in to view dispute progress.");
         }
 
         var dispute = await _db.Disputes
@@ -31,7 +31,7 @@ public class GetMyDisputeProgressQueryHandler : IRequestHandler<GetMyDisputeProg
             .FirstOrDefaultAsync(row => row.Id == request.DisputeId, cancellationToken);
         if (dispute == null)
         {
-            throw new NotFoundException("Khiếu nại", request.DisputeId);
+            throw new NotFoundException("Dispute", request.DisputeId);
         }
 
         // Chỉ người trả tiền và người bán của giao dịch. Người nhận vé theo email không được xem.
@@ -46,7 +46,7 @@ public class GetMyDisputeProgressQueryHandler : IRequestHandler<GetMyDisputeProg
         }
         else
         {
-            throw new ForbiddenAccessException("Bạn không có quyền xem khiếu nại này.");
+            throw new ForbiddenAccessException("You do not have permission to view this dispute.");
         }
 
         return ApiResponse<MyDisputeProgressDto>.SuccessResponse(MyDisputeProgressMapper.Build(dispute, viewer));

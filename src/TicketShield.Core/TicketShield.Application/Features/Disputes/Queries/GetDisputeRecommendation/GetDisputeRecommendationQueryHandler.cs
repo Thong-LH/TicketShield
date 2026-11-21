@@ -28,12 +28,12 @@ public class GetDisputeRecommendationQueryHandler : IRequestHandler<GetDisputeRe
     {
         if (_currentUser is not { IsAuthenticated: true, UserId: { } userId } || userId == Guid.Empty)
         {
-            throw new UnauthorizedException("Bạn phải đăng nhập để xem hồ sơ khiếu nại.");
+            throw new UnauthorizedException("You must be logged in to view dispute dossier.");
         }
 
         if (_currentUser.Role is not ("Admin" or "Cskh" or "Moderator"))
         {
-            throw new ForbiddenAccessException("Bạn không có quyền xem hồ sơ khiếu nại này.");
+            throw new ForbiddenAccessException("You do not have permission to view this dispute dossier.");
         }
 
         var dispute = await _db.Disputes
@@ -42,7 +42,7 @@ public class GetDisputeRecommendationQueryHandler : IRequestHandler<GetDisputeRe
             .FirstOrDefaultAsync(row => row.Id == request.DisputeId, cancellationToken);
         if (dispute == null)
         {
-            throw new NotFoundException("Khiếu nại", request.DisputeId);
+            throw new NotFoundException("Dispute", request.DisputeId);
         }
 
         var scans = string.IsNullOrWhiteSpace(dispute.GateLogSnapshot)

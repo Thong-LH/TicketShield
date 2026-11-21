@@ -26,7 +26,7 @@ public class GetDisputeEvidenceFileQueryHandler : IRequestHandler<GetDisputeEvid
         var userId = _currentUser?.UserId ?? Guid.Empty;
         if (userId == Guid.Empty)
         {
-            throw new UnauthorizedException("Bạn phải đăng nhập để xem ảnh khiếu nại.");
+            throw new UnauthorizedException("You must be logged in to view dispute evidence.");
         }
 
         var dispute = await _db.Disputes
@@ -34,14 +34,14 @@ public class GetDisputeEvidenceFileQueryHandler : IRequestHandler<GetDisputeEvid
             .FirstOrDefaultAsync(row => row.Id == request.DisputeId, cancellationToken);
         if (dispute == null)
         {
-            throw new NotFoundException("Khiếu nại", request.DisputeId);
+            throw new NotFoundException("Dispute", request.DisputeId);
         }
 
         // Người mua xem ảnh của mình; nhân viên xử lý khiếu nại xem được mọi ảnh.
         var isStaff = _currentUser?.Role is "Admin" or "Cskh" or "Moderator";
         if (dispute.BuyerId != userId && !isStaff)
         {
-            throw new ForbiddenAccessException("Bạn không có quyền xem ảnh khiếu nại này.");
+            throw new ForbiddenAccessException("You do not have permission to view this dispute evidence.");
         }
 
         var evidence = await _db.DisputeEvidences
@@ -49,13 +49,13 @@ public class GetDisputeEvidenceFileQueryHandler : IRequestHandler<GetDisputeEvid
             .FirstOrDefaultAsync(row => row.Id == request.EvidenceId && row.DisputeId == dispute.Id, cancellationToken);
         if (evidence == null)
         {
-            throw new NotFoundException("Ảnh khiếu nại", request.EvidenceId);
+            throw new NotFoundException("Dispute evidence", request.EvidenceId);
         }
 
         var content = await _files.ReadAsync(evidence.FileUrl, cancellationToken);
         if (content == null)
         {
-            throw new NotFoundException("Ảnh khiếu nại", request.EvidenceId);
+            throw new NotFoundException("Dispute evidence", request.EvidenceId);
         }
 
         return new DisputeEvidenceFileResult

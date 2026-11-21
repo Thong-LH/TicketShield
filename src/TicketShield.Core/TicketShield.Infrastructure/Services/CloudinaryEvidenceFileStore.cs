@@ -52,7 +52,7 @@ public class CloudinaryEvidenceFileStore : IDisputeEvidenceFileStore
 
         if (result.Error != null || result.SecureUrl == null)
         {
-            throw new InvalidOperationException($"Cloudinary không nhận ảnh bằng chứng: {result.Error?.Message}");
+            throw new InvalidOperationException($"Cloudinary evidence upload rejected: {result.Error?.Message}");
         }
 
         // Link không khớp mẫu thì ReadAsync sẽ từ chối về sau, nên gỡ ảnh ngay thay vì lưu một link chết.
@@ -61,7 +61,7 @@ public class CloudinaryEvidenceFileStore : IDisputeEvidenceFileStore
         if (!match.Success || match.Groups["publicId"].Value != publicId)
         {
             await DestroyAsync(publicId);
-            throw new InvalidOperationException("Cloudinary trả về link ảnh bằng chứng không đúng định dạng.");
+            throw new InvalidOperationException("Cloudinary returned an invalid evidence image URL format.");
         }
 
         return secureUrl;
@@ -83,7 +83,7 @@ public class CloudinaryEvidenceFileStore : IDisputeEvidenceFileStore
 
         if (response.StatusCode != HttpStatusCode.OK)
         {
-            throw new InvalidOperationException($"Cloudinary trả mã {(int)response.StatusCode} khi tải ảnh bằng chứng.");
+            throw new InvalidOperationException($"Cloudinary returned status code {(int)response.StatusCode} when downloading evidence image.");
         }
 
         return await response.Content.ReadAsByteArrayAsync(cancellationToken);
@@ -111,13 +111,13 @@ public class CloudinaryEvidenceFileStore : IDisputeEvidenceFileStore
             });
             if (result.Error != null || (result.Result != "ok" && result.Result != "not found"))
             {
-                _logger.LogWarning("Không xoá được ảnh bằng chứng {PublicId} trên Cloudinary: {Reason}",
+                _logger.LogWarning("Failed to delete evidence image {PublicId} on Cloudinary: {Reason}",
                     publicId, result.Error?.Message ?? result.Result);
             }
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Không xoá được ảnh bằng chứng {PublicId} trên Cloudinary", publicId);
+            _logger.LogWarning(ex, "Failed to delete evidence image {PublicId} on Cloudinary", publicId);
         }
     }
 

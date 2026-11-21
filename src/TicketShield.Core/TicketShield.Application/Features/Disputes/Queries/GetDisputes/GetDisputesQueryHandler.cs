@@ -29,12 +29,12 @@ public class GetDisputesQueryHandler : IRequestHandler<GetDisputesQuery, ApiResp
     {
         if (_currentUser is not { IsAuthenticated: true, UserId: { } userId } || userId == Guid.Empty)
         {
-            throw new UnauthorizedException("Bạn phải đăng nhập để xem danh sách khiếu nại.");
+            throw new UnauthorizedException("You must be logged in to view disputes list.");
         }
 
         if (_currentUser.Role is not ("Admin" or "Cskh" or "Moderator"))
         {
-            throw new ForbiddenAccessException("Bạn không có quyền xem danh sách khiếu nại.");
+            throw new ForbiddenAccessException("You do not have permission to view disputes list.");
         }
 
         var baseQuery = _db.Disputes

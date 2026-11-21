@@ -657,7 +657,7 @@ public class AutomatedGateLogHarvestingAndDisputeResolutionIntegrationTests : ID
                     Reason = "Đã vào cửa"
                 }, CancellationToken.None));
 
-            Assert.Contains("Người bán chưa có tài khoản nhận tiền", ex.Message);
+            Assert.Contains("Seller does not have a payout bank account", ex.Message);
 
             // Kiểm tra trạng thái tranh chấp vẫn Open và tiền vẫn bị Disputed an toàn
             var freshDispute = await db.Disputes.AsNoTracking().SingleAsync(d => d.Id == dispute.Id);

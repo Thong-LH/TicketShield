@@ -30,7 +30,7 @@ public class CreateDisputeCommandHandlerTests
             Reason = "Vé không hợp lệ"
         }, CancellationToken.None));
 
-        Assert.Equal("Bạn cần liên kết tài khoản ngân hàng trước khi gửi báo cáo sự cố để có thể nhận tiền hoàn.", ex.Message);
+        Assert.Equal("You need to link a bank account before reporting an issue to receive refunds.", ex.Message);
         Assert.Equal(422, await StatusCodeOf(ex));
         Assert.Empty(await db.Disputes.AsNoTracking().ToListAsync());
     }
@@ -218,7 +218,7 @@ public class CreateDisputeCommandHandlerTests
             Reason = "Vé lỗi"
         }, CancellationToken.None));
 
-        Assert.Equal("Vé này đã được đăng bán lại, quyền khiếu nại đã chấm dứt.", ex.Message);
+        Assert.Equal("This ticket has already been relisted for resale; dispute rights have been waived.", ex.Message);
         Assert.Equal(422, await StatusCodeOf(ex));
         Assert.Empty(await db.Disputes.AsNoTracking().ToListAsync());
     }
@@ -236,7 +236,7 @@ public class CreateDisputeCommandHandlerTests
             Reason = "Vé không vào được cổng"
         }, CancellationToken.None));
 
-        Assert.Contains("đã qua cửa soát vé tại sự kiện (đã sử dụng), không thể gửi khiếu nại.", ex.Message);
+        Assert.Contains("has already been scanned at venue entrance (used); cannot file dispute.", ex.Message);
         Assert.Contains(seeded.TicketCode, ex.Message);
         Assert.Equal(422, await StatusCodeOf(ex));
 
@@ -277,7 +277,7 @@ public class CreateDisputeCommandHandlerTests
             Reason = "Khiếu nại sau khi đã quét vé"
         }, CancellationToken.None));
 
-        Assert.Contains("đã qua cửa soát vé tại sự kiện (đã sử dụng), không thể gửi khiếu nại.", ex.Message);
+        Assert.Contains("has already been scanned at venue entrance (used); cannot file dispute.", ex.Message);
         Assert.Contains(newCode, ex.Message);
         Assert.Equal(422, await StatusCodeOf(ex));
         Assert.Empty(await db.Disputes.AsNoTracking().ToListAsync());
@@ -326,7 +326,7 @@ public class CreateDisputeCommandHandlerTests
             Reason = "Gói combo có vấn đề"
         }, CancellationToken.None));
 
-        Assert.Contains("đã qua cửa soát vé tại sự kiện (đã sử dụng), không thể gửi khiếu nại.", ex.Message);
+        Assert.Contains("has already been scanned at venue entrance (used); cannot file dispute.", ex.Message);
         Assert.Contains("TCK-COMBO-02", ex.Message);
         Assert.Equal(422, await StatusCodeOf(ex));
         Assert.Empty(await db.Disputes.AsNoTracking().ToListAsync());

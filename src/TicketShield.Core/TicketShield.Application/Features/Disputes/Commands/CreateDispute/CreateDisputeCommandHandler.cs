@@ -26,7 +26,7 @@ public class CreateDisputeCommandHandler : IRequestHandler<CreateDisputeCommand,
         var buyerId = _currentUser?.UserId ?? Guid.Empty;
         if (buyerId == Guid.Empty)
         {
-            throw new UnauthorizedException("Bạn phải đăng nhập để gửi khiếu nại.");
+            throw new UnauthorizedException("You must be logged in to file a dispute.");
         }
 
         var escrow = await _db.EscrowTransactions
@@ -35,17 +35,17 @@ public class CreateDisputeCommandHandler : IRequestHandler<CreateDisputeCommand,
             .FirstOrDefaultAsync(row => row.Id == request.EscrowId, cancellationToken);
         if (escrow == null)
         {
-            throw new NotFoundException("Giao dịch", request.EscrowId);
+            throw new NotFoundException("Escrow transaction", request.EscrowId);
         }
 
         if (escrow.BuyerId != buyerId)
         {
-            throw new ForbiddenAccessException("Bạn không có quyền gửi khiếu nại cho giao dịch này.");
+            throw new ForbiddenAccessException("You do not have permission to file a dispute for this transaction.");
         }
 
         if (escrow.DisputeWaived)
         {
-            throw new BusinessRuleViolationException("Vé này đã được đăng bán lại, quyền khiếu nại đã chấm dứt.");
+            throw new BusinessRuleViolationException("This ticket has already been relisted for resale; dispute rights have been waived.");
         }
 
         // BE-11.3.1 (SCRUM-343 / SCRUM-344): Enforce Dispute Prevention on Used Gate Tickets
@@ -89,7 +89,7 @@ public class CreateDisputeCommandHandler : IRequestHandler<CreateDisputeCommand,
         if (isTicketUsed)
         {
             var codeDetail = !string.IsNullOrWhiteSpace(usedCode) ? $" [{usedCode}]" : "";
-            throw new BusinessRuleViolationException($"Vé{codeDetail} đã qua cửa soát vé tại sự kiện (đã sử dụng), không thể gửi khiếu nại.");
+            throw new BusinessRuleViolationException($"Ticket{codeDetail} has already been scanned at venue entrance (used); cannot file dispute.");
         }
 
         var buyer = await _db.ShadowUsers.FirstOrDefaultAsync(u => u.Id == buyerId, cancellationToken);
@@ -106,7 +106,7 @@ public class CreateDisputeCommandHandler : IRequestHandler<CreateDisputeCommand,
 
         if (!PayoutAccountRules.IsPresent(buyer.PayoutAccountNumber))
         {
-            throw new BusinessRuleViolationException("Bạn cần liên kết tài khoản ngân hàng trước khi gửi báo cáo sự cố để có thể nhận tiền hoàn.");
+            throw new BusinessRuleViolationException("You need to link a bank account before reporting an issue to receive refunds.");
         }
 
         var now = DateTimeOffset.UtcNow;
@@ -167,6 +167,6 @@ public class CreateDisputeCommandHandler : IRequestHandler<CreateDisputeCommand,
                 DisputeCode = dispute.DisputeCode,
                 CreatedAt = dispute.CreatedAt
             },
-            "Khiếu nại đã được ghi nhận.");
+            "Dispute has been recorded successfully.");
     }
 }
