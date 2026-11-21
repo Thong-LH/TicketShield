@@ -119,8 +119,9 @@ public static class DatabaseSeeder
         organizer2.Status = "ACTIVE";
 
         // Event 1: Anh Trai Say Hi
-        // A deterministic, future demo slot: every restart on the same day produces
-        // the same catalog dates in Core and in the Mock Organizer.
+        // A deterministic future demo slot keeps marketplace inventory outside
+        // the two-hour resale cutoff. Gate-only VIP tickets are dated separately
+        // in MockOrganizer so they can be scanned on the current demo date.
         var now = DateTimeOffset.UtcNow;
         var demoEventStart = new DateTimeOffset(now.UtcDateTime.Date.AddDays(1).AddHours(12), TimeSpan.Zero);
         var ev = await context.Events.FirstOrDefaultAsync(e => e.Id == eventId);

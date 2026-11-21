@@ -6,6 +6,7 @@ public class MockTicket
     public Guid OrganizerId { get; set; }
     public string TicketCode { get; set; } = string.Empty;
     public string EventName { get; set; } = string.Empty;
+    public DateTimeOffset? EventStartAt { get; set; }
     public string SeatZone { get; set; } = string.Empty;
     public decimal OriginalPrice { get; set; }
     public string OwnerEmail { get; set; } = string.Empty;

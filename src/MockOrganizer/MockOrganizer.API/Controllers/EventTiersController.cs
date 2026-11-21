@@ -59,8 +59,7 @@ public class EventTiersController(OrganizerDbContext db) : ControllerBase
                 .Select(t => new OrganizerTierCatalogDto(t.TierName, t.Price, $"Khu vực {t.TierName}"))
                 .ToList();
 
-            // Match DatabaseSeeder's deterministic demo slot exactly.  This makes
-            // a Core/Organizer catalog sync idempotent throughout the day.
+            // Keep marketplace inventory outside the two-hour resale cutoff.
             var demoEventStart = new DateTimeOffset(now.UtcDateTime.Date.AddDays(1).AddHours(12), TimeSpan.Zero);
             var startAt = kv.Key == "atsh-2026" ? demoEventStart : now.AddDays(kv.Value.DaysOffset);
             return new OrganizerEventCatalogDto(

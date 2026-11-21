@@ -212,8 +212,8 @@ public class SyncOrganizerEventsCommandHandler(
             ];
         }
 
-        // Default: VieON Anh Trai Say Hi. Keep the same deterministic demo slot
-        // as DatabaseSeeder and MockOrganizer's catalog endpoint.
+        // Default: VieON Anh Trai Say Hi. Keep the same future demo slot as
+        // DatabaseSeeder and MockOrganizer's catalog endpoint.
         var demoEventStart = new DateTimeOffset(now.UtcDateTime.Date.AddDays(1).AddHours(12), TimeSpan.Zero);
         return
         [

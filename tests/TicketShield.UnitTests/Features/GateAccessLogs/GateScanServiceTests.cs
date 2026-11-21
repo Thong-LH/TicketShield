@@ -37,7 +37,7 @@ public class GateScanServiceTests
     public async Task Scan_WhenTicketIsValid_MarksUsedAndReturnsEventDetails()
     {
         await using var db = CreateDb();
-        await AddTicketAsync(db, Code, "VALID");
+        await AddTicketAsync(db, Code, "VALID", DateTimeOffset.UtcNow);
         var notifier = new RecordingNotifier();
 
         var response = await Service(db, notifier).ScanAsync(Request("scan-1"), CancellationToken.None);
@@ -52,6 +52,21 @@ public class GateScanServiceTests
         Assert.Equal("Gate A", log.GateName);
         Assert.Equal("scan-1", log.ScanId);
         Assert.Equal(Code, Assert.Single(notifier.Calls));
+    }
+
+    [Fact]
+    public async Task Scan_WhenEventIsOnAnotherVietnamDate_ReturnsWrongDateWithoutUsingTicketOrCallingWebhook()
+    {
+        await using var db = CreateDb();
+        await AddTicketAsync(db, Code, "VALID", DateTimeOffset.UtcNow.AddDays(1));
+        var notifier = new RecordingNotifier();
+
+        var response = await Service(db, notifier).ScanAsync(Request("scan-wrong-date"), CancellationToken.None);
+
+        Assert.Equal(GateScanResults.WrongDate, response.Result);
+        Assert.Equal("VALID", await StatusOfAsync(db, Code));
+        Assert.Equal(GateScanResults.WrongDate, Assert.Single(await LogsAsync(db)).ScanResult);
+        Assert.Empty(notifier.Calls);
     }
 
     [Fact]
@@ -270,7 +285,7 @@ public class GateScanServiceTests
     }
 
     [Fact]
-    public async Task Seeder_OnStartup_KeepsGateLogsAndUsedTicketsOutsideSeed()
+    public async Task Seeder_OnStartup_ClearsGateLogsAndTicketsOutsideSeed()
     {
         await using var db = CreateDb();
         await SeedHistoryAsync(db);
@@ -278,9 +293,9 @@ public class GateScanServiceTests
         await OrganizerDatabaseSeeder.CleanGateHistoryAsync(db, new HashSet<Guid>(), resetOperationalData: false);
         await db.SaveChangesAsync();
 
-        Assert.Single(await LogsAsync(db));
-        Assert.Equal("USED", await StatusOfAsync(db, "USED-TICKET"));
-        Assert.Equal("VALID", await StatusOfAsync(db, "VALID-TICKET"));
+        Assert.Empty(await LogsAsync(db));
+        Assert.Null(await StatusOfAsync(db, "USED-TICKET"));
+        Assert.Null(await StatusOfAsync(db, "VALID-TICKET"));
         Assert.Null(await StatusOfAsync(db, "OLD-TICKET"));
     }
 
@@ -295,7 +310,7 @@ public class GateScanServiceTests
 
         Assert.Empty(await LogsAsync(db));
         Assert.Null(await StatusOfAsync(db, "USED-TICKET"));
-        Assert.Equal("VALID", await StatusOfAsync(db, "VALID-TICKET"));
+        Assert.Null(await StatusOfAsync(db, "VALID-TICKET"));
     }
 
     private static async Task SeedHistoryAsync(OrganizerDbContext db)
@@ -313,12 +328,17 @@ public class GateScanServiceTests
     private static GateScanRequest Request(string scanId, string ticketCode = Code, string gateName = "Gate A")
         => new() { ScanId = scanId, TicketCode = ticketCode, GateName = gateName };
 
-    private static async Task AddTicketAsync(OrganizerDbContext db, string code, string status)
+    private static async Task AddTicketAsync(
+        OrganizerDbContext db,
+        string code,
+        string status,
+        DateTimeOffset? eventStartAt = null)
     {
         db.MockTickets.Add(new MockTicket
         {
             TicketCode = code,
             EventName = "Concert",
+            EventStartAt = eventStartAt,
             SeatZone = "Zone A",
             OwnerEmail = "owner@example.com",
             Status = status

@@ -401,6 +401,7 @@ public sealed class OrganizerResaleGrpcService(
                 OrganizerId = oldTicket.OrganizerId,
                 TicketCode = newTicketCode,
                 EventName = oldTicket.EventName,
+                EventStartAt = oldTicket.EventStartAt,
                 SeatZone = oldTicket.SeatZone,
                 OriginalPrice = oldTicket.OriginalPrice,
                 OwnerEmail = request.NewOwnerEmail,
