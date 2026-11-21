@@ -25,12 +25,12 @@ public class ResolveDisputeCommandHandler : IRequestHandler<ResolveDisputeComman
     {
         if (_currentUser is not { IsAuthenticated: true, UserId: { } userId } || userId == Guid.Empty)
         {
-            throw new UnauthorizedException("Bạn phải đăng nhập để xử lý khiếu nại.");
+            throw new UnauthorizedException("You must be logged in to resolve disputes.");
         }
 
         if (_currentUser.Role is not ("Admin" or "Cskh" or "Moderator"))
         {
-            throw new ForbiddenAccessException("Bạn không có quyền xử lý khiếu nại này.");
+            throw new ForbiddenAccessException("You do not have permission to resolve this dispute.");
         }
 
         var dispute = await _db.Disputes
@@ -41,15 +41,15 @@ public class ResolveDisputeCommandHandler : IRequestHandler<ResolveDisputeComman
             .FirstOrDefaultAsync(row => row.Id == request.DisputeId, cancellationToken);
         if (dispute == null)
         {
-            throw new NotFoundException("Khiếu nại", request.DisputeId);
+            throw new NotFoundException("Dispute", request.DisputeId);
         }
 
         if (dispute.Status != DisputeStatus.Open)
         {
-            throw new BusinessRuleViolationException("Khiếu nại này đã được xử lý.");
+            throw new BusinessRuleViolationException("This dispute has already been resolved.");
         }
 
-        var decision = request.Decision ?? throw new BusinessRuleViolationException("Quyết định không hợp lệ.");
+        var decision = request.Decision ?? throw new BusinessRuleViolationException("Invalid decision.");
         if (decision == DisputeDecision.Approve)
         {
             if (dispute.Escrow.Buyer == null)
@@ -70,7 +70,7 @@ public class ResolveDisputeCommandHandler : IRequestHandler<ResolveDisputeComman
 
             if (!PayoutAccountRules.IsPresent(dispute.Escrow.Buyer.PayoutAccountNumber))
             {
-                throw new BusinessRuleViolationException("Người mua chưa liên kết tài khoản ngân hàng để nhận tiền hoàn.");
+                throw new BusinessRuleViolationException("Buyer has not linked a bank account to receive the refund.");
             }
         }
         else if (decision == DisputeDecision.Reject)
@@ -93,7 +93,7 @@ public class ResolveDisputeCommandHandler : IRequestHandler<ResolveDisputeComman
 
             if (!PayoutAccountRules.IsPresent(dispute.Escrow.Seller.PayoutAccountNumber))
             {
-                throw new BusinessRuleViolationException("Người bán chưa có tài khoản nhận tiền.");
+                throw new BusinessRuleViolationException("Seller does not have a payout bank account.");
             }
         }
 
@@ -114,7 +114,7 @@ public class ResolveDisputeCommandHandler : IRequestHandler<ResolveDisputeComman
         if (updated != 1)
         {
             await transaction.RollbackAsync(cancellationToken);
-            throw new BusinessRuleViolationException("Khoản tiền không còn bị giữ để xử lý khiếu nại.");
+            throw new BusinessRuleViolationException("Funds are no longer held for dispute resolution.");
         }
 
         var resolver = await _db.ShadowUsers.FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);

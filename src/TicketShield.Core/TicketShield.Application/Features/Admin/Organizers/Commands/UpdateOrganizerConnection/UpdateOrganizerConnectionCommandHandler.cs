@@ -22,7 +22,7 @@ public class UpdateOrganizerConnectionCommandHandler(
 
         if (organizer == null)
         {
-            throw new NotFoundException($"Không tìm thấy ban tổ chức với ID '{request.Id}'.");
+            throw new NotFoundException($"Organizer not found with ID '{request.Id}'.");
         }
 
         // If endpoint changed, invalidate old channel in resolver cache
@@ -71,6 +71,6 @@ public class UpdateOrganizerConnectionCommandHandler(
             organizer.UpdatedAt
         );
 
-        return ApiResponse<AdminOrganizerDto>.SuccessResponse(dto, "Cập nhật thông tin kết nối ban tổ chức thành công.");
+        return ApiResponse<AdminOrganizerDto>.SuccessResponse(dto, "Organizer connection updated successfully.");
     }
 }

@@ -28,12 +28,12 @@ public class AddDisputeEvidenceCommandHandler : IRequestHandler<AddDisputeEviden
         var buyerId = _currentUser?.UserId ?? Guid.Empty;
         if (buyerId == Guid.Empty)
         {
-            throw new UnauthorizedException("Bạn phải đăng nhập để gửi ảnh khiếu nại.");
+            throw new UnauthorizedException("You must be logged in to upload dispute evidence.");
         }
 
         if (!DisputeEvidenceImages.TryGetFormat(request.Content, request.ContentType, out var extension, out _))
         {
-            throw new BadRequestException("Ảnh không hợp lệ. Chỉ nhận ảnh JPEG, PNG hoặc WebP tối đa 5 MB.");
+            throw new BadRequestException("Invalid image. Only JPEG, PNG, or WebP images up to 5 MB are accepted.");
         }
 
         var dispute = await _db.Disputes
@@ -41,12 +41,12 @@ public class AddDisputeEvidenceCommandHandler : IRequestHandler<AddDisputeEviden
             .FirstOrDefaultAsync(row => row.Id == request.DisputeId, cancellationToken);
         if (dispute == null)
         {
-            throw new NotFoundException("Khiếu nại", request.DisputeId);
+            throw new NotFoundException("Dispute", request.DisputeId);
         }
 
         if (dispute.BuyerId != buyerId)
         {
-            throw new ForbiddenAccessException("Bạn không có quyền gửi ảnh cho khiếu nại này.");
+            throw new ForbiddenAccessException("You do not have permission to upload evidence for this dispute.");
         }
 
         var key = await _files.SaveAsync(request.Content, extension, cancellationToken);
@@ -75,6 +75,6 @@ public class AddDisputeEvidenceCommandHandler : IRequestHandler<AddDisputeEviden
 
         return ApiResponse<AddDisputeEvidenceResponse>.SuccessResponse(
             new AddDisputeEvidenceResponse { EvidenceId = evidence.Id },
-            "Ảnh khiếu nại đã được ghi nhận.");
+            "Dispute evidence has been recorded successfully.");
     }
 }

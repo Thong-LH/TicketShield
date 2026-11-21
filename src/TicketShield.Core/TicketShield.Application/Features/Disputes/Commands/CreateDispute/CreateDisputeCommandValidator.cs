@@ -8,6 +8,6 @@ public class CreateDisputeCommandValidator : AbstractValidator<CreateDisputeComm
     {
         RuleFor(v => v.Reason)
             .NotEmpty()
-            .WithMessage("Lý do khiếu nại không được để trống.");
+            .WithMessage("Dispute reason must not be empty.");
     }
 }

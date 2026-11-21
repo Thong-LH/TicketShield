@@ -25,7 +25,7 @@ public class GetUserBankAccountsQueryHandler : IRequestHandler<GetUserBankAccoun
         var userId = _currentUserService.UserId ?? Guid.Empty;
         if (userId == Guid.Empty)
         {
-            throw new UnauthorizedException("Bạn phải đăng nhập để xem danh sách tài khoản ngân hàng.");
+            throw new UnauthorizedException("You must be signed in to view your bank accounts.");
         }
 
         var bankAccounts = await _dbContext.UserBankAccounts
@@ -45,6 +45,6 @@ public class GetUserBankAccountsQueryHandler : IRequestHandler<GetUserBankAccoun
             })
             .ToListAsync(cancellationToken);
 
-        return ApiResponse<List<UserBankAccountDto>>.SuccessResponse(bankAccounts, "Lấy danh sách tài khoản ngân hàng thành công.");
+        return ApiResponse<List<UserBankAccountDto>>.SuccessResponse(bankAccounts, "Bank accounts retrieved successfully.");
     }
 }

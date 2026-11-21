@@ -65,10 +65,10 @@ public class SystemSettingRepository : ISystemSettingRepository
     {
         var items = new (string Key, string Value, string DataType, string Description)[]
         {
-            (BuyerPercentageKey, config.BuyerFeePercentage.ToString(CultureInfo.InvariantCulture), "Decimal", "Tỷ lệ phí người mua"),
-            (SellerPercentageKey, config.SellerFeePercentage.ToString(CultureInfo.InvariantCulture), "Decimal", "Tỷ lệ phí người bán"),
-            (MinBuyerFeeKey, config.MinimumBuyerFee.ToString(CultureInfo.InvariantCulture), "Money", "Phí tối thiểu người mua"),
-            (MinSellerFeeKey, config.MinimumSellerFee.ToString(CultureInfo.InvariantCulture), "Money", "Phí tối thiểu người bán")
+            (BuyerPercentageKey, config.BuyerFeePercentage.ToString(CultureInfo.InvariantCulture), "Decimal", "Buyer fee percentage"),
+            (SellerPercentageKey, config.SellerFeePercentage.ToString(CultureInfo.InvariantCulture), "Decimal", "Seller fee percentage"),
+            (MinBuyerFeeKey, config.MinimumBuyerFee.ToString(CultureInfo.InvariantCulture), "Money", "Minimum buyer fee"),
+            (MinSellerFeeKey, config.MinimumSellerFee.ToString(CultureInfo.InvariantCulture), "Money", "Minimum seller fee")
         };
 
         foreach (var item in items)
@@ -126,8 +126,8 @@ public class SystemSettingRepository : ISystemSettingRepository
     {
         var items = new (string Key, string Value, string Description)[]
         {
-            (SettlementSecondsKey, config.BufferSeconds.ToString(CultureInfo.InvariantCulture), "Số giây đệm trước khi trả tiền người bán"),
-            (CutoffSecondsKey, config.CutoffSeconds.ToString(CultureInfo.InvariantCulture), "Số giây trước giờ diễn đóng sàn giao dịch vé")
+            (SettlementSecondsKey, config.BufferSeconds.ToString(CultureInfo.InvariantCulture), "Settlement buffer seconds before releasing seller payout"),
+            (CutoffSecondsKey, config.CutoffSeconds.ToString(CultureInfo.InvariantCulture), "Resale ticket cutoff seconds before event starts")
         };
 
         foreach (var item in items)

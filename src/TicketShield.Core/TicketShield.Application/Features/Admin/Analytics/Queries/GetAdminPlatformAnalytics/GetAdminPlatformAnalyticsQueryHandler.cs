@@ -1,5 +1,7 @@
+using System.Globalization;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using TicketShield.Application.Common.Helpers;
 using TicketShield.Application.Common.Interfaces;
 using TicketShield.Application.Common.Models;
 using TicketShield.Application.Features.Admin.Analytics.Models;
@@ -14,6 +16,8 @@ namespace TicketShield.Application.Features.Admin.Analytics.Queries.GetAdminPlat
 /// </summary>
 public class GetAdminPlatformAnalyticsQueryHandler : IRequestHandler<GetAdminPlatformAnalyticsQuery, ApiResponse<AdminPlatformAnalyticsResponseDto>>
 {
+    private static readonly TimeSpan VietnamOffset = TimeSpan.FromHours(7);
+
     private readonly ITicketShieldDbContext _dbContext;
 
     public GetAdminPlatformAnalyticsQueryHandler(ITicketShieldDbContext dbContext)
@@ -47,6 +51,18 @@ public class GetAdminPlatformAnalyticsQueryHandler : IRequestHandler<GetAdminPla
             .Where(e => e.Status == EscrowStatus.Refunded)
             .SumAsync(e => (decimal?)e.TotalBuyerPaid, cancellationToken) ?? 0m;
 
+        // Cashflow cards (SCRUM-392 / SCRUM-393). Same buckets as the Admin Transactions page,
+        // so Inflow - Payout - Refunded - Held in escrow equals Net revenue.
+        var totalInflow = await escrowQuery
+            .Where(EscrowMoneyBuckets.IsInflow)
+            .SumAsync(e => (decimal?)e.TotalBuyerPaid, cancellationToken) ?? 0m;
+        var totalHeldInEscrow = await escrowQuery
+            .Where(EscrowMoneyBuckets.IsHeld)
+            .SumAsync(e => (decimal?)e.TotalBuyerPaid, cancellationToken) ?? 0m;
+        var totalPayout = await escrowQuery
+            .Where(EscrowMoneyBuckets.HasSuccessfulPayout)
+            .SumAsync(e => (decimal?)e.PayoutTransaction!.Amount, cancellationToken) ?? 0m;
+
         var revenueStats = new PlatformRevenueStatsDto
         {
             TotalNetRevenue = totalNetRevenue,
@@ -54,8 +70,27 @@ public class GetAdminPlatformAnalyticsQueryHandler : IRequestHandler<GetAdminPla
             TotalSellerFees = totalSellerFees,
             TotalGmv = totalGmv,
             PendingFeesInEscrow = pendingFeesInEscrow,
-            TotalRefundedAmount = totalRefundedAmount
+            TotalRefundedAmount = totalRefundedAmount,
+            TotalInflow = totalInflow,
+            TotalPayout = totalPayout,
+            TotalHeldInEscrow = totalHeldInEscrow
         };
+
+        // Revenue per day for the trend chart (SCRUM-391 / SCRUM-393). Grouped in memory by the creation day in
+        // Vietnam time: only four columns of the Released escrows in range are loaded.
+        var releasedRows = await releasedEscrows
+            .Select(e => new { e.CreatedAt, e.BuyerFee, e.SellerFee, e.TotalBuyerPaid })
+            .ToListAsync(cancellationToken);
+        var dailyRevenue = releasedRows
+            .GroupBy(e => e.CreatedAt.ToOffset(VietnamOffset).Date)
+            .OrderBy(g => g.Key)
+            .Select(g => new DailyRevenueDto
+            {
+                Date = g.Key.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                NetRevenue = g.Sum(e => e.BuyerFee + e.SellerFee),
+                Gmv = g.Sum(e => e.TotalBuyerPaid)
+            })
+            .ToList();
 
         // 2. Thống kê Người dùng (User Analytics: Buyer vs Seller)
         var totalUsers = await _dbContext.ShadowUsers.CountAsync(cancellationToken);
@@ -167,10 +202,11 @@ public class GetAdminPlatformAnalyticsQueryHandler : IRequestHandler<GetAdminPla
             Revenue = revenueStats,
             Users = userStats,
             Inventory = inventoryStats,
-            EventTransactions = eventAnalyticsList
+            EventTransactions = eventAnalyticsList,
+            DailyRevenue = dailyRevenue
         };
 
-        return ApiResponse<AdminPlatformAnalyticsResponseDto>.SuccessResponse(response, "Lấy dữ liệu thống kê doanh thu và kho vé thành công.");
+        return ApiResponse<AdminPlatformAnalyticsResponseDto>.SuccessResponse(response, "Platform revenue and ticket inventory analytics retrieved successfully.");
     }
 }
 

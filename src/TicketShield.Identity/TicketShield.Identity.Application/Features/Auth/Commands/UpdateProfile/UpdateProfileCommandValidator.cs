@@ -7,15 +7,15 @@ public class UpdateProfileCommandValidator : AbstractValidator<UpdateProfileComm
     public UpdateProfileCommandValidator()
     {
         RuleFor(v => v.FullName)
-            .NotEmpty().WithMessage("Họ và tên không được để trống.")
-            .MaximumLength(100).WithMessage("Họ và tên không được vượt quá 100 ký tự.");
+            .NotEmpty().WithMessage("Full name is required.")
+            .MaximumLength(100).WithMessage("Full name cannot exceed 100 characters.");
 
         RuleFor(v => v.PhoneNumber)
-            .MaximumLength(20).WithMessage("Số điện thoại không được vượt quá 20 ký tự.")
+            .MaximumLength(20).WithMessage("Phone number cannot exceed 20 characters.")
             .Matches(@"^[0-9+\s\-()]*$").When(v => !string.IsNullOrEmpty(v.PhoneNumber))
-            .WithMessage("Số điện thoại không đúng định dạng.");
+            .WithMessage("Invalid phone number format.");
 
         RuleFor(v => v.IdCardNumber)
-            .MaximumLength(20).WithMessage("Số CCCD/CMND không được vượt quá 20 ký tự.");
+            .MaximumLength(20).WithMessage("National ID/Citizen ID cannot exceed 20 characters.");
     }
 }

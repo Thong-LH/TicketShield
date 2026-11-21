@@ -198,6 +198,151 @@ public class AdminListingsQueryTests
         Assert.True(result.Data.Listings.HasNextPage);
     }
 
+    [Fact]
+    public async Task Handle_FilterByEvent_SummaryFollowsTheFilteredRows()
+    {
+        await using var db = CreateDb();
+        await SeedSampleListingsAsync(db);
+        var taylorSwift = db.Events.Single(e => e.Name == "Taylor Swift Eras Tour");
+
+        var handler = new GetAdminListingsQueryHandler(db);
+        var result = await handler.Handle(new GetAdminListingsQuery { EventId = taylorSwift.Id }, CancellationToken.None);
+        var summary = result.Data!.Summary;
+
+        // TCK-AT-CEIL, TCK-DISCOUNT and the first ticket of the combo belong to this event.
+        Assert.Equal(3, result.Data.Listings.TotalCount);
+        Assert.Equal(3, summary.TotalListings);
+        Assert.Equal(2, summary.TotalSingleTickets);
+        Assert.Equal(1, summary.TotalBundles);
+        Assert.Equal(3, summary.TotalActiveListings);
+        Assert.Equal(0, summary.TotalSoldListings);
+        Assert.Equal(1, summary.TotalAtCeilingListings);
+    }
+
+    [Fact]
+    public async Task Handle_FilterByStatus_ComboCountsBundlesInsideTheFilteredSet()
+    {
+        await using var db = CreateDb();
+        await SeedSampleListingsAsync(db);
+
+        var handler = new GetAdminListingsQueryHandler(db);
+        var result = await handler.Handle(new GetAdminListingsQuery { Status = ListingStatus.Sold }, CancellationToken.None);
+        var summary = result.Data!.Summary;
+
+        // TCK-HAT-SOLD (single, at cap) and TCK-BDL-02 (one ticket of the combo)
+        Assert.Equal(2, summary.TotalListings);
+        Assert.Equal(1, summary.TotalSingleTickets);
+        Assert.Equal(1, summary.TotalBundles);
+        Assert.Equal(0, summary.TotalActiveListings);
+        Assert.Equal(2, summary.TotalSoldListings);
+        Assert.Equal(1, summary.TotalAtCeilingListings);
+    }
+
+    [Fact]
+    public async Task Handle_SummaryCountsEveryPage_NotOnlyTheCurrentOne()
+    {
+        await using var db = CreateDb();
+        await SeedSampleListingsAsync(db);
+
+        var handler = new GetAdminListingsQueryHandler(db);
+        var result = await handler.Handle(new GetAdminListingsQuery { Page = 2, Size = 2 }, CancellationToken.None);
+
+        Assert.Equal(2, result.Data!.Listings.Items.Count);
+        Assert.Equal(5, result.Data.Summary.TotalListings);
+    }
+
+    [Fact]
+    public async Task Handle_ZeroPercentCeiling_FaceValueIsNotAtCap()
+    {
+        await using var db = CreateDb();
+        await SeedSampleListingsAsync(db);
+        await SeedZeroCeilingListingsAsync(db);
+
+        var handler = new GetAdminListingsQueryHandler(db);
+
+        var faceValue = await handler.Handle(new GetAdminListingsQuery { Keyword = "TCK-ZERO-FACE" }, CancellationToken.None);
+        var listing = Assert.Single(faceValue.Data!.Listings.Items);
+        Assert.Equal(50_000m, listing.MaxAllowedPrice);
+        Assert.False(listing.IsAtPriceCeiling);
+        Assert.False(listing.IsPriceCeilingExceeded);
+
+        var atCapOnly = await handler.Handle(new GetAdminListingsQuery { IsAtPriceCeilingOnly = true }, CancellationToken.None);
+        Assert.DoesNotContain(atCapOnly.Data!.Listings.Items, item => item.OriginalTicketCode == "TCK-ZERO-FACE");
+
+        // 2 listings of the sample data plus the 0% listing sold above face value
+        var all = await handler.Handle(new GetAdminListingsQuery(), CancellationToken.None);
+        Assert.Equal(3, all.Data!.Summary.TotalAtCeilingListings);
+    }
+
+    [Fact]
+    public async Task Handle_ZeroPercentCeiling_AboveFaceValueIsStillOverCap()
+    {
+        await using var db = CreateDb();
+        await SeedSampleListingsAsync(db);
+        await SeedZeroCeilingListingsAsync(db);
+
+        var handler = new GetAdminListingsQueryHandler(db);
+
+        var overCap = await handler.Handle(new GetAdminListingsQuery { Keyword = "TCK-ZERO-OVER" }, CancellationToken.None);
+        var listing = Assert.Single(overCap.Data!.Listings.Items);
+        Assert.False(listing.IsAtPriceCeiling);
+        Assert.True(listing.IsPriceCeilingExceeded);
+
+        var atCapOnly = await handler.Handle(new GetAdminListingsQuery { IsAtPriceCeilingOnly = true }, CancellationToken.None);
+        Assert.Equal(3, atCapOnly.Data!.Listings.TotalCount);
+        Assert.Contains(atCapOnly.Data.Listings.Items, item => item.OriginalTicketCode == "TCK-ZERO-OVER");
+    }
+
+    private static async Task SeedZeroCeilingListingsAsync(TicketShieldDbContext db)
+    {
+        var org = db.Organizers.First();
+        var seller = db.ShadowUsers.First();
+        var zeroEvent = new Event
+        {
+            Id = Guid.NewGuid(),
+            OrganizerId = org.Id,
+            Name = "Face Value Only Show",
+            Venue = "Small Hall",
+            MaxResaleMarkupPercentage = 0m,
+            EventStartAt = DateTimeOffset.UtcNow.AddDays(20),
+            EventEndAt = DateTimeOffset.UtcNow.AddDays(20).AddHours(2),
+            ResaleDeadline = DateTimeOffset.UtcNow.AddDays(19)
+        };
+        var zeroTier = new TicketTier { Id = Guid.NewGuid(), EventId = zeroEvent.Id, TierName = "GA", OriginalPrice = 50_000m };
+
+        db.Events.Add(zeroEvent);
+        db.TicketTiers.Add(zeroTier);
+        db.ResaleListings.AddRange(
+            new ResaleListing
+            {
+                Id = Guid.NewGuid(),
+                EventId = zeroEvent.Id,
+                TierId = zeroTier.Id,
+                SellerId = seller.Id,
+                OriginalTicketCode = "TCK-ZERO-FACE",
+                OriginalPrice = 50_000m,
+                ResalePrice = 50_000m,
+                AppliedMarkupPercentage = 0m,
+                ListingStatus = ListingStatus.Verified,
+                CreatedAt = DateTimeOffset.UtcNow.AddHours(-6)
+            },
+            new ResaleListing
+            {
+                Id = Guid.NewGuid(),
+                EventId = zeroEvent.Id,
+                TierId = zeroTier.Id,
+                SellerId = seller.Id,
+                OriginalTicketCode = "TCK-ZERO-OVER",
+                OriginalPrice = 45_000m,
+                ResalePrice = 50_000m,
+                AppliedMarkupPercentage = 0m,
+                ListingStatus = ListingStatus.Verified,
+                CreatedAt = DateTimeOffset.UtcNow.AddHours(-7)
+            });
+
+        await db.SaveChangesAsync();
+    }
+
     private static TicketShieldDbContext CreateDb()
     {
         var options = new DbContextOptionsBuilder<TicketShieldDbContext>()

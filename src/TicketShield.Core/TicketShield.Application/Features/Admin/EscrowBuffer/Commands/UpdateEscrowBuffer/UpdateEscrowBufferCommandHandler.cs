@@ -27,6 +27,6 @@ public class UpdateEscrowBufferCommandHandler : IRequestHandler<UpdateEscrowBuff
         };
 
         await _bufferSettings.UpdateAsync(config, _currentUserService.UserId, cancellationToken);
-        return ApiResponse<EscrowBufferConfig>.SuccessResponse(config, "Cập nhật thời gian trả tiền thành công.");
+        return ApiResponse<EscrowBufferConfig>.SuccessResponse(config, "Escrow settlement buffer updated successfully.");
     }
 }

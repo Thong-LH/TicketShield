@@ -263,7 +263,7 @@ public class TicketHoldFlowQATests
         // Act & Assert
         var ex = await Assert.ThrowsAsync<BusinessRuleViolationException>(() =>
             handler.Handle(new HoldListingForPurchaseCommand { ListingId = listing.Id }, CancellationToken.None));
-        Assert.Contains("giữ chỗ bởi người mua khác", ex.Message);
+        Assert.Contains("reserved by another buyer", ex.Message);
     }
 
     [Theory]
@@ -320,7 +320,7 @@ public class TicketHoldFlowQATests
         // Act & Assert
         var ex = await Assert.ThrowsAsync<BadRequestException>(() =>
             handler.Handle(new HoldListingForPurchaseCommand { ListingId = listing.Id }, CancellationToken.None));
-        Assert.Contains("không thể tự mua vé của chính mình", ex.Message);
+        Assert.Contains("cannot purchase your own ticket", ex.Message);
     }
 
     [Fact]
@@ -348,7 +348,7 @@ public class TicketHoldFlowQATests
         // Act & Assert
         var ex = await Assert.ThrowsAsync<BusinessRuleViolationException>(() =>
             handler.Handle(new HoldListingForPurchaseCommand { ListingId = listing.Id }, CancellationToken.None));
-        Assert.Contains("thời hạn", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("deadline", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -476,6 +476,6 @@ public class TicketHoldFlowQATests
         // Act & Assert
         var ex = await Assert.ThrowsAsync<BusinessRuleViolationException>(() =>
             handler.Handle(new ReleaseListingHoldCommand(listing.Id), CancellationToken.None));
-        Assert.Contains("không ở trạng thái giữ chỗ", ex.Message);
+        Assert.Contains("not in holding state", ex.Message);
     }
 }

@@ -24,7 +24,7 @@ public class GetAdminUserQueryHandler : IRequestHandler<GetAdminUserQuery, ApiRe
 
         if (user == null)
         {
-            throw new NotFoundException("Người dùng", request.UserId);
+            throw new NotFoundException("User", request.UserId);
         }
 
         return ApiResponse<AdminUserDto>.SuccessResponse(AdminUserDto.FromUser(user));

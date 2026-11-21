@@ -171,7 +171,7 @@ public class HoldListingForPurchaseCommandHandlerTests
 
         // Act & Assert
         var ex = await Assert.ThrowsAsync<BadRequestException>(() => handler.Handle(command, CancellationToken.None));
-        Assert.Equal("Bạn không thể tự mua vé của chính mình.", ex.Message);
+        Assert.Equal("You cannot purchase your own ticket.", ex.Message);
     }
 
     [Fact]
@@ -407,7 +407,7 @@ public class HoldListingForPurchaseCommandHandlerTests
 
         // Act & Assert
         var ex = await Assert.ThrowsAsync<UnauthorizedException>(() => handler.Handle(command, CancellationToken.None));
-        Assert.Equal("Bạn phải đăng nhập để giữ chỗ mua vé.", ex.Message);
+        Assert.Equal("You must be signed in to reserve tickets for purchase.", ex.Message);
     }
 
     [Fact]
@@ -424,7 +424,7 @@ public class HoldListingForPurchaseCommandHandlerTests
 
         // Act & Assert
         var ex = await Assert.ThrowsAsync<UnauthorizedException>(() => handler.Handle(command, CancellationToken.None));
-        Assert.Equal("Tài khoản người dùng không tồn tại hoặc chưa được đồng bộ.", ex.Message);
+        Assert.Equal("User account does not exist or has not been synced.", ex.Message);
     }
 
     [Fact]
@@ -443,7 +443,7 @@ public class HoldListingForPurchaseCommandHandlerTests
 
         // Act & Assert
         var ex = await Assert.ThrowsAsync<UnauthorizedException>(() => handler.Handle(command, CancellationToken.None));
-        Assert.Equal("Tài khoản của bạn đã bị vô hiệu hóa.", ex.Message);
+        Assert.Equal("Your account has been deactivated.", ex.Message);
     }
 
     [Fact]
@@ -478,7 +478,7 @@ public class HoldListingForPurchaseCommandHandlerTests
         var ex = await Assert.ThrowsAsync<BusinessRuleViolationException>(
             () => handler.Handle(command, CancellationToken.None));
 
-        Assert.Contains("2 giờ", ex.Message);
+        Assert.Contains("2 hours", ex.Message);
         var saved = await dbContext.ResaleListings.Include(l => l.EscrowTransactions).FirstAsync(l => l.Id == listing.Id);
         Assert.Equal(ListingStatus.Verified, saved.ListingStatus);
         Assert.Empty(saved.EscrowTransactions);
@@ -522,7 +522,7 @@ public class HoldListingForPurchaseCommandHandlerTests
 
         // Act & Assert
         var ex = await Assert.ThrowsAsync<BusinessRuleViolationException>(() => handler.Handle(command, CancellationToken.None));
-        Assert.Contains("đang trong quá trình thanh toán hoặc đối soát", ex.Message);
+        Assert.Contains("undergoing payment processing or reconciliation", ex.Message);
     }
 
     [Fact]
@@ -581,6 +581,6 @@ public class HoldListingForPurchaseCommandHandlerTests
 
         // Act & Assert
         var ex = await Assert.ThrowsAsync<BusinessRuleViolationException>(() => handler.Handle(command, CancellationToken.None));
-        Assert.Contains("đang trong quá trình thanh toán hoặc đối soát", ex.Message);
+        Assert.Contains("undergoing payment processing or reconciliation", ex.Message);
     }
 }

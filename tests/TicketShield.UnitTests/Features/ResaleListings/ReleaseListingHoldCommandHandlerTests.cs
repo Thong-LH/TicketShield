@@ -415,6 +415,6 @@ public class ReleaseListingHoldCommandHandlerTests
 
         // Act & Assert
         var ex = await Assert.ThrowsAsync<BusinessRuleViolationException>(() => handler.Handle(command, CancellationToken.None));
-        Assert.Contains("Không tìm thấy phiên giữ chỗ hợp lệ", ex.Message);
+        Assert.Contains("No valid reservation session found to cancel", ex.Message);
     }
 }

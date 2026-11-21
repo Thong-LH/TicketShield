@@ -29,39 +29,38 @@ public class DeleteUserBankAccountCommandHandler : IRequestHandler<DeleteUserBan
         var userId = _currentUserService.UserId ?? Guid.Empty;
         if (userId == Guid.Empty)
         {
-            throw new UnauthorizedException("Bạn phải đăng nhập để thực hiện thao tác này.");
+            throw new UnauthorizedException("You must be signed in to perform this action.");
         }
 
-        // Step 1: Tìm TK cần xóa — phải thuộc đúng user đang đăng nhập
+        // Step 1: Find account to delete — must belong to current user
         var targetAccount = await _dbContext.UserBankAccounts
             .FirstOrDefaultAsync(b => b.Id == request.BankAccountId && b.UserId == userId, cancellationToken);
 
         if (targetAccount is null)
         {
-            throw new NotFoundException("Tài khoản ngân hàng", request.BankAccountId);
+            throw new NotFoundException("Bank account", request.BankAccountId);
         }
 
-        // Step 2: Lấy tất cả TK còn lại (ngoại trừ TK cần xóa)
+        // Step 2: Get all remaining accounts (excluding the one being deleted)
         var remainingAccounts = await _dbContext.UserBankAccounts
             .Where(b => b.UserId == userId && b.Id != request.BankAccountId)
             .OrderBy(b => b.CreatedAt)
             .ToListAsync(cancellationToken);
 
-        // Step 3: Không cho xóa TK Default duy nhất còn lại
+        // Step 3: Prevent deleting the only default account remaining
         if (targetAccount.IsDefault && !remainingAccounts.Any())
         {
             throw new BadRequestException(
                 "You cannot remove your only default payout account. Add another account or make a different account the default first.");
         }
 
-        // Step 4: Xóa TK khỏi DB
+        // Step 4: Remove account from DB
         _dbContext.UserBankAccounts.Remove(targetAccount);
 
-        // Step 5: Nếu TK bị xóa là Default → tự động nâng TK cũ nhất còn lại thành Default
-        //         và publish event để Core cập nhật snapshot payout
+        // Step 5: If deleted account was Default -> promote oldest remaining account to Default
         if (targetAccount.IsDefault)
         {
-            var newDefault = remainingAccounts.First(); // đã OrderBy CreatedAt ASC
+            var newDefault = remainingAccounts.First(); // Ordered by CreatedAt ASC
             newDefault.IsDefault = true;
 
             await _publishEndpoint.Publish<IUserBankAccountLinkedEvent>(new UserBankAccountLinkedEvent(
@@ -74,6 +73,6 @@ public class DeleteUserBankAccountCommandHandler : IRequestHandler<DeleteUserBan
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 
-        return ApiResponse<object>.SuccessResponse(new { }, "Xóa tài khoản ngân hàng thành công.");
+        return ApiResponse<object>.SuccessResponse(new { }, "Bank account deleted successfully.");
     }
 }

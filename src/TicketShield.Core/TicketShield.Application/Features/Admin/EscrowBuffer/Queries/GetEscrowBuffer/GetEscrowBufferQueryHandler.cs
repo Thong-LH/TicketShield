@@ -17,6 +17,6 @@ public class GetEscrowBufferQueryHandler : IRequestHandler<GetEscrowBufferQuery,
     public async Task<ApiResponse<EscrowBufferConfig>> Handle(GetEscrowBufferQuery request, CancellationToken cancellationToken)
     {
         var config = await _bufferSettings.GetAsync(cancellationToken);
-        return ApiResponse<EscrowBufferConfig>.SuccessResponse(config, "Lấy cấu hình thời gian trả tiền thành công.");
+        return ApiResponse<EscrowBufferConfig>.SuccessResponse(config, "Escrow settlement buffer configuration retrieved successfully.");
     }
 }

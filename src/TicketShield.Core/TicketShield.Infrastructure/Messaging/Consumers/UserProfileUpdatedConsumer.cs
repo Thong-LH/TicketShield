@@ -21,7 +21,7 @@ public class UserProfileUpdatedConsumer : IConsumer<IUserProfileUpdatedEvent>
     public async Task Consume(ConsumeContext<IUserProfileUpdatedEvent> context)
     {
         var msg = context.Message;
-        _logger.LogInformation("[EventBus] Nhận UserProfileUpdatedEvent cho UserId: {UserId}", msg.UserId);
+        _logger.LogInformation("[EventBus] Received UserProfileUpdatedEvent for UserId: {UserId}", msg.UserId);
 
         var existingShadowUser = await _context.ShadowUsers
             .FirstOrDefaultAsync(u => u.Id == msg.UserId, context.CancellationToken);
@@ -37,11 +37,11 @@ public class UserProfileUpdatedConsumer : IConsumer<IUserProfileUpdatedEvent>
             existingShadowUser.UpdatedAt = msg.UpdatedAt;
 
             await _context.SaveChangesAsync(context.CancellationToken);
-            _logger.LogInformation("[EventBus] Đã cập nhật thành công ShadowUser cho UserId: {UserId}", msg.UserId);
+            _logger.LogInformation("[EventBus] Successfully updated ShadowUser for UserId: {UserId}", msg.UserId);
         }
         else
         {
-            _logger.LogWarning("[EventBus] Không tìm thấy ShadowUser cho UserId: {UserId} để cập nhật profile", msg.UserId);
+            _logger.LogWarning("[EventBus] ShadowUser not found for UserId: {UserId} to update profile", msg.UserId);
         }
     }
 }

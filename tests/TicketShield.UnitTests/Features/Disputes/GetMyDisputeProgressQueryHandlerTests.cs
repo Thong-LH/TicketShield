@@ -115,7 +115,7 @@ public class GetMyDisputeProgressQueryHandlerTests
         });
 
         Assert.Contains("DP-MINE", json);
-        Assert.Contains("Khiếu nại chưa đủ căn cứ", json);
+        Assert.Contains(MyDisputeProgressMapper.BuyerRejectedMessage, json);
         Assert.DoesNotContain(StaffNote, json);
         Assert.DoesNotContain("NEW-1", json);
         Assert.DoesNotContain(DisputeRecommendation.RecommendRejectFraud, json);

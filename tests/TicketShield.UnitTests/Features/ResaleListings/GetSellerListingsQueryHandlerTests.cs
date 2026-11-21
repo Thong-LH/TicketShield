@@ -225,7 +225,7 @@ public class GetSellerListingsQueryHandlerTests
 
         // Act & Assert
         var ex = await Assert.ThrowsAsync<UnauthorizedException>(() => handler.Handle(query, CancellationToken.None));
-        Assert.Contains("đăng nhập", ex.Message);
+        Assert.Contains("signed in", ex.Message);
     }
 
     [Fact]

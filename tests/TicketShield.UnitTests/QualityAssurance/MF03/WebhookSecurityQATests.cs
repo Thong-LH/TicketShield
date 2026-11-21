@@ -108,7 +108,7 @@ public class WebhookSecurityQATests
         Assert.Equal(StatusCodes.Status401Unauthorized, unauthorizedResult.StatusCode);
         var apiResponse = Assert.IsType<ApiResponse<object>>(unauthorizedResult.Value);
         Assert.False(apiResponse.Success);
-        Assert.Contains("Thiếu header Authorization", apiResponse.Message);
+        Assert.Contains("Missing Authorization header", apiResponse.Message);
     }
 
     [Theory]
@@ -145,7 +145,7 @@ public class WebhookSecurityQATests
         Assert.Equal(StatusCodes.Status401Unauthorized, unauthorizedResult.StatusCode);
         var apiResponse = Assert.IsType<ApiResponse<object>>(unauthorizedResult.Value);
         Assert.False(apiResponse.Success);
-        Assert.Contains("không hợp lệ", apiResponse.Message);
+        Assert.Contains("Invalid", apiResponse.Message);
     }
 
     [Fact]
@@ -219,7 +219,7 @@ public class WebhookSecurityQATests
         var unauthorizedResult = Assert.IsType<UnauthorizedObjectResult>(result);
         Assert.Equal(StatusCodes.Status401Unauthorized, unauthorizedResult.StatusCode);
         var apiResponse = Assert.IsType<ApiResponse<object>>(unauthorizedResult.Value);
-        Assert.Contains("không hợp lệ", apiResponse.Message);
+        Assert.Contains("Invalid", apiResponse.Message);
     }
 
     [Fact]

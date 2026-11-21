@@ -19,7 +19,7 @@ public class UpdateEventResaleMarkupCommandHandler : IRequestHandler<UpdateEvent
     public async Task<ApiResponse<EventResaleMarkupDto>> Handle(UpdateEventResaleMarkupCommand request, CancellationToken cancellationToken)
     {
         var ev = await _db.Events.FirstOrDefaultAsync(e => e.Id == request.EventId, cancellationToken)
-            ?? throw new NotFoundException("Sự kiện", request.EventId);
+            ?? throw new NotFoundException("Event", request.EventId);
 
         ev.MaxResaleMarkupPercentage = request.MaxResaleMarkupPercentage;
         await _db.SaveChangesAsync(cancellationToken);
@@ -32,6 +32,6 @@ public class UpdateEventResaleMarkupCommandHandler : IRequestHandler<UpdateEvent
             Venue = ev.Venue,
             Category = ev.Category ?? "CONCERT",
             EventStartAt = ev.EventStartAt
-        }, "Cập nhật biên độ trần giá sự kiện thành công.");
+        }, "Event resale markup updated successfully.");
     }
 }

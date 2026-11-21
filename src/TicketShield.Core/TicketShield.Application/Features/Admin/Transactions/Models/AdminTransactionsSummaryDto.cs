@@ -1,34 +1,42 @@
 namespace TicketShield.Application.Features.Admin.Transactions.Models;
 
 /// <summary>
-/// Thống kê tổng hợp dòng tiền Ký quỹ và Giải ngân phục vụ Admin Dashboard / KPI Cards
-/// Đáp ứng yêu cầu SCRUM-333 / SCRUM-334 (BE-11.1.1)
+/// Summary cards of the Admin Transactions page (SCRUM-333 / SCRUM-334, SCRUM-390 / SCRUM-394).
+/// Every number is computed over the rows that match the current filters, across all pages.
+/// Money buckets follow <c>EscrowMoneyBuckets</c> so Inflow - Paid out - Refunded - Held equals Net revenue.
 /// </summary>
 public class AdminTransactionsSummaryDto
 {
     /// <summary>
-    /// Tổng số tiền cọc/ký quỹ đang bị giam giữ an toàn (Status = Locked hoặc InSettlementBuffer = true).
+    /// Inflow: total paid by buyers on escrows whose money reached the platform
+    /// (held statuses plus Released and Refunded).
+    /// </summary>
+    public decimal TotalInflowAmount { get; set; }
+
+    /// <summary>
+    /// Held in escrow: total paid by buyers on escrows the platform still holds
+    /// (Locked, Releasing, Disputed, RefundQueued, TransferNeedsReview).
+    /// Name kept from the all-time version so existing clients do not break.
     /// </summary>
     public decimal TotalEscrowLockedAmount { get; set; }
 
     /// <summary>
-    /// Số lượng giao dịch đang bị khóa ký quỹ chờ unlock.
+    /// Number of escrows counted in <see cref="TotalEscrowLockedAmount"/>.
     /// </summary>
     public int TotalLockedCount { get; set; }
 
     /// <summary>
-    /// Tổng số tiền đã giải ngân thành công cho người bán (Status = Released hoặc PayoutStatus = Success).
+    /// Paid out: total amount of seller payouts whose status is Success.
     /// </summary>
     public decimal TotalPayoutCompletedAmount { get; set; }
 
     /// <summary>
-    /// Tổng số tiền đã hoàn trả cho người mua (Status = Refunded).
+    /// Refunded: total paid by buyers on escrows with status Refunded.
     /// </summary>
     public decimal TotalRefundedAmount { get; set; }
 
     /// <summary>
-    /// Số lượng giao dịch đang có khiếu nại/tranh chấp.
+    /// In dispute: number of escrows whose status is Disputed right now. Resolved disputes are not counted.
     /// </summary>
     public int TotalDisputedCount { get; set; }
 }
-

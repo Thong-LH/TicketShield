@@ -47,14 +47,14 @@ public class DisputeEvidenceFileStore : IDisputeEvidenceFileStore
         var name = Path.GetFileName(storageKey);
         if (string.IsNullOrWhiteSpace(name) || !string.Equals(name, storageKey, StringComparison.Ordinal))
         {
-            throw new InvalidOperationException("Khóa ảnh không hợp lệ.");
+            throw new InvalidOperationException("Invalid storage key.");
         }
 
         var full = Path.GetFullPath(Path.Combine(_root, name));
         var rootWithSeparator = _root.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
         if (!full.StartsWith(rootWithSeparator, StringComparison.OrdinalIgnoreCase))
         {
-            throw new InvalidOperationException("Khóa ảnh không hợp lệ.");
+            throw new InvalidOperationException("Invalid storage key.");
         }
 
         return full;

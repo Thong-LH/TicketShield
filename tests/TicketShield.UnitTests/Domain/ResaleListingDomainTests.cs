@@ -46,6 +46,6 @@ public class ResaleListingDomainTests
 
         // Act & Assert
         var exception = Assert.Throws<BusinessRuleViolationException>(() => listing.ValidatePriceCeiling(0m));
-        Assert.Contains("không được vượt quá", exception.Message);
+        Assert.Contains("cannot exceed", exception.Message);
     }
 }

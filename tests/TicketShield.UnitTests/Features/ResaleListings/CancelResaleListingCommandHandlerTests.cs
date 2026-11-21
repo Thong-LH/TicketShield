@@ -180,7 +180,7 @@ public class CancelResaleListingCommandHandlerTests
         // Act & Assert
         var ex = await Assert.ThrowsAsync<BusinessRuleViolationException>(
             () => handler.Handle(command, CancellationToken.None));
-        Assert.Contains("Chỉ có thể hủy tin đăng khi vé chưa bị người mua đặt hoặc mua", ex.Message);
+        Assert.Contains("when tickets have not been reserved or purchased by a buyer", ex.Message);
     }
 
     [Fact]
@@ -251,7 +251,7 @@ public class CancelResaleListingCommandHandlerTests
         // Act & Assert
         var ex = await Assert.ThrowsAsync<BusinessRuleViolationException>(
             () => handler.Handle(command, CancellationToken.None));
-        Assert.Contains("Không thể mở khóa trọn gói vé với Ban Tổ Chức (đã mở khóa 0/1 vé)", ex.Message);
+        Assert.Contains("Unable to unlock all tickets with the Organizer (unlocked 0/1 tickets)", ex.Message);
 
         // Verify database listing status remains Verified (not Cancelled)
         var dbListing = await dbContext.ResaleListings.FindAsync(listing.Id);
@@ -413,7 +413,7 @@ public class CancelResaleListingCommandHandlerTests
         var ex = await Assert.ThrowsAsync<BusinessRuleViolationException>(
             () => handler.Handle(new CancelResaleListingCommand(stillListed.Id), CancellationToken.None));
 
-        Assert.Contains("Không thể hủy gói vé", ex.Message);
+        Assert.Contains("The bundle cannot be cancelled", ex.Message);
         Assert.Equal(0, unlocks.CancelCalls);
         Assert.Equal(ListingStatus.Verified, (await dbContext.ResaleListings.FindAsync(stillListed.Id))!.ListingStatus);
         Assert.Equal(siblingStatus, (await dbContext.ResaleListings.FindAsync(blocked.Id))!.ListingStatus);
@@ -460,7 +460,7 @@ public class CancelResaleListingCommandHandlerTests
 
         var ex = await Assert.ThrowsAsync<BusinessRuleViolationException>(
             () => handler.Handle(new CancelResaleListingCommand(first.Id), CancellationToken.None));
-        Assert.Contains("Không thể mở khóa trọn gói vé với Ban Tổ Chức (đã mở khóa 1/2 vé)", ex.Message);
+        Assert.Contains("Unable to unlock all tickets with the Organizer (unlocked 1/2 tickets)", ex.Message);
 
         Assert.Equal(2, unlocks.CancelCalls);
         Assert.Equal(ListingStatus.Verified, (await dbContext.ResaleListings.FindAsync(first.Id))!.ListingStatus);

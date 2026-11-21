@@ -7,7 +7,7 @@ public class ForgotPasswordCommandValidator : AbstractValidator<ForgotPasswordCo
     public ForgotPasswordCommandValidator()
     {
         RuleFor(v => v.Email)
-            .NotEmpty().WithMessage("Email không được để trống.")
-            .EmailAddress().WithMessage("Email không đúng định dạng.");
+            .NotEmpty().WithMessage("Email is required.")
+            .EmailAddress().WithMessage("Invalid email format.");
     }
 }

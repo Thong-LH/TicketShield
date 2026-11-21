@@ -103,7 +103,7 @@ public class PayoutReportApplier : IPayoutReportApplier
         }
 
         payout.Status = PayoutStatus.Failed;
-        payout.LastErrorMessage = "STK không hợp lệ";
+        payout.LastErrorMessage = "Invalid bank account number";
         payout.UpdatedAt = now;
 
         // FIX Lỗi 02: Khôi phục escrow.Status về Locked và tắt InSettlementBuffer
@@ -151,12 +151,12 @@ public class PayoutReportApplier : IPayoutReportApplier
             var grossPrice = escrow.Listing?.ResalePrice ?? (escrow.NetSellerPayout + escrow.SellerFee);
             if (grossPrice <= 0) grossPrice = escrow.NetSellerPayout;
             var sellerFee = escrow.SellerFee > 0 ? escrow.SellerFee : Math.Max(grossPrice - escrow.NetSellerPayout, 0);
-            var eventName = escrow.Listing?.Event?.Name ?? "Vé Sự Kiện TicketShield";
-            var tierName = escrow.Listing?.Tier?.TierName ?? "Hạng vé tiêu chuẩn";
+            var eventName = escrow.Listing?.Event?.Name ?? "TicketShield Event Ticket";
+            var tierName = escrow.Listing?.Tier?.TierName ?? "Standard Pass";
             var ticketCode = escrow.Listing?.OriginalTicketCode ?? escrow.NewTicketCode ?? "N/A";
             var displayName = !string.IsNullOrWhiteSpace(sellerName)
                 ? sellerName
-                : (payout.RecipientAccountName ?? "Quý khách");
+                : (payout.RecipientAccountName ?? "Valued Customer");
 
             var html = _emailTemplates!.GetSellerPayoutStatementEmailHtml(
                 sellerName: displayName,
@@ -177,7 +177,7 @@ public class PayoutReportApplier : IPayoutReportApplier
 
             await _emailService!.SendEmailAsync(
                 sellerEmail,
-                $"[TicketShield] Sao kê giải ngân bán vé #{payout.PayoutCode} - Thành công",
+                $"[TicketShield] Payout Statement #{payout.PayoutCode} - Successful",
                 html,
                 cancellationToken);
 

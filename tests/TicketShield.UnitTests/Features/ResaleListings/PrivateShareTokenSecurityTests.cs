@@ -181,7 +181,7 @@ public class PrivateShareTokenSecurityTests
             () => handler.Handle(new CancelResaleListingCommand(listing.Id), CancellationToken.None));
 
         // Assert — no half-cancel: the listing is untouched and buyers with the link still see it on sale
-        Assert.Contains("Không thể mở khóa", error.Message);
+        Assert.Contains("Unable to unlock all tickets", error.Message);
         Assert.Equal(1, organizer.UnlockCalls);
         db.ChangeTracker.Clear();
         Assert.Equal(ListingStatus.Verified, (await db.ResaleListings.SingleAsync()).ListingStatus);

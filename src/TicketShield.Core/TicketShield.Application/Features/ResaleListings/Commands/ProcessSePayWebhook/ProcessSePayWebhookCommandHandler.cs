@@ -59,7 +59,7 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
                     EscrowStatus = "Ignored",
                     ListingStatus = "Ignored"
                 },
-                "Đã ghi nhận Webhook nhưng bỏ qua do không phải giao dịch tiền vào (transferType != 'in').");
+                "Webhook received but ignored because it is not an incoming payment transaction (transferType != 'in').");
         }
 
         // 2. Extract PaymentReference (Format: TS + 8 alphanumeric = 10 chars)
@@ -88,7 +88,7 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
 
         if (string.IsNullOrWhiteSpace(paymentReference))
         {
-            throw new BusinessRuleViolationException("Không thể tìm thấy mã thanh toán hợp lệ (dạng TSXXXXXXXX) trong nội dung chuyển khoản.");
+            throw new BusinessRuleViolationException("Unable to find a valid payment reference (format TSXXXXXXXX) in transaction content.");
         }
 
         // 3. Find EscrowTransaction by PaymentReference
@@ -109,7 +109,7 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
 
         if (escrow == null)
         {
-            throw new NotFoundException("Giao dịch ký quỹ", paymentReference);
+            throw new NotFoundException("Escrow transaction", paymentReference);
         }
 
         var bankTxRef = string.IsNullOrWhiteSpace(payload.ReferenceCode)
@@ -135,7 +135,7 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
                     BankTransactionReference = bankTxRef,
                     IsIdempotentDuplicate = true
                 },
-                "Giao dịch thanh toán này đã được xử lý trước đó (Payment Idempotency).");
+                "This payment transaction has already been processed (Payment Idempotency).");
         }
 
         // 5. Validate Listing & Escrow status.
@@ -143,14 +143,14 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
         // instead of throwing (buyer may transfer after clicking cancel).
         if (escrow.Status != EscrowStatus.Pending && escrow.Status != EscrowStatus.Cancelled)
         {
-            throw new BusinessRuleViolationException($"Giao dịch ký quỹ đang ở trạng thái '{escrow.Status}' và không thể khóa.");
+            throw new BusinessRuleViolationException($"Escrow transaction is currently in '{escrow.Status}' status and cannot be locked.");
         }
 
         // 6. Validate Payment Amount
         if (payload.TransferAmount < escrow.TotalBuyerPaid)
         {
             throw new BusinessRuleViolationException(
-                $"Số tiền thanh toán ({payload.TransferAmount:N0} VNĐ) nhỏ hơn tổng số tiền cần trả ({escrow.TotalBuyerPaid:N0} VNĐ).");
+                $"Payment amount ({payload.TransferAmount:N0} VNĐ) is less than total required amount ({escrow.TotalBuyerPaid:N0} VNĐ).");
         }
 
         // 7. Lock Escrow while THIS hold window is still open.
@@ -227,7 +227,7 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
                     BankTransactionReference = bankTxRef,
                     IsIdempotentDuplicate = false
                 },
-                "Thanh toán đến sau khi hết hạn giữ chỗ. Giao dịch đã đưa vào hàng đợi hoàn tiền.");
+                "Payment arrived after reservation hold expired. Transaction has been queued for refund.");
         }
 
         var issuedTickets = new List<IssuedTicket>();
@@ -242,7 +242,6 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
         if (escrowSelectedListingIds.Count > 0)
         {
             listingsToTransfer = await _dbContext.ResaleListings
-                .Include(l => l.Ticket)
                 .Include(l => l.Event)
                 .Where(l => escrowSelectedListingIds.Contains(l.Id))
                 .OrderBy(l => l.CreatedAt)
@@ -252,7 +251,6 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
         else if (escrow.BundleId.HasValue)
         {
             var bundleListings = await _dbContext.ResaleListings
-                .Include(l => l.Ticket)
                 .Include(l => l.Event)
                 .Where(l => l.BundleId == escrow.BundleId)
                 .OrderBy(l => l.CreatedAt)
@@ -262,7 +260,7 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
             if (bundleListings.Count < 2 || bundleListings.Count > ResaleListing.MaxBundleTickets)
             {
                 throw new BusinessRuleViolationException(
-                    $"Gói vé không hợp lệ: cần từ 2 đến {ResaleListing.MaxBundleTickets} vé thật nhưng chỉ tìm thấy {bundleListings.Count} vé. Giao dịch bị từ chối.");
+                    $"Invalid ticket bundle: requires 2 to {ResaleListing.MaxBundleTickets} actual tickets, but found {bundleListings.Count} tickets. Transaction rejected.");
             }
 
             listingsToTransfer = bundleListings;
@@ -328,7 +326,7 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
                         BankTransactionReference = bankTxRef,
                         IsIdempotentDuplicate = false
                     },
-                    "Giao dịch cần đối soát (TransferNeedsReview): Quá trình chuyển tên vé gặp sự cố mạng hoặc chuyển dở dang. Tiền được giữ an toàn trong két chờ đối soát.");
+                    "Transaction requires review (TransferNeedsReview): Ticket transfer encountered a network error or partial transfer. Funds are held safely in escrow pending reconciliation.");
             }
             else
             {
@@ -372,7 +370,7 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
                         BankTransactionReference = bankTxRef,
                         IsIdempotentDuplicate = false
                     },
-                    "Xử lý bù trừ (Saga Compensation) thành công: Chuyển tên vé thất bại, đã rollback vé và đưa giao dịch vào luồng hoàn tiền 100%.");
+                    "Saga Compensation executed successfully: Ticket transfer failed; rolled back tickets and queued transaction for 100% refund.");
             }
         }
 
@@ -409,6 +407,11 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
                     UpdatedAt = now
                 };
                 await _dbContext.Tickets.AddAsync(buyerTicket, cancellationToken);
+            }
+
+            if (escrow.Listing != null)
+            {
+                escrow.Listing.ListingStatus = ListingStatus.Sold;
             }
 
             // Release remaining listings in the bundle that were held but not purchased
@@ -474,7 +477,7 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
                     BankTransactionReference = bankTxRef,
                     IsIdempotentDuplicate = false
                 },
-                "Giao dịch cần đối soát (TransferNeedsReview): Đã chuyển tên tại BTC nhưng lưu DB gặp lỗi. Dữ liệu đã được bảo toàn để recovery worker hoàn tất.");
+                "Transaction requires review (TransferNeedsReview): Ticket transferred at Organizer but database save failed. Data preserved for recovery worker.");
         }
         await TrySendLockEmailsAsync(escrow, issuedTickets, cancellationToken);
 
@@ -516,7 +519,7 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
             ListingId = escrow.ListingId,
             PaymentReference = escrow.PaymentReference ?? paymentReference,
             EscrowStatus = escrow.Status.ToString(),
-            ListingStatus = escrow.Listing?.ListingStatus.ToString() ?? ListingStatus.Sold.ToString(),
+            ListingStatus = ListingStatus.Sold.ToString(),
             TransferAmount = payload.TransferAmount,
             BankTransactionReference = bankTxRef,
             IsIdempotentDuplicate = false
@@ -524,7 +527,7 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
 
         return ApiResponse<ProcessSePayWebhookResponse>.SuccessResponse(
             response,
-            "Xử lý Webhook thanh toán thành công! Đã khóa Escrow và xác nhận bán vé.");
+            "Payment webhook processed successfully! Escrow locked and ticket purchase confirmed.");
     }
 
     private async Task TrySendLockEmailsAsync(
@@ -569,8 +572,8 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
                 await _emailService.SendEmailAsync(
                     buyerTo,
                     issuedTickets.Count > 1
-                        ? $"TicketShield — Vé {issuedIndex + 1}/{issuedTickets.Count} đã được cấp"
-                        : "TicketShield — Xác nhận thanh toán vé",
+                        ? $"TicketShield — Ticket {issuedIndex + 1}/{issuedTickets.Count} issued"
+                        : "TicketShield — Ticket Payment Confirmation",
                     buyerHtml,
                     cancellationToken);
             }
@@ -588,7 +591,7 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
                 escrow.PaymentReference ?? string.Empty);
             await _emailService.SendEmailAsync(
                 escrow.Seller.Email,
-                "TicketShield — Tiền đã được ký quỹ",
+                "TicketShield — Escrow Funds Secured",
                 sellerHtml,
                 cancellationToken);
         }
@@ -612,8 +615,8 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
                 : escrow.RecipientEmail;
             await _emailService.SendEmailAsync(
                 buyerTo,
-                "TicketShield — Thanh toán đến muộn, đang hoàn tiền",
-                $"<p>Xin chào {escrow.Buyer.FullName},</p><p>Tiền chuyển khoản {transferAmount:N0} VNĐ đến sau 10 phút giữ chỗ. Giao dịch {escrow.PaymentReference} đã đưa vào hàng đợi hoàn tiền. Vé đã được mở bán lại.</p>",
+                "TicketShield — Late payment received, refund in progress",
+                $"<p>Hello {escrow.Buyer.FullName},</p><p>Your payment of {transferAmount:N0} VNĐ was received after the 10-minute hold window expired. Transaction {escrow.PaymentReference} has been queued for a full refund. The ticket has been returned to the marketplace.</p>",
                 cancellationToken);
         }
         catch (Exception ex)
@@ -656,7 +659,7 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
                 if (string.IsNullOrWhiteSpace(currentNewCode))
                 {
                     throw new BusinessRuleViolationException(
-                        $"Không nhận được mã vé mới từ BTC Organizer cho vé {listing.OriginalTicketCode}. Giao dịch bị huỷ để bảo vệ Buyer.");
+                        $"Did not receive a new ticket code from Organizer for ticket {listing.OriginalTicketCode}. Transaction cancelled to protect buyer.");
                 }
             }
             else
@@ -666,7 +669,7 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
                 // TUYỆT ĐỐI KHÔNG fallback sang OriginalTicketCode cũ của Seller.
                 // Kích hoạt Saga Compensation: rollback listing, hoàn tiền Buyer.
                 throw new BusinessRuleViolationException(
-                    $"Sang tên vé thất bại: BTC Organizer không xác nhận phiên sang tên cho vé {listing.OriginalTicketCode}. Giao dịch bị huỷ để bảo vệ Buyer.");
+                    $"Ticket transfer failed: Organizer did not confirm transfer session for ticket {listing.OriginalTicketCode}. Transaction cancelled to protect buyer.");
             }
         }
         else
@@ -679,7 +682,7 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
 
         if (string.IsNullOrWhiteSpace(currentNewCode))
         {
-            throw new BusinessRuleViolationException($"Không thể xác định mã vé hợp lệ cho vé {listing.OriginalTicketCode}.");
+            throw new BusinessRuleViolationException($"Cannot determine a valid ticket code for ticket {listing.OriginalTicketCode}.");
         }
 
         return new IssuedTicket(listing.Id, currentNewCode, currentQrCode ?? currentNewCode, listing.SeatZone);

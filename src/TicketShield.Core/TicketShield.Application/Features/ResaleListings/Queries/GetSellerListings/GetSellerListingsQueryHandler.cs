@@ -23,7 +23,7 @@ public class GetSellerListingsQueryHandler : IRequestHandler<GetSellerListingsQu
         var sellerId = _currentUserService?.UserId ?? Guid.Empty;
         if (sellerId == Guid.Empty)
         {
-            throw new UnauthorizedException("Bạn phải đăng nhập để xem danh sách vé.");
+            throw new UnauthorizedException("You must be signed in to view your ticket listings.");
         }
 
         // 2. Query seller's resale listings with Event and Tier navigation
@@ -103,6 +103,6 @@ public class GetSellerListingsQueryHandler : IRequestHandler<GetSellerListingsQu
             };
         }).ToList();
 
-        return ApiResponse<List<SellerListingDto>>.SuccessResponse(dtos, "Lấy danh sách vé niêm yết của người bán thành công.");
+        return ApiResponse<List<SellerListingDto>>.SuccessResponse(dtos, "Seller ticket listings retrieved successfully.");
     }
 }

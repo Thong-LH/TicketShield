@@ -22,7 +22,7 @@ public class GetAdminOrganizerDetailQueryHandler(ITicketShieldDbContext dbContex
 
         if (organizer == null)
         {
-            throw new NotFoundException($"Không tìm thấy ban tổ chức với ID '{request.Id}'.");
+            throw new NotFoundException($"Organizer not found with ID '{request.Id}'.");
         }
 
         var dto = new AdminOrganizerDto(
@@ -56,6 +56,6 @@ public class GetAdminOrganizerDetailQueryHandler(ITicketShieldDbContext dbContex
             )).ToList()
         );
 
-        return ApiResponse<AdminOrganizerDto>.SuccessResponse(dto, "Lấy thông tin ban tổ chức thành công.");
+        return ApiResponse<AdminOrganizerDto>.SuccessResponse(dto, "Organizer details retrieved successfully.");
     }
 }

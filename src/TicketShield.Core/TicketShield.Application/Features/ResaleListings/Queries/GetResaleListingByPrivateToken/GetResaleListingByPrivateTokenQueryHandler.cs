@@ -22,7 +22,7 @@ public class GetResaleListingByPrivateTokenQueryHandler : IRequestHandler<GetRes
         var cleanToken = request.ShareToken?.Trim();
         if (string.IsNullOrWhiteSpace(cleanToken))
         {
-            throw new NotFoundException("Liên kết bán riêng tư không hợp lệ hoặc đã bị hủy.");
+            throw new NotFoundException("Invalid or cancelled private share link.");
         }
 
         var listing = await _dbContext.ResaleListings
@@ -34,7 +34,7 @@ public class GetResaleListingByPrivateTokenQueryHandler : IRequestHandler<GetRes
 
         if (listing == null)
         {
-            throw new NotFoundException("Liên kết bán riêng tư không hợp lệ hoặc đã bị hủy.");
+            throw new NotFoundException("Invalid or cancelled private share link.");
         }
 
         var detailDto = listing.ToDetailDto();
@@ -57,6 +57,6 @@ public class GetResaleListingByPrivateTokenQueryHandler : IRequestHandler<GetRes
             }
         }
 
-        return ApiResponse<ResaleListingDetailDto>.SuccessResponse(detailDto, "Lấy thông tin vé bán riêng tư thành công.");
+        return ApiResponse<ResaleListingDetailDto>.SuccessResponse(detailDto, "Private ticket details retrieved successfully.");
     }
 }

@@ -20,10 +20,10 @@ public static class MyDisputeProgressMapper
     public const string StatePending = "PENDING";
     public const string StateSkipped = "SKIPPED";
 
-    public const string BuyerRefundedMessage = "Khiếu nại của bạn được chấp nhận. Bạn được hoàn lại số tiền đã thanh toán.";
-    public const string BuyerRejectedMessage = "Khiếu nại chưa đủ căn cứ để hoàn tiền. Khoản thanh toán được chuyển cho người bán.";
-    public const string SellerRefundedMessage = "Khiếu nại của người mua được chấp nhận. Khoản thanh toán được hoàn lại cho người mua.";
-    public const string SellerRejectedMessage = "Khiếu nại của người mua không được chấp nhận. Tiền bán vé sẽ được chuyển cho bạn.";
+    public const string BuyerRefundedMessage = "Your dispute has been accepted. You will receive a full refund.";
+    public const string BuyerRejectedMessage = "Your dispute had insufficient grounds for a refund. Payment has been released to the seller.";
+    public const string SellerRefundedMessage = "The buyer's dispute was accepted. Payment has been refunded to the buyer.";
+    public const string SellerRejectedMessage = "The buyer's dispute was rejected. Ticket sale proceeds will be transferred to you.";
 
     // Cần dispute đã nạp Escrow và Escrow.PayoutTransaction.
     public static MyDisputeProgressDto Build(Dispute dispute, DisputeViewerRole viewer)

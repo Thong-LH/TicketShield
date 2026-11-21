@@ -43,7 +43,7 @@ public class CreateMultiResaleListingCommandHandler : IRequestHandler<CreateMult
 
         if (string.IsNullOrWhiteSpace(seller))
         {
-            throw new UnauthorizedException("Bạn phải đăng nhập để thực hiện đăng bán vé.");
+            throw new UnauthorizedException("You must be signed in to list tickets for sale.");
         }
 
         // 2. Validate dữ liệu đầu vào
@@ -158,13 +158,13 @@ public class CreateMultiResaleListingCommandHandler : IRequestHandler<CreateMult
                 publishedItems,
                 bundlePrivateToken);
 
-            return ApiResponse<BulkPublishResult>.SuccessResponse(result, "Đăng bán danh sách vé thành công.");
+            return ApiResponse<BulkPublishResult>.SuccessResponse(result, "Ticket listings published successfully.");
         }
         catch (Exception ex)
         {
             // Nếu bất kỳ vé nào gặp sự cố, rollback toàn bộ transaction ngay lập tức, không để vé mồ côi
             await tx.RollbackAsync(cancellationToken);
-            _logger?.LogError(ex, "Đăng bán batch vé thất bại, đã rollback toàn bộ database transaction.");
+            _logger?.LogError(ex, "Failed to publish batch ticket listings, database transaction has been rolled back.");
             throw;
         }
     }

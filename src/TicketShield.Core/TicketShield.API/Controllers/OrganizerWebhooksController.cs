@@ -53,7 +53,7 @@ public class OrganizerWebhooksController : ApiControllerBase
         if (string.IsNullOrWhiteSpace(providedSecret) || !string.Equals(providedSecret, secret, StringComparison.Ordinal))
         {
             _logger.LogWarning("Organizer webhook unauthorized. Missing or invalid secret.");
-            return Unauthorized(ApiResponse<object>.FailureResponse("Truy cập bị từ chối: Secret Webhook Ban tổ chức không hợp lệ."));
+            return Unauthorized(ApiResponse<object>.FailureResponse("Access denied: Invalid Organizer Webhook secret."));
         }
 
         var result = await Mediator.Send(new ProcessTicketUsedWebhookCommand(payload));

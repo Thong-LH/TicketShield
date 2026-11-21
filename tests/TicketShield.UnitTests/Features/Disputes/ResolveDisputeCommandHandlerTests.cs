@@ -121,7 +121,7 @@ public class ResolveDisputeCommandHandlerTests
         var ex = await Assert.ThrowsAsync<BusinessRuleViolationException>(() =>
             handler.Handle(Command(seeded.DisputeId, DisputeDecision.Approve, "Đồng ý hoàn"), CancellationToken.None));
 
-        Assert.Equal("Người mua chưa liên kết tài khoản ngân hàng để nhận tiền hoàn.", ex.Message);
+        Assert.Equal("Buyer has not linked a bank account to receive the refund.", ex.Message);
         db.ChangeTracker.Clear();
         Assert.Equal(422, await StatusCodeOf(ex));
         Assert.Equal(DisputeStatus.Open, (await db.Disputes.AsNoTracking().SingleAsync()).Status);

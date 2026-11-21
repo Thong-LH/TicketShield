@@ -89,6 +89,6 @@ public class GetMarketplaceListingsQueryHandler : IRequestHandler<GetMarketplace
             .ToList();
         var paginatedList = new PaginatedList<ResaleListingDetailDto>(dtos, totalCount, page, size);
 
-        return ApiResponse<PaginatedList<ResaleListingDetailDto>>.SuccessResponse(paginatedList, "Lấy danh sách vé thị trường thành công.");
+        return ApiResponse<PaginatedList<ResaleListingDetailDto>>.SuccessResponse(paginatedList, "Marketplace ticket listings retrieved successfully.");
     }
 }

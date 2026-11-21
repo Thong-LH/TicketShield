@@ -27,7 +27,7 @@ public class LookupAccountHolderNameQueryHandler
         {
             return ApiResponse<LookupAccountHolderNameResult>.SuccessResponse(
                 new LookupAccountHolderNameResult { Success = false, AccountName = string.Empty, IsVerified = false },
-                "Thông tin không hợp lệ.");
+                "Invalid lookup parameters.");
         }
 
         try
@@ -62,7 +62,7 @@ public class LookupAccountHolderNameQueryHandler
                             AccountName = data.Data.OwnerName.ToUpper(),
                             IsVerified = true
                         },
-                        "Tra cứu tên tài khoản thành công qua BankLookup.");
+                        "Account holder name retrieved successfully via BankLookup.");
                 }
             }
         }
@@ -73,7 +73,7 @@ public class LookupAccountHolderNameQueryHandler
 
         return ApiResponse<LookupAccountHolderNameResult>.SuccessResponse(
             new LookupAccountHolderNameResult { Success = false, AccountName = string.Empty, IsVerified = false },
-            "Không thể tra cứu tên tài khoản tự động. Vui lòng nhập thủ công.");
+            "Unable to look up account holder name automatically. Please enter it manually.");
     }
 
     private class BankLookupResponse

@@ -28,16 +28,16 @@ public class RefreshTokenCommandHandler : IRequestHandler<RefreshTokenCommand, A
 
         if (existingRefreshToken == null || !existingRefreshToken.IsActive)
         {
-            throw new UnauthorizedException("Phiên làm việc đã hết hạn hoặc Refresh Token không hợp lệ. Vui lòng đăng nhập lại.");
+            throw new UnauthorizedException("Session has expired or refresh token is invalid. Please sign in again.");
         }
 
         var user = existingRefreshToken.User;
         if (!user.IsActive)
         {
-            throw new UnauthorizedException("Tài khoản của bạn đã bị khóa. Vui lòng liên hệ quản trị viên.");
+            throw new UnauthorizedException("Your account has been suspended. Please contact administrator.");
         }
 
-        // Token Rotation: thu hồi token hiện tại và sinh token mới
+        // Token Rotation: revoke current token and generate a new one
         var newRefreshToken = _jwtTokenGenerator.GenerateRefreshToken(user.Id, request.IpAddress);
         existingRefreshToken.RevokedAt = DateTimeOffset.UtcNow;
         existingRefreshToken.RevokedByIp = request.IpAddress;
@@ -57,6 +57,6 @@ public class RefreshTokenCommandHandler : IRequestHandler<RefreshTokenCommand, A
             User = UserProfileDto.FromUser(user)
         };
 
-        return ApiResponse<AuthResponse>.SuccessResponse(response, "Làm mới mã truy cập thành công.");
+        return ApiResponse<AuthResponse>.SuccessResponse(response, "Access token refreshed successfully.");
     }
 }

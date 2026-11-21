@@ -11,6 +11,6 @@ public class UpdateEventResaleMarkupCommandValidator : AbstractValidator<UpdateE
 
         RuleFor(x => x.MaxResaleMarkupPercentage)
             .InclusiveBetween(0m, 100m)
-            .WithMessage("Biên độ trần giá (maxResaleMarkupPercentage) phải nằm trong khoảng 0% đến 100%.");
+            .WithMessage("Max resale markup percentage (maxResaleMarkupPercentage) must be between 0% and 100%.");
     }
 }

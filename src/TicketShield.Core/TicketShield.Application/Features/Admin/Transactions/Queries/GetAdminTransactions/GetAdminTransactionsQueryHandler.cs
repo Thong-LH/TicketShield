@@ -1,8 +1,10 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using TicketShield.Application.Common.Helpers;
 using TicketShield.Application.Common.Interfaces;
 using TicketShield.Application.Common.Models;
 using TicketShield.Application.Features.Admin.Transactions.Models;
+using TicketShield.Domain.Entities;
 using TicketShield.Domain.Enums;
 
 namespace TicketShield.Application.Features.Admin.Transactions.Queries.GetAdminTransactions;
@@ -25,88 +27,41 @@ public class GetAdminTransactionsQueryHandler : IRequestHandler<GetAdminTransact
         var page = request.Page > 0 ? request.Page : 1;
         var size = request.Size > 0 ? request.Size : 20;
 
-        // 1. Tính toán số liệu thống kê tổng hợp (Summary Metrics) toàn hệ thống cho Admin
-        var baseAllQuery = _dbContext.EscrowTransactions.AsNoTracking();
+        // 1. Every filter the table applies. The summary cards and the table read the same rows (SCRUM-394).
+        var query = ApplyFilters(_dbContext.EscrowTransactions.AsNoTracking(), request);
 
-        var totalEscrowLockedAmount = await baseAllQuery
-            .Where(e => e.Status == EscrowStatus.Locked || e.InSettlementBuffer)
-            .SumAsync(e => (decimal?)e.NetSellerPayout, cancellationToken) ?? 0m;
+        // 2. Summary cards over the filtered rows, across all pages.
+        //    Money buckets are shared with the Admin Dashboard so Inflow - Paid out - Refunded - Held = Net revenue.
+        var totalInflowAmount = await query
+            .Where(EscrowMoneyBuckets.IsInflow)
+            .SumAsync(e => (decimal?)e.TotalBuyerPaid, cancellationToken) ?? 0m;
 
-        var totalLockedCount = await baseAllQuery
-            .CountAsync(e => e.Status == EscrowStatus.Locked || e.InSettlementBuffer, cancellationToken);
+        var heldQuery = query.Where(EscrowMoneyBuckets.IsHeld);
+        var totalEscrowLockedAmount = await heldQuery
+            .SumAsync(e => (decimal?)e.TotalBuyerPaid, cancellationToken) ?? 0m;
+        var totalLockedCount = await heldQuery.CountAsync(cancellationToken);
 
-        var totalPayoutCompletedAmount = await baseAllQuery
-            .Where(e => e.Status == EscrowStatus.Released)
-            .SumAsync(e => (decimal?)e.NetSellerPayout, cancellationToken) ?? 0m;
+        var totalPayoutCompletedAmount = await query
+            .Where(EscrowMoneyBuckets.HasSuccessfulPayout)
+            .SumAsync(e => (decimal?)e.PayoutTransaction!.Amount, cancellationToken) ?? 0m;
 
-        var totalRefundedAmount = await baseAllQuery
+        var totalRefundedAmount = await query
             .Where(e => e.Status == EscrowStatus.Refunded)
             .SumAsync(e => (decimal?)e.TotalBuyerPaid, cancellationToken) ?? 0m;
 
-        var totalDisputedCount = await baseAllQuery
-            .CountAsync(e => e.Status == EscrowStatus.Disputed || e.Dispute != null, cancellationToken);
+        var totalDisputedCount = await query
+            .CountAsync(e => e.Status == EscrowStatus.Disputed, cancellationToken);
 
-        // 2. Xây dựng truy vấn lọc danh sách giao dịch
-        var query = _dbContext.EscrowTransactions
-            .AsNoTracking()
+        var totalCount = await query.CountAsync(cancellationToken);
+
+        // 3. Load the requested page with everything the table and the detail drawer show, newest first.
+        var items = await query
             .Include(e => e.Listing)
                 .ThenInclude(l => l.Event)
             .Include(e => e.Buyer)
             .Include(e => e.Seller)
             .Include(e => e.PayoutTransaction)
             .Include(e => e.Dispute)
-            .AsQueryable();
-
-        // Lọc theo trạng thái Escrow
-        if (request.Status.HasValue)
-        {
-            query = query.Where(e => e.Status == request.Status.Value);
-        }
-
-        // Lọc theo trạng thái giải ngân Payout
-        if (request.PayoutStatus.HasValue)
-        {
-            query = query.Where(e => e.PayoutTransaction != null && e.PayoutTransaction.Status == request.PayoutStatus.Value);
-        }
-
-        // Lọc theo cờ đệm an toàn (Settlement Buffer)
-        if (request.InSettlementBufferOnly.HasValue && request.InSettlementBufferOnly.Value)
-        {
-            query = query.Where(e => e.InSettlementBuffer);
-        }
-
-        // Lọc theo khoảng ngày tạo (chuẩn hóa về UTC phòng thủ múi giờ)
-        if (request.FromDate.HasValue)
-        {
-            var fromUtc = request.FromDate.Value.ToUniversalTime();
-            query = query.Where(e => e.CreatedAt >= fromUtc);
-        }
-
-        if (request.ToDate.HasValue)
-        {
-            var toUtc = request.ToDate.Value.ToUniversalTime();
-            query = query.Where(e => e.CreatedAt <= toUtc);
-        }
-
-        // Tìm kiếm từ khóa
-        if (!string.IsNullOrWhiteSpace(request.Keyword))
-        {
-            var kw = request.Keyword.Trim().ToLower();
-            query = query.Where(e =>
-                (e.PaymentReference != null && e.PaymentReference.ToLower().Contains(kw)) ||
-                (e.BankTransactionReference != null && e.BankTransactionReference.ToLower().Contains(kw)) ||
-                (e.NewTicketCode != null && e.NewTicketCode.ToLower().Contains(kw)) ||
-                (e.Listing != null && e.Listing.OriginalTicketCode.ToLower().Contains(kw)) ||
-                (e.Listing != null && e.Listing.Event != null && e.Listing.Event.Name.ToLower().Contains(kw)) ||
-                (e.Buyer != null && (e.Buyer.FullName.ToLower().Contains(kw) || e.Buyer.Email.ToLower().Contains(kw))) ||
-                (e.Seller != null && (e.Seller.FullName.ToLower().Contains(kw) || e.Seller.Email.ToLower().Contains(kw))) ||
-                (e.PayoutTransaction != null && e.PayoutTransaction.PayoutCode.ToLower().Contains(kw)));
-        }
-
-        var totalCount = await query.CountAsync(cancellationToken);
-
-        // 3. Phân trang và sắp xếp giảm dần theo thời gian tạo
-        var items = await query
             .OrderByDescending(e => e.CreatedAt)
             .Skip((page - 1) * size)
             .Take(size)
@@ -169,6 +124,7 @@ public class GetAdminTransactionsQueryHandler : IRequestHandler<GetAdminTransact
             Transactions = paginatedList,
             Summary = new AdminTransactionsSummaryDto
             {
+                TotalInflowAmount = totalInflowAmount,
                 TotalEscrowLockedAmount = totalEscrowLockedAmount,
                 TotalLockedCount = totalLockedCount,
                 TotalPayoutCompletedAmount = totalPayoutCompletedAmount,
@@ -177,6 +133,57 @@ public class GetAdminTransactionsQueryHandler : IRequestHandler<GetAdminTransact
             }
         };
 
-        return ApiResponse<AdminTransactionsResponseDto>.SuccessResponse(result, "Lấy danh sách giao dịch ký quỹ và sổ cái giải ngân thành công.");
+        return ApiResponse<AdminTransactionsResponseDto>.SuccessResponse(result, "Admin escrow transactions and payout ledger retrieved successfully.");
+    }
+
+    private static IQueryable<EscrowTransaction> ApplyFilters(IQueryable<EscrowTransaction> query, GetAdminTransactionsQuery request)
+    {
+        // Lọc theo trạng thái Escrow
+        if (request.Status.HasValue)
+        {
+            query = query.Where(e => e.Status == request.Status.Value);
+        }
+
+        // Lọc theo trạng thái giải ngân Payout
+        if (request.PayoutStatus.HasValue)
+        {
+            query = query.Where(e => e.PayoutTransaction != null && e.PayoutTransaction.Status == request.PayoutStatus.Value);
+        }
+
+        // Lọc theo cờ đệm an toàn (Settlement Buffer)
+        if (request.InSettlementBufferOnly.HasValue && request.InSettlementBufferOnly.Value)
+        {
+            query = query.Where(e => e.InSettlementBuffer);
+        }
+
+        // Lọc theo khoảng ngày tạo (chuẩn hóa về UTC phòng thủ múi giờ)
+        if (request.FromDate.HasValue)
+        {
+            var fromUtc = request.FromDate.Value.ToUniversalTime();
+            query = query.Where(e => e.CreatedAt >= fromUtc);
+        }
+
+        if (request.ToDate.HasValue)
+        {
+            var toUtc = request.ToDate.Value.ToUniversalTime();
+            query = query.Where(e => e.CreatedAt <= toUtc);
+        }
+
+        // Tìm kiếm từ khóa
+        if (!string.IsNullOrWhiteSpace(request.Keyword))
+        {
+            var kw = request.Keyword.Trim().ToLower();
+            query = query.Where(e =>
+                (e.PaymentReference != null && e.PaymentReference.ToLower().Contains(kw)) ||
+                (e.BankTransactionReference != null && e.BankTransactionReference.ToLower().Contains(kw)) ||
+                (e.NewTicketCode != null && e.NewTicketCode.ToLower().Contains(kw)) ||
+                (e.Listing != null && e.Listing.OriginalTicketCode.ToLower().Contains(kw)) ||
+                (e.Listing != null && e.Listing.Event != null && e.Listing.Event.Name.ToLower().Contains(kw)) ||
+                (e.Buyer != null && (e.Buyer.FullName.ToLower().Contains(kw) || e.Buyer.Email.ToLower().Contains(kw))) ||
+                (e.Seller != null && (e.Seller.FullName.ToLower().Contains(kw) || e.Seller.Email.ToLower().Contains(kw))) ||
+                (e.PayoutTransaction != null && e.PayoutTransaction.PayoutCode.ToLower().Contains(kw)));
+        }
+
+        return query;
     }
 }

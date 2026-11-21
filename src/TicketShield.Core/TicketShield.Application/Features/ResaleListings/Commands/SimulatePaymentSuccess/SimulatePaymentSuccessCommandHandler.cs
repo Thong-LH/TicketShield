@@ -36,7 +36,7 @@ public class SimulatePaymentSuccessCommandHandler : IRequestHandler<SimulatePaym
 
         if (escrow == null || string.IsNullOrWhiteSpace(escrow.PaymentReference))
         {
-            throw new BadRequestException("Không tìm thấy phiên giữ chỗ đang chờ thanh toán cho vé này.");
+            throw new BadRequestException("No pending payment reservation session found for this ticket.");
         }
 
         var payload = new SePayWebhookRequest
@@ -50,7 +50,7 @@ public class SimulatePaymentSuccessCommandHandler : IRequestHandler<SimulatePaym
             TransferAmount = escrow.TotalBuyerPaid,
             Accumulated = escrow.TotalBuyerPaid,
             ReferenceCode = $"SIM_{Guid.NewGuid():N}"[..12].ToUpperInvariant(),
-            Description = $"Giả lập thanh toán thành công cho mã {escrow.PaymentReference}"
+            Description = $"Simulated successful payment for reference {escrow.PaymentReference}"
         };
 
         return await _mediator.Send(new ProcessSePayWebhookCommand(payload), cancellationToken);

@@ -22,7 +22,7 @@ public class TestOrganizerConnectionCommandHandler(
 
         if (organizer == null)
         {
-            throw new NotFoundException($"Không tìm thấy ban tổ chức với ID '{request.Id}'.");
+            throw new NotFoundException($"Organizer not found with ID '{request.Id}'.");
         }
 
         var endpoint = !string.IsNullOrWhiteSpace(organizer.GrpcEndpoint)
@@ -37,13 +37,13 @@ public class TestOrganizerConnectionCommandHandler(
             return new ApiResponse<TestOrganizerConnectionResult>
             {
                 Success = false,
-                Message = "Ban tổ chức chưa cấu hình gRPC Endpoint hoặc API Base URL.",
+                Message = "Organizer has not configured gRPC Endpoint or API Base URL.",
                 Data = new TestOrganizerConnectionResult(
                     organizer.Id,
                     "DISCONNECTED",
                     0,
                     string.Empty,
-                    "Chưa cấu hình Endpoint."
+                    "Endpoint not configured."
                 )
             };
         }
@@ -63,13 +63,13 @@ public class TestOrganizerConnectionCommandHandler(
             sw.Stop();
             // In HTTP/2 gRPC or REST, getting any response (even 404/405 or 200) proves TCP/HTTP reachability
             isConnected = true;
-            message = $"Kết nối ổn định tới máy chủ đối tác ({sw.ElapsedMilliseconds}ms).";
+            message = $"Stable connection to partner server ({sw.ElapsedMilliseconds}ms).";
         }
         catch (Exception ex)
         {
             sw.Stop();
             isConnected = false;
-            message = $"Không thể kết nối tới {endpoint}: {ex.Message}";
+            message = $"Unable to connect to {endpoint}: {ex.Message}";
         }
 
         organizer.ConnectionStatus = isConnected ? "CONNECTED" : "DISCONNECTED";

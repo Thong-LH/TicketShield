@@ -508,7 +508,7 @@ public class ProcessSePayWebhookCommandHandlerTests
 
         email.Verify(e => e.SendEmailAsync(
             "buyer@test.com",
-            It.Is<string>(s => s.Contains("hoàn tiền") || s.Contains("muộn")),
+            It.Is<string>(s => s.Contains("refund", StringComparison.OrdinalIgnoreCase) || s.Contains("Late payment", StringComparison.OrdinalIgnoreCase)),
             It.IsAny<string>(),
             It.IsAny<CancellationToken>()), Times.Once);
         email.Verify(e => e.SendEmailAsync(
