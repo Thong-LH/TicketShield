@@ -11,10 +11,10 @@ public class UpdateEscrowBufferCommandValidator : AbstractValidator<UpdateEscrow
     {
         RuleFor(x => x.BufferSeconds)
             .InclusiveBetween(MinSeconds, MaxSeconds)
-            .WithMessage("bufferSeconds phải là số nguyên từ 1 đến 2592000.");
+            .WithMessage("bufferSeconds must be an integer between 1 and 2,592,000.");
 
         RuleFor(x => x.CutoffSeconds)
             .InclusiveBetween(MinSeconds, MaxSeconds)
-            .WithMessage("cutoffSeconds phải là số nguyên từ 1 đến 2592000.");
+            .WithMessage("cutoffSeconds must be an integer between 1 and 2,592,000.");
     }
 }

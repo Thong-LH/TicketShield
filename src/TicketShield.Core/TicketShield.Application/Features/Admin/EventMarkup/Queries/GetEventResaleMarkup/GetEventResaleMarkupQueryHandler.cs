@@ -20,13 +20,13 @@ public class GetEventResaleMarkupQueryHandler : IRequestHandler<GetEventResaleMa
     {
         var ev = await _db.Events.AsNoTracking()
             .FirstOrDefaultAsync(e => e.Id == request.EventId, cancellationToken)
-            ?? throw new NotFoundException("Sự kiện", request.EventId);
+            ?? throw new NotFoundException("Event", request.EventId);
 
         return ApiResponse<EventResaleMarkupDto>.SuccessResponse(new EventResaleMarkupDto
         {
             EventId = ev.Id,
             EventName = ev.Name,
             MaxResaleMarkupPercentage = ev.MaxResaleMarkupPercentage
-        }, "Lấy biên độ trần giá sự kiện thành công.");
+        }, "Event resale markup retrieved successfully.");
     }
 }

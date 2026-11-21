@@ -52,6 +52,6 @@ public class GetAdminOrganizersQueryHandler(ITicketShieldDbContext dbContext)
 
         return ApiResponse<List<AdminOrganizerDto>>.SuccessResponse(
             organizers,
-            "Lấy danh sách ban tổ chức đối tác thành công.");
+            "Partner organizers retrieved successfully.");
     }
 }

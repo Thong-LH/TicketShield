@@ -20,7 +20,7 @@ public class CreateOrganizerCommandHandler(ITicketShieldDbContext dbContext)
 
         if (emailExists)
         {
-            throw new BadRequestException($"Ban tổ chức với email '{request.OfficialEmail}' đã tồn tại.");
+            throw new BadRequestException($"An organizer with official email '{request.OfficialEmail}' already exists.");
         }
 
         var organizer = new Organizer
@@ -69,6 +69,6 @@ public class CreateOrganizerCommandHandler(ITicketShieldDbContext dbContext)
             organizer.UpdatedAt
         );
 
-        return ApiResponse<AdminOrganizerDto>.SuccessResponse(dto, "Khởi tạo ban tổ chức đối tác thành công.");
+        return ApiResponse<AdminOrganizerDto>.SuccessResponse(dto, "Partner organizer created successfully.");
     }
 }

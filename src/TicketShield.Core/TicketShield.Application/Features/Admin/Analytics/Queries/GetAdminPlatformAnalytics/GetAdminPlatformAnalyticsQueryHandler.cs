@@ -206,7 +206,7 @@ public class GetAdminPlatformAnalyticsQueryHandler : IRequestHandler<GetAdminPla
             DailyRevenue = dailyRevenue
         };
 
-        return ApiResponse<AdminPlatformAnalyticsResponseDto>.SuccessResponse(response, "Lấy dữ liệu thống kê doanh thu và kho vé thành công.");
+        return ApiResponse<AdminPlatformAnalyticsResponseDto>.SuccessResponse(response, "Platform revenue and ticket inventory analytics retrieved successfully.");
     }
 }
 

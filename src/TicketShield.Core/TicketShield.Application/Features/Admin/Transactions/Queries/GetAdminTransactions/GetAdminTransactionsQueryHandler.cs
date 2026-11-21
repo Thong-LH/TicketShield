@@ -133,7 +133,7 @@ public class GetAdminTransactionsQueryHandler : IRequestHandler<GetAdminTransact
             }
         };
 
-        return ApiResponse<AdminTransactionsResponseDto>.SuccessResponse(result, "Lấy danh sách giao dịch ký quỹ và sổ cái giải ngân thành công.");
+        return ApiResponse<AdminTransactionsResponseDto>.SuccessResponse(result, "Admin escrow transactions and payout ledger retrieved successfully.");
     }
 
     private static IQueryable<EscrowTransaction> ApplyFilters(IQueryable<EscrowTransaction> query, GetAdminTransactionsQuery request)

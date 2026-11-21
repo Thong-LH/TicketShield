@@ -17,6 +17,6 @@ public class GetFeeSettingsQueryHandler : IRequestHandler<GetFeeSettingsQuery, A
     public async Task<ApiResponse<ResaleFeeConfig>> Handle(GetFeeSettingsQuery request, CancellationToken cancellationToken)
     {
         var config = await _settingRepository.GetResaleFeeConfigAsync(cancellationToken);
-        return ApiResponse<ResaleFeeConfig>.SuccessResponse(config, "Lấy cấu hình biểu phí hệ thống thành công.");
+        return ApiResponse<ResaleFeeConfig>.SuccessResponse(config, "System resale fee configuration retrieved successfully.");
     }
 }

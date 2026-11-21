@@ -115,7 +115,7 @@ public class GetAdminListingsQueryHandler : IRequestHandler<GetAdminListingsQuer
             }
         };
 
-        return ApiResponse<AdminListingsResponseDto>.SuccessResponse(result, "Lấy danh sách tin bán lẻ và gói combo thành công.");
+        return ApiResponse<AdminListingsResponseDto>.SuccessResponse(result, "Admin resale listings retrieved successfully.");
     }
 
     private static IQueryable<ResaleListing> ApplyFilters(IQueryable<ResaleListing> query, GetAdminListingsQuery request)

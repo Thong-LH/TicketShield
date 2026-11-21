@@ -33,6 +33,6 @@ public class GetOrganizersQueryHandler : IRequestHandler<GetOrganizersQuery, Api
             ))
             .ToListAsync(cancellationToken);
 
-        return ApiResponse<List<OrganizerDto>>.SuccessResponse(organizers, "Lấy danh sách ban tổ chức thành công.");
+        return ApiResponse<List<OrganizerDto>>.SuccessResponse(organizers, "Organizers list retrieved successfully.");
     }
 }

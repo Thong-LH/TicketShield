@@ -8,18 +8,18 @@ public class UpdateFeeSettingsCommandValidator : AbstractValidator<UpdateFeeSett
     {
         RuleFor(x => x.BuyerFeePercentage)
             .InclusiveBetween(0.00m, 0.15m)
-            .WithMessage("Phí người mua (buyerFeePercentage) phải nằm trong khoảng từ 0% (0.00) đến 15% (0.15).");
+            .WithMessage("Buyer fee percentage (buyerFeePercentage) must be between 0% (0.00) and 15% (0.15).");
 
         RuleFor(x => x.SellerFeePercentage)
             .InclusiveBetween(0.00m, 0.10m)
-            .WithMessage("Phí người bán (sellerFeePercentage) phải nằm trong khoảng từ 0% (0.00) đến 10% (0.10).");
+            .WithMessage("Seller fee percentage (sellerFeePercentage) must be between 0% (0.00) and 10% (0.10).");
 
         RuleFor(x => x.MinimumBuyerFee)
             .GreaterThanOrEqualTo(0m)
-            .WithMessage("Phí tối thiểu người mua (minimumBuyerFee) phải lớn hơn hoặc bằng 0.");
+            .WithMessage("Minimum buyer fee (minimumBuyerFee) must be greater than or equal to 0.");
 
         RuleFor(x => x.MinimumSellerFee)
             .GreaterThanOrEqualTo(0m)
-            .WithMessage("Phí tối thiểu người bán (minimumSellerFee) phải lớn hơn hoặc bằng 0.");
+            .WithMessage("Minimum seller fee (minimumSellerFee) must be greater than or equal to 0.");
     }
 }

@@ -26,7 +26,7 @@ public class SyncOrganizerEventsCommandHandler(
 
         if (organizer == null)
         {
-            throw new NotFoundException($"Không tìm thấy ban tổ chức với ID '{request.Id}'.");
+            throw new NotFoundException($"Organizer not found with ID '{request.Id}'.");
         }
 
         var baseUrl = !string.IsNullOrWhiteSpace(organizer.ApiBaseUrl)
@@ -154,7 +154,7 @@ public class SyncOrganizerEventsCommandHandler(
             organizer.Id,
             syncedEventsCount,
             syncedTiersCount,
-            $"Đồng bộ thành công {syncedEventsCount} sự kiện và {syncedTiersCount} hạng vé từ Ban tổ chức '{organizer.Name}'.",
+            $"Successfully synced {syncedEventsCount} events and {syncedTiersCount} ticket tiers from organizer '{organizer.Name}'.",
             organizer.LastCatalogSyncedAt.Value
         );
 

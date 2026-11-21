@@ -31,6 +31,6 @@ public class GetAllEventResaleMarkupsQueryHandler : IRequestHandler<GetAllEventR
             EventStartAt = ev.EventStartAt
         }).ToList();
 
-        return ApiResponse<List<EventResaleMarkupDto>>.SuccessResponse(result, "Lấy danh sách trần giá sự kiện thành công.");
+        return ApiResponse<List<EventResaleMarkupDto>>.SuccessResponse(result, "Event resale markups retrieved successfully.");
     }
 }

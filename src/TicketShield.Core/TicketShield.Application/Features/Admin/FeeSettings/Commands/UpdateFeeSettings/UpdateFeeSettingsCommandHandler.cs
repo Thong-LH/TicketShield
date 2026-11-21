@@ -39,6 +39,6 @@ public class UpdateFeeSettingsCommandHandler : IRequestHandler<UpdateFeeSettings
         // 2. Invalidate Cache Key CACHE_RESALE_FEE_CONFIG
         _feeCalculator.InvalidateCache();
 
-        return ApiResponse<string>.SuccessResponse("Cập nhật biểu phí hệ thống và xóa cache thành công.", "Cập nhật biểu phí thành công.");
+        return ApiResponse<string>.SuccessResponse("System resale fee configuration updated and cache invalidated.", "Fee configuration updated successfully.");
     }
 }
