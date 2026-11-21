@@ -148,7 +148,7 @@ public static class DatabaseSeeder
         }
         tierVip.EventId = eventId;
         tierVip.TierName = "VIP Zone A";
-        tierVip.OriginalPrice = 50000m; // TEST PRICE (prod: 2500000m)
+        tierVip.OriginalPrice = 2500000m;
         tierVip.Description = "Khu vực VIP sát sân khấu, tặng kèm lightstick";
 
         var tierGa = await context.TicketTiers.FirstOrDefaultAsync(t => t.Id == tierGaId);
@@ -159,7 +159,7 @@ public static class DatabaseSeeder
         }
         tierGa.EventId = eventId;
         tierGa.TierName = "GA Standing";
-        tierGa.OriginalPrice = 20000m; // TEST PRICE (prod: 1200000m)
+        tierGa.OriginalPrice = 1200000m;
         tierGa.Description = "Khu vực đứng tự do";
 
         // Event 2: My Tam Live Concert (Hanoi)
@@ -276,19 +276,17 @@ public static class DatabaseSeeder
         var sellerPlaceholderTicket1Id = Guid.Parse("cc111111-1111-1111-1111-888888888888");
         var sellerPlaceholderTicket2Id = Guid.Parse("cc222222-2222-2222-2222-888888888888");
 
-        var sampleTicket = await context.Tickets.FirstOrDefaultAsync(t => t.Id == sampleTicketId);
-        if (sampleTicket == null)
+        // US-12.2 / US-12.3: Clean up any legacy sample listing/ticket
+        var oldSampleListing = await context.ResaleListings.FirstOrDefaultAsync(l => l.Id == sampleListingId);
+        if (oldSampleListing != null)
         {
-            sampleTicket = new Ticket { Id = sampleTicketId };
-            await context.Tickets.AddAsync(sampleTicket);
+            context.ResaleListings.Remove(oldSampleListing);
         }
-        sampleTicket.EventId = eventId;
-        sampleTicket.TierId = tierGaId;
-        sampleTicket.CurrentOwnerId = sellerId;
-        sampleTicket.TicketCode = "ATSH-GA-999";
-        sampleTicket.SeatZone = "GA Standing Zone 2";
-        sampleTicket.OriginalPrice = 50000m;
-        sampleTicket.Status = TicketStatus.LockedForResale;
+        var oldSampleTicket = await context.Tickets.FirstOrDefaultAsync(t => t.Id == sampleTicketId);
+        if (oldSampleTicket != null)
+        {
+            context.Tickets.Remove(oldSampleTicket);
+        }
 
         var splTicket1 = await context.Tickets.FirstOrDefaultAsync(t => t.Id == sellerPlaceholderTicket1Id);
         if (splTicket1 == null)
@@ -301,7 +299,7 @@ public static class DatabaseSeeder
         splTicket1.CurrentOwnerId = buyerId;
         splTicket1.TicketCode = "SEED-PLACEHOLDER-888";
         splTicket1.SeatZone = "VIP Zone A";
-        splTicket1.OriginalPrice = 50000m;
+        splTicket1.OriginalPrice = 2500000m;
         splTicket1.Status = TicketStatus.Valid;
 
         var splTicket2 = await context.Tickets.FirstOrDefaultAsync(t => t.Id == sellerPlaceholderTicket2Id);
@@ -315,31 +313,8 @@ public static class DatabaseSeeder
         splTicket2.CurrentOwnerId = buyerId;
         splTicket2.TicketCode = "SEED-PLACEHOLDER-887";
         splTicket2.SeatZone = "VIP Zone A";
-        splTicket2.OriginalPrice = 50000m;
+        splTicket2.OriginalPrice = 2500000m;
         splTicket2.Status = TicketStatus.Valid;
-
-        await context.SaveChangesAsync();
-
-        // 5.1 Seed Sample Single Resale Listing (ATSH-GA-999) for marketplace demo
-        var sampleListing = await context.ResaleListings.FirstOrDefaultAsync(l => l.Id == sampleListingId);
-        if (sampleListing == null)
-        {
-            sampleListing = new ResaleListing { Id = sampleListingId };
-            await context.ResaleListings.AddAsync(sampleListing);
-        }
-        sampleListing.TicketId = sampleTicketId;
-        sampleListing.EventId = eventId;
-        sampleListing.TierId = tierGaId;
-        sampleListing.SellerId = sellerId;
-        sampleListing.OriginalTicketCode = "ATSH-GA-999";
-        sampleListing.OriginalPrice = 50000m;
-        sampleListing.ResalePrice = 50000m;
-        sampleListing.AppliedMarkupPercentage = 0m;
-        sampleListing.IsPrivate = false;
-        sampleListing.PrivateAccessToken = null;
-        sampleListing.VerificationStatus = VerificationStatus.Verified;
-        sampleListing.ListingStatus = ListingStatus.Verified;
-        sampleListing.SeatZone = "GA Standing Zone 2";
 
         await context.SaveChangesAsync();
 
@@ -362,8 +337,8 @@ public static class DatabaseSeeder
         spl1.TierId = tierVipId;
         spl1.SellerId = buyerId;
         spl1.OriginalTicketCode = "SEED-PLACEHOLDER-888";
-        spl1.OriginalPrice = 50000m;
-        spl1.ResalePrice = 50000m;
+        spl1.OriginalPrice = 2500000m;
+        spl1.ResalePrice = 2500000m;
         spl1.AppliedMarkupPercentage = 0m;
         spl1.VerificationStatus = VerificationStatus.Verified;
         spl1.ListingStatus = ListingStatus.Cancelled; // Cancelled → won't block seller's eligibility
@@ -380,8 +355,8 @@ public static class DatabaseSeeder
         spl2.TierId = tierVipId;
         spl2.SellerId = buyerId;
         spl2.OriginalTicketCode = "SEED-PLACEHOLDER-887";
-        spl2.OriginalPrice = 50000m;
-        spl2.ResalePrice = 50000m;
+        spl2.OriginalPrice = 2500000m;
+        spl2.ResalePrice = 2500000m;
         spl2.AppliedMarkupPercentage = 0m;
         spl2.VerificationStatus = VerificationStatus.Verified;
         spl2.ListingStatus = ListingStatus.Cancelled;
@@ -398,11 +373,11 @@ public static class DatabaseSeeder
         seedEscrow1.ListingId = sellerPlaceholderListing1Id;
         seedEscrow1.BuyerId = sellerId;
         seedEscrow1.SellerId = buyerId;
-        seedEscrow1.OriginalTicketPrice = 50000m;
-        seedEscrow1.BuyerFee = 2500m;
-        seedEscrow1.SellerFee = 1500m;
-        seedEscrow1.TotalBuyerPaid = 52500m;
-        seedEscrow1.NetSellerPayout = 48500m;
+        seedEscrow1.OriginalTicketPrice = 2500000m;
+        seedEscrow1.BuyerFee = 125000m;
+        seedEscrow1.SellerFee = 75000m;
+        seedEscrow1.TotalBuyerPaid = 2625000m;
+        seedEscrow1.NetSellerPayout = 2425000m;
         seedEscrow1.Status = EscrowStatus.Released;
         seedEscrow1.NewTicketCode = "ATSH-VIP-888";
         seedEscrow1.QrCodeData = "ATSH-VIP-888";
@@ -419,11 +394,11 @@ public static class DatabaseSeeder
         seedEscrow2.ListingId = sellerPlaceholderListing2Id;
         seedEscrow2.BuyerId = sellerId;
         seedEscrow2.SellerId = buyerId;
-        seedEscrow2.OriginalTicketPrice = 50000m;
-        seedEscrow2.BuyerFee = 2500m;
-        seedEscrow2.SellerFee = 1500m;
-        seedEscrow2.TotalBuyerPaid = 52500m;
-        seedEscrow2.NetSellerPayout = 48500m;
+        seedEscrow2.OriginalTicketPrice = 2500000m;
+        seedEscrow2.BuyerFee = 125000m;
+        seedEscrow2.SellerFee = 75000m;
+        seedEscrow2.TotalBuyerPaid = 2625000m;
+        seedEscrow2.NetSellerPayout = 2425000m;
         seedEscrow2.Status = EscrowStatus.Released;
         seedEscrow2.NewTicketCode = "ATSH-VIP-887";
         seedEscrow2.QrCodeData = "ATSH-VIP-887";

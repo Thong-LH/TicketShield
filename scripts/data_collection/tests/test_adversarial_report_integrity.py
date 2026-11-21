@@ -17,8 +17,8 @@ import pandas as pd  # type: ignore
 
 CUR_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_COLLECTION_DIR = os.path.abspath(os.path.join(CUR_DIR, ".."))
-WORKSPACE_ROOT = os.path.abspath(os.path.join(CUR_DIR, "../../../.."))
-TICKETSHIELD_ROOT = os.path.join(WORKSPACE_ROOT, "TicketShield") if os.path.exists(os.path.join(WORKSPACE_ROOT, "TicketShield")) else WORKSPACE_ROOT
+REPO_CANDIDATE = os.path.abspath(os.path.join(CUR_DIR, "../../.."))
+TICKETSHIELD_ROOT = os.path.join(REPO_CANDIDATE, "TicketShield") if os.path.exists(os.path.join(REPO_CANDIDATE, "TicketShield", "TicketShield.sln")) else REPO_CANDIDATE
 
 # Fallback path checking
 AI_ENGINE_DIR = os.path.join(TICKETSHIELD_ROOT, "src", "AIEngine")

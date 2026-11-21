@@ -305,7 +305,7 @@ public class AntiBotGatewayServicesTests
         });
         var scoring = new AntiBotScoringService(options, NullLogger<AntiBotScoringService>.Instance);
         var guard = new AntiBotGuardService(
-            tokenService, redisService, scoring, options, NullLogger<AntiBotGuardService>.Instance, _clock);
+            tokenService, redisService, scoring, options, NullLogger<AntiBotGuardService>.Instance, clock: _clock);
 
         var tierId = Guid.NewGuid();
         var token = tokenService.GenerateSessionToken(tierId);

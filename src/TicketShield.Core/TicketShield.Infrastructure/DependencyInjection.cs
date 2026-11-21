@@ -61,6 +61,15 @@ public static class DependencyInjection
         // Auto-Release Expired 10-Minute Listing Holds (BE-CORE-3.1.5 / BE-CORE-5.2.3)
         services.AddHostedService<Workers.ExpiredHoldReleaseWorker>();
 
+        // GenAI Ticket Copilot (US-13.4, SCRUM-385..387)
+        services.Configure<Services.Copilot.AiAssistantOptions>(
+            configuration.GetSection(Services.Copilot.AiAssistantOptions.SectionName));
+        services.AddSingleton<IPromptSanitizer, Services.Copilot.PromptSanitizer>();
+        services.AddHttpClient<ITicketCopilotService, Services.Copilot.TicketCopilotService>(client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(30);
+        });
+
         // Event Bus (RabbitMQ + MassTransit)
         services.AddEventBus(configuration);
 
