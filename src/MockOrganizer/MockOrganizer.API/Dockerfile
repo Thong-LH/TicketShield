@@ -1,6 +1,7 @@
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /app
 
+COPY ["src/TicketShield.AntiBot.Verification/TicketShield.AntiBot.Verification.csproj", "src/TicketShield.AntiBot.Verification/"]
 COPY ["src/TicketShield.Contracts/TicketShield.Contracts.csproj", "src/TicketShield.Contracts/"]
 COPY ["src/MockOrganizer/MockOrganizer.API/MockOrganizer.API.csproj", "src/MockOrganizer/MockOrganizer.API/"]
 

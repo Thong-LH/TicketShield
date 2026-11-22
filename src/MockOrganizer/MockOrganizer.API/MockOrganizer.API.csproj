@@ -26,6 +26,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="../../TicketShield.AntiBot.Verification/TicketShield.AntiBot.Verification.csproj" />
     <ProjectReference Include="../../TicketShield.Contracts/TicketShield.Contracts.csproj" />
   </ItemGroup>
 </Project>

@@ -28,6 +28,9 @@ builder.Services.AddCors(options =>
         policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader();
     });
 });
+builder.Services.AddMemoryCache();
+builder.Services.AddHttpClient("captcha", client => client.Timeout = TimeSpan.FromSeconds(10));
+builder.Services.AddSingleton<TicketShield.AntiBot.Verification.ChallengeVerificationService>();
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {

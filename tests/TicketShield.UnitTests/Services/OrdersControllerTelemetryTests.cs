@@ -85,6 +85,72 @@ public sealed class OrdersControllerTelemetryTests : IDisposable
         );
     }
 
+    [Theory]
+    [InlineData(true, 5, 200, 10)]
+    [InlineData(false, 5, 403, 0)]
+    [InlineData(true, 4, 409, 0)]
+    public async Task Cart_RedeemsOneCaptcha_AndCommitsAllTiersTogether(
+        bool verified, int secondStock, int expectedStatus, int expectedTickets)
+    {
+        var first = new TicketTier { EventId = "concert", TierName = "VIP", Price = 10, AvailableQuantity = 5 };
+        var second = new TicketTier { EventId = "concert", TierName = "GA", Price = 8, AvailableQuantity = secondStock };
+        _db.TicketTiers.AddRange(first, second);
+        await _db.SaveChangesAsync();
+
+        var guard = new Mock<IAntiBotGuardService>();
+        guard.Setup(g => g.EvaluateCheckoutGuardAsync(It.IsAny<CheckoutRequest>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AntiBotGuardResult { Decision = AntiBotDecision.Challenge, Vector = new BotRiskVector(), Reason = "test" });
+        var handler = new CaptchaResponseHandler(verified);
+        var clients = new Mock<IHttpClientFactory>();
+        clients.Setup(c => c.CreateClient("captcha")).Returns(() => new HttpClient(handler, false));
+        using var cache = new Microsoft.Extensions.Caching.Memory.MemoryCache(new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions());
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> {
+            ["AntiBotScoring:RecaptchaSecretKey"] = "test-only"
+        }).Build();
+        var verifier = new TicketShield.AntiBot.Verification.ChallengeVerificationService(
+            clients.Object, config, Mock.Of<Microsoft.Extensions.Hosting.IHostEnvironment>(), cache);
+        var controller = new OrdersController(_db, _telemetryService, _sessionTokenService,
+            guard.Object, new ReplayGuardService(_sessionTokenService), NullLogger<OrdersController>.Instance,
+            cartVerifier: verifier);
+        controller.ControllerContext = new ControllerContext { HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext() };
+        controller.Request.Path = "/api/organizer/orders/checkout/cart";
+
+        CheckoutRequest NewAttempt(string? answer)
+        {
+            var now = DateTimeOffset.UtcNow;
+            var a = _sessionTokenService.GenerateSessionTokenWithNonce(first.Id, now);
+            var b = _sessionTokenService.GenerateSessionTokenWithNonce(second.Id, now);
+            return new CheckoutRequest {
+                TierId = first.Id, Quantity = 5, SessionToken = a.Token, BuyerEmail = "cart@example.invalid",
+                Telemetry = new ClientTelemetryDto { Nonce = a.Nonce, ClientTimestamp = now.ToUnixTimeMilliseconds() },
+                AdditionalItems = [new(second.Id, 5, b.Token)], ChallengeToken = answer, ChallengeProvider = "recaptcha"
+            };
+        }
+
+        var challenge = Assert.IsAssignableFrom<ObjectResult>(await controller.Checkout(NewAttempt(null), default));
+        Assert.Equal(403, challenge.StatusCode);
+        Assert.Equal(0, handler.Calls);
+        Assert.Empty(await _db.MockTickets.ToListAsync());
+        var result = Assert.IsAssignableFrom<ObjectResult>(await controller.Checkout(NewAttempt("widget-answer"), default));
+        Assert.Equal(expectedStatus, result.StatusCode);
+        Assert.Equal(1, handler.Calls);
+        _db.ChangeTracker.Clear();
+        Assert.Equal(expectedTickets, await _db.MockTickets.CountAsync());
+        Assert.Equal(5 + secondStock - expectedTickets, await _db.TicketTiers.SumAsync(t => t.AvailableQuantity));
+        Assert.Equal(expectedTickets == 0 ? 0 : 2, await _db.MockOrders.CountAsync());
+    }
+
+    private sealed class CaptchaResponseHandler(bool success) : HttpMessageHandler
+    {
+        public int Calls { get; private set; }
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Calls++;
+            return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK) {
+                Content = System.Net.Http.Json.JsonContent.Create(new { success })
+            });
+        }
+    }
     public void Dispose()
     {
         _db.Dispose();

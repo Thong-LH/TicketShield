@@ -1,3 +1,4 @@
+using TicketShield.AntiBot.Verification;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using TicketShield.AntiBot.Gateway.Models;
@@ -26,6 +27,12 @@ public class CheckoutTelemetryPayload
 
     [JsonPropertyName("telemetry")]
     public ClientTelemetryDto? Telemetry { get; set; }
+
+    [JsonPropertyName("challengeToken")]
+    public string? ChallengeToken { get; set; }
+
+    [JsonPropertyName("challengeProvider")]
+    public string? ChallengeProvider { get; set; }
 }
 
 public class ClientTelemetryDto
@@ -93,15 +100,18 @@ public class AntiBotCheckoutGuardMiddleware(
         INetworkConsistencyService networkService,
         ISessionTokenService tokenService,
         INonceValidationService nonceService,
-        IUserAgentCrossValidator uaValidator)
+        IUserAgentCrossValidator uaValidator,
+        ChallengeVerificationService? challengeVerifier = null)
     {
-        var path = context.Request.Path;
+        var path = context.Request.Path.Value?.TrimEnd('/');
+        var cartCheckout = string.Equals(path, "/api/organizer/orders/checkout/cart", StringComparison.OrdinalIgnoreCase);
         var method = context.Request.Method;
 
         // Chỉ chặn luồng checkout mua vé sơ cấp
         if (HttpMethods.IsPost(method) &&
-            path.Equals("/api/organizer/orders/checkout", StringComparison.OrdinalIgnoreCase))
+            (cartCheckout || string.Equals(path, "/api/organizer/orders/checkout", StringComparison.OrdinalIgnoreCase)))
         {
+            context.Request.Headers.Remove("X-AntiBot-Challenge-Verified");
             // 1. Đánh giá tính nhất quán mạng toàn diện (NET-13.1: TLS, HTTP/2, Client Hints, Subnet /24)
             var networkSummary = await networkService.EvaluateAsync(context, context.RequestAborted);
             context.Items["NetworkConsistencySummary"] = networkSummary;
@@ -145,6 +155,8 @@ public class AntiBotCheckoutGuardMiddleware(
             string? clientNonce = null;
             long? clientTimestamp = null;
             string? clientUserAgent = null;
+            string? challengeToken = null;
+            string? challengeProvider = null;
 
             try
             {
@@ -244,6 +256,12 @@ public class AntiBotCheckoutGuardMiddleware(
                         if (root.TryGetProperty("client_user_agent", out var rcua) || root.TryGetProperty("clientUserAgent", out rcua))
                             clientUserAgent = rcua.GetString();
                     }
+
+                    if (root.TryGetProperty("challengeToken", out var ctProp) || root.TryGetProperty("ChallengeToken", out ctProp))
+                        challengeToken = ctProp.GetString();
+
+                    if (root.TryGetProperty("challengeProvider", out var cpProp) || root.TryGetProperty("ChallengeProvider", out cpProp))
+                        challengeProvider = cpProp.GetString();
                 }
             }
             catch (Exception ex)
@@ -257,6 +275,8 @@ public class AntiBotCheckoutGuardMiddleware(
             deviceFingerprint ??= context.Request.Headers["X-Device-Fingerprint"].FirstOrDefault();
             clientNonce ??= context.Request.Headers["X-AntiBot-Nonce"].FirstOrDefault();
             clientUserAgent ??= context.Request.Headers["X-Client-User-Agent"].FirstOrDefault();
+            challengeToken ??= context.Request.Headers["X-Challenge-Token"].FirstOrDefault();
+            challengeProvider ??= context.Request.Headers["X-Challenge-Provider"].FirstOrDefault();
 
             // 2. Xác thực SessionToken v2 & Chống Replay Nonce (US-13.2.3, SCRUM-376)
             if (!string.IsNullOrWhiteSpace(sessionToken))
@@ -626,23 +646,36 @@ public class AntiBotCheckoutGuardMiddleware(
                 return;
             }
 
-            // 2. Challenge -> Trả về HTTP 403 Forbidden ngay tại Gateway
-            if (guardResult.Decision == AntiBotDecision.Challenge)
+            // An Origin challenge can return through a Gateway that scored this retry Allow.
+            // Cart tokens are redeemed by the Origin once, after both guards evaluate the cart.
+            if (cartCheckout && !string.IsNullOrWhiteSpace(challengeToken))
             {
-                logger.LogInformation(
-                    "AntiBot Gateway: CHALLENGE required. Score={Score}, Latency={Latency}ms",
-                    guardResult.RiskScore, guardResult.ExecutionDurationMs);
-
-                context.Response.StatusCode = StatusCodes.Status403Forbidden;
-                context.Response.ContentType = "application/json";
-                await context.Response.WriteAsJsonAsync(new
+                if (guardResult.Decision == AntiBotDecision.Challenge)
+                    context.Request.Headers["X-AntiBot-Cart-Challenge"] = "True";
+            }
+            else if (!string.IsNullOrWhiteSpace(challengeToken))
+            {
+                var error = challengeVerifier == null ? "ChallengeVerificationUnavailable"
+                    : await challengeVerifier.VerifyAsync(challengeToken, challengeProvider, context.RequestAborted);
+                if (error != null)
                 {
-                    message = "Verification challenge required.",
-                    decision = "Challenge",
-                    riskScore = guardResult.RiskScore,
-                    challengeRequired = true,
-                    challengeMode = "recaptcha",
-                    latencyMs = guardResult.ExecutionDurationMs
+                    var unavailable = error == "ChallengeVerificationUnavailable";
+                    context.Response.StatusCode = unavailable ? 503 : 403;
+                    await context.Response.WriteAsJsonAsync(new {
+                        code = error, message = unavailable ? "Verification service unavailable. Please retry."
+                            : "Verification failed or expired. Please retry checkout."
+                    });
+                    return;
+                }
+                context.Request.Headers["X-AntiBot-Challenge-Verified"] = "True";
+            }
+            else if (guardResult.Decision == AntiBotDecision.Challenge)
+            {
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                await context.Response.WriteAsJsonAsync(new {
+                    message = "Verification challenge required.", decision = "Challenge",
+                    riskScore = guardResult.RiskScore, challengeRequired = true,
+                    challengeMode = "recaptcha", latencyMs = guardResult.ExecutionDurationMs
                 });
                 return;
             }
