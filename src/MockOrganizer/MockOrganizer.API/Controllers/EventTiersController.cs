@@ -60,7 +60,8 @@ public class EventTiersController(OrganizerDbContext db) : ControllerBase
                 .ToList();
 
             // Keep marketplace inventory outside the two-hour resale cutoff.
-            var demoEventStart = new DateTimeOffset(now.UtcDateTime.Date.AddDays(1).AddHours(12), TimeSpan.Zero);
+            var vietnamNow = now.ToOffset(TimeSpan.FromHours(7));
+            var demoEventStart = new DateTimeOffset(vietnamNow.Date.AddDays(1).AddHours(22), vietnamNow.Offset).ToUniversalTime();
             var startAt = kv.Key == "atsh-2026" ? demoEventStart : now.AddDays(kv.Value.DaysOffset);
             return new OrganizerEventCatalogDto(
                 kv.Key,

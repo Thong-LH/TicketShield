@@ -213,8 +213,9 @@ public class SyncOrganizerEventsCommandHandler(
         }
 
         // Default: VieON Anh Trai Say Hi. Keep the same future demo slot as
-        // DatabaseSeeder and MockOrganizer's catalog endpoint.
-        var demoEventStart = new DateTimeOffset(now.UtcDateTime.Date.AddDays(1).AddHours(12), TimeSpan.Zero);
+        // DatabaseSeeder and MockOrganizer's catalog endpoint (tomorrow at 22:00 Vietnam time).
+        var vietnamNow = now.ToOffset(TimeSpan.FromHours(7));
+        var demoEventStart = new DateTimeOffset(vietnamNow.Date.AddDays(1).AddHours(22), vietnamNow.Offset).ToUniversalTime();
         return
         [
             new ExternalCatalogEventItem(

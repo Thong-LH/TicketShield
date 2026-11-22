@@ -73,6 +73,9 @@ public static class DatabaseSeeder
         var tierVipId = Guid.Parse("d1111111-1111-1111-1111-111111111111");
         var tierGaId = Guid.Parse("d2222222-2222-2222-2222-222222222222");
 
+        var eventTodayId = Guid.Parse("e1111111-1111-1111-1111-111111111110");
+        var tierVipTodayId = Guid.Parse("d1111111-1111-1111-1111-111111111110");
+
         var organizer = await context.Organizers.FirstOrDefaultAsync(o => o.Id == organizerId);
         if (organizer == null)
         {
@@ -118,12 +121,47 @@ public static class DatabaseSeeder
         organizer2.ConnectionStatus = "CONNECTED";
         organizer2.Status = "ACTIVE";
 
-        // Event 1: Anh Trai Say Hi
-        // A deterministic future demo slot keeps marketplace inventory outside
-        // the two-hour resale cutoff. Gate-only VIP tickets are dated separately
-        // in MockOrganizer so they can be scanned on the current demo date.
+        // Event 1 (Tomorrow / Resale Marketplace): Anh Trai Say Hi Concert 2026 - Ngày mai 22:00
+        // A deterministic future demo slot keeps marketplace inventory outside the two-hour resale cutoff.
         var now = DateTimeOffset.UtcNow;
-        var demoEventStart = new DateTimeOffset(now.UtcDateTime.Date.AddDays(1).AddHours(12), TimeSpan.Zero);
+        var vietnamNow = now.ToOffset(TimeSpan.FromHours(7));
+        var gateDemoEventStart = new DateTimeOffset(vietnamNow.Date.AddHours(22), vietnamNow.Offset).ToUniversalTime();
+        var demoEventStart = new DateTimeOffset(vietnamNow.Date.AddDays(1).AddHours(22), vietnamNow.Offset).ToUniversalTime();
+
+        // Event Today (Gate Check-in Demo & Wallet Tickets): Anh Trai Say Hi Concert 2026 - Hôm nay 22:00
+        var evToday = await context.Events.FirstOrDefaultAsync(e => e.Id == eventTodayId);
+        if (evToday == null)
+        {
+            evToday = new Event { Id = eventTodayId };
+            await context.Events.AddAsync(evToday);
+        }
+        evToday.OrganizerId = organizerId;
+        evToday.ExternalEventId = "atsh-2026-today";
+        evToday.Name = "Anh Trai Say Hi Concert 2026";
+        evToday.Artist = "Anh Trai Say Hi All-Stars";
+        evToday.Category = "CONCERT";
+        evToday.City = "TP. Hồ Chí Minh";
+        evToday.BannerUrl = "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?auto=format&fit=crop&w=1400&q=80";
+        evToday.Description = "Mega Concert Vietnam 2026 quy tụ dàn nghệ sĩ đỉnh cao";
+        evToday.Venue = "Van Hanh Mall Stadium, TP.HCM";
+        evToday.EventStartAt = gateDemoEventStart;
+        evToday.EventEndAt = gateDemoEventStart.AddHours(4);
+        evToday.ResaleDeadline = gateDemoEventStart.AddHours(-2);
+        evToday.Status = "UPCOMING";
+        evToday.MaxResaleMarkupPercentage = 10m;
+
+        var tierVipToday = await context.TicketTiers.FirstOrDefaultAsync(t => t.Id == tierVipTodayId);
+        if (tierVipToday == null)
+        {
+            tierVipToday = new TicketTier { Id = tierVipTodayId };
+            await context.TicketTiers.AddAsync(tierVipToday);
+        }
+        tierVipToday.EventId = eventTodayId;
+        tierVipToday.TierName = "VIP Zone A";
+        tierVipToday.OriginalPrice = 60000m;
+        tierVipToday.Description = "Khu vực VIP sát sân khấu, tặng kèm lightstick";
+
+        // Event Tomorrow (Sàn giao dịch vé): Anh Trai Say Hi Concert 2026 - Ngày mai 22:00
         var ev = await context.Events.FirstOrDefaultAsync(e => e.Id == eventId);
         if (ev == null)
         {
@@ -357,12 +395,12 @@ public static class DatabaseSeeder
             splTicket1 = new Ticket { Id = sellerPlaceholderTicket1Id };
             await context.Tickets.AddAsync(splTicket1);
         }
-        splTicket1.EventId = eventId;
-        splTicket1.TierId = tierVipId;
+        splTicket1.EventId = eventTodayId;
+        splTicket1.TierId = tierVipTodayId;
         // These are three tickets previously purchased by the demo seller, ready
         // to be selected together in the seller's combo flow.
         splTicket1.CurrentOwnerId = sellerId;
-        splTicket1.TicketCode = "SEED-PLACEHOLDER-888";
+        splTicket1.TicketCode = "ATSH-VIP-888";
         splTicket1.SeatZone = "VIP Zone A - Row 1 Seat 12";
         splTicket1.OriginalPrice = 60000m;
         splTicket1.Status = TicketStatus.Valid;
@@ -373,10 +411,10 @@ public static class DatabaseSeeder
             splTicket2 = new Ticket { Id = sellerPlaceholderTicket2Id };
             await context.Tickets.AddAsync(splTicket2);
         }
-        splTicket2.EventId = eventId;
-        splTicket2.TierId = tierVipId;
+        splTicket2.EventId = eventTodayId;
+        splTicket2.TierId = tierVipTodayId;
         splTicket2.CurrentOwnerId = sellerId;
-        splTicket2.TicketCode = "SEED-PLACEHOLDER-887";
+        splTicket2.TicketCode = "ATSH-VIP-887";
         splTicket2.SeatZone = "VIP Zone A - Row 2 Seat 08";
         splTicket2.OriginalPrice = 60000m;
         splTicket2.Status = TicketStatus.Valid;
@@ -387,10 +425,10 @@ public static class DatabaseSeeder
             splTicket3 = new Ticket { Id = sellerPlaceholderTicket3Id };
             await context.Tickets.AddAsync(splTicket3);
         }
-        splTicket3.EventId = eventId;
-        splTicket3.TierId = tierVipId;
+        splTicket3.EventId = eventTodayId;
+        splTicket3.TierId = tierVipTodayId;
         splTicket3.CurrentOwnerId = sellerId;
-        splTicket3.TicketCode = "SEED-PLACEHOLDER-886";
+        splTicket3.TicketCode = "ATSH-VIP-886";
         splTicket3.SeatZone = "VIP Zone A - Row 2 Seat 09";
         splTicket3.OriginalPrice = 60000m;
         splTicket3.Status = TicketStatus.Valid;
@@ -508,10 +546,10 @@ public static class DatabaseSeeder
             await context.ResaleListings.AddAsync(spl1);
         }
         spl1.TicketId = sellerPlaceholderTicket1Id;
-        spl1.EventId = eventId;
-        spl1.TierId = tierVipId;
+        spl1.EventId = eventTodayId;
+        spl1.TierId = tierVipTodayId;
         spl1.SellerId = buyerId;
-        spl1.OriginalTicketCode = "SEED-PLACEHOLDER-888";
+        spl1.OriginalTicketCode = "ATSH-VIP-888";
         spl1.OriginalPrice = 60000m;
         spl1.ResalePrice = 60000m;
         spl1.AppliedMarkupPercentage = 0m;
@@ -526,10 +564,10 @@ public static class DatabaseSeeder
             await context.ResaleListings.AddAsync(spl2);
         }
         spl2.TicketId = sellerPlaceholderTicket2Id;
-        spl2.EventId = eventId;
-        spl2.TierId = tierVipId;
+        spl2.EventId = eventTodayId;
+        spl2.TierId = tierVipTodayId;
         spl2.SellerId = buyerId;
-        spl2.OriginalTicketCode = "SEED-PLACEHOLDER-887";
+        spl2.OriginalTicketCode = "ATSH-VIP-887";
         spl2.OriginalPrice = 60000m;
         spl2.ResalePrice = 60000m;
         spl2.AppliedMarkupPercentage = 0m;
@@ -544,10 +582,10 @@ public static class DatabaseSeeder
             await context.ResaleListings.AddAsync(spl3);
         }
         spl3.TicketId = sellerPlaceholderTicket3Id;
-        spl3.EventId = eventId;
-        spl3.TierId = tierVipId;
+        spl3.EventId = eventTodayId;
+        spl3.TierId = tierVipTodayId;
         spl3.SellerId = buyerId;
-        spl3.OriginalTicketCode = "SEED-PLACEHOLDER-886";
+        spl3.OriginalTicketCode = "ATSH-VIP-886";
         spl3.OriginalPrice = 60000m;
         spl3.ResalePrice = 60000m;
         spl3.AppliedMarkupPercentage = 0m;

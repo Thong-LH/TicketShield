@@ -32,7 +32,7 @@ public static class OrganizerDatabaseSeeder
         var now = DateTimeOffset.UtcNow;
         var vietnamNow = now.ToOffset(TimeSpan.FromHours(7));
         var gateDemoEventStart = new DateTimeOffset(vietnamNow.Date.AddHours(22), vietnamNow.Offset).ToUniversalTime();
-        var atshEventStart = new DateTimeOffset(now.UtcDateTime.Date.AddDays(1).AddHours(12), TimeSpan.Zero);
+        var atshEventStart = new DateTimeOffset(vietnamNow.Date.AddDays(1).AddHours(22), vietnamNow.Offset).ToUniversalTime();
         var spaceSpeakersEventStart = now.AddDays(45);
         var westlifeEventStart = now.AddDays(60);
 
