@@ -58,6 +58,7 @@ public class AdminSuspendUserTests
         await using var db = CreateIdentityDb();
         var adminId = Guid.NewGuid();
         var user = await AddUser(db, UserRole.User, active: true, trustScore: 100);
+        user.PasswordHash = BCrypt.Net.BCrypt.HashPassword("sample-password");
         var token = new RefreshToken
         {
             UserId = user.Id,
@@ -82,6 +83,13 @@ public class AdminSuspendUserTests
         publish.Verify(p => p.Publish<IUserProfileUpdatedEvent>(
             It.Is<IUserProfileUpdatedEvent>(e => e.UserId == user.Id && e.IsActive == false && e.Role == "User"),
             It.IsAny<CancellationToken>()), Times.Exactly(2));
+
+        var restored = await handler.Handle(new SuspendUserCommand(user.Id, Reactivate: true), CancellationToken.None);
+        Assert.True(restored.Data!.IsActive);
+        Assert.NotNull((await db.RefreshTokens.SingleAsync()).RevokedAt);
+        var login = await new LoginCommandHandler(db, CreateTokenGen())
+            .Handle(new LoginCommand(user.Email, "sample-password"), CancellationToken.None);
+        Assert.True(login.Success);
     }
 
     [Fact]

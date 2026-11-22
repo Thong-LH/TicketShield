@@ -1,4 +1,5 @@
 using MediatR;
+using TicketShield.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 using TicketShield.Application.Common.Interfaces;
 using TicketShield.Application.Common.Models;
@@ -30,7 +31,7 @@ public class GetResaleListingByPrivateTokenQueryHandler : IRequestHandler<GetRes
             .Include(l => l.Event)
             .Include(l => l.Tier)
             .Include(l => l.Seller)
-            .FirstOrDefaultAsync(l => l.IsPrivate && l.PrivateAccessToken == cleanToken, cancellationToken);
+            .FirstOrDefaultAsync(l => l.ListingStatus != ListingStatus.Cancelled && l.IsPrivate && l.PrivateAccessToken == cleanToken, cancellationToken);
 
         if (listing == null)
         {
@@ -46,7 +47,7 @@ public class GetResaleListingByPrivateTokenQueryHandler : IRequestHandler<GetRes
                 .Include(l => l.Event)
                 .Include(l => l.Tier)
                 .Include(l => l.Seller)
-                .Where(l => l.BundleId == listing.BundleId.Value)
+                .Where(l => l.BundleId == listing.BundleId.Value && l.ListingStatus != ListingStatus.Cancelled)
                 .OrderBy(l => l.CreatedAt)
                 .ThenBy(l => l.Id)
                 .ToListAsync(cancellationToken);

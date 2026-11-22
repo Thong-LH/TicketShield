@@ -61,6 +61,28 @@ public sealed class OtpVerificationTests(ResaleFixture f) : IClassFixture<Resale
         Assert.Equal("LOCKED_FOR_RESALE", await OrganizerTicketStatus(ticket));
     }
 
+    [Fact]
+    public async Task OriginStoreTicketResolvesOfficialDetailsAndPublishesWithoutStaticMapping()
+    {
+        var ticket = await f.Ticket();
+        Options.TicketMappings.Remove(ticket);
+        await f.Sql(f.Database.MockConnection,
+            "UPDATE mock_tickets SET event_name='atsh-2026', seat_zone='GA Standing' WHERE ticket_code=@code",
+            ("code", ticket));
+        var (verificationId, otp) = await f.Start(ticket);
+        var confirmed = await Confirm(verificationId, otp);
+        Assert.True(confirmed.Status == HttpStatusCode.OK, confirmed.Body.ToString());
+        var details = confirmed.Body.GetProperty("data");
+        Assert.Equal("Anh Trai Say Hi Concert 2026", details.GetProperty("eventName").GetString());
+        Assert.Equal("GA Standing", details.GetProperty("tierName").GetString());
+        Assert.Contains("Van Hanh Mall", details.GetProperty("eventVenue").GetString());
+        Assert.NotNull(details.GetProperty("eventStartAt").GetString());
+
+        var published = await f.Post("api/resale-listings", new { verificationId, resalePrice = 15000, isPrivate = false });
+        Assert.True(published.Status == HttpStatusCode.OK, published.Body.ToString());
+        Assert.NotEqual(Guid.Empty, published.Body.GetProperty("data").GetProperty("listingId").GetGuid());
+    }
+
     // ───────────────────────── Wrong OTP & attempt limit ─────────────────────────
 
     [Fact]

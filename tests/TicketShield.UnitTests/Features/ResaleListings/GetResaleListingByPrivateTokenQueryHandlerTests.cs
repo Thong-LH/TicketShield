@@ -103,6 +103,10 @@ public class GetResaleListingByPrivateTokenQueryHandlerTests
         // Original ticket code masked
         Assert.NotEqual("TCK-SECRET-VIP-999", result.Data.MaskedTicketCode);
         Assert.Contains("*", result.Data.MaskedTicketCode);
+
+        privateListing.ListingStatus = ListingStatus.Cancelled;
+        await dbContext.SaveChangesAsync();
+        await Assert.ThrowsAsync<NotFoundException>(() => handler.Handle(query, CancellationToken.None));
     }
 
     [Fact]

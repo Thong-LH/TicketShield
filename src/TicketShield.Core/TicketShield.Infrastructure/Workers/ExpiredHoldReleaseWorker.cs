@@ -46,6 +46,10 @@ public class ExpiredHoldReleaseWorker : BackgroundService
         using var scope = _scopeFactory.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ITicketShieldDbContext>();
 
+        // If a webhook credits a scanned hold, retry the scan instead of overwriting RefundQueued.
+        await using var transaction = dbContext.Database.IsRelational()
+            ? await dbContext.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, ct)
+            : null;
         var now = DateTimeOffset.UtcNow;
 
         // Find all expired pending escrows (both single-listing and bundle)
@@ -143,6 +147,7 @@ public class ExpiredHoldReleaseWorker : BackgroundService
         }
 
         await dbContext.SaveChangesAsync(ct);
+        if (transaction != null) await transaction.CommitAsync(ct);
         return revertedCount;
     }
 }

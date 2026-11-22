@@ -72,6 +72,23 @@ public sealed class OrganizerResaleGrpcService(
         var tickets = await db.Tickets.FromSqlInterpolated($"SELECT * FROM mock_tickets WHERE ticket_code = {code} FOR UPDATE").ToListAsync(ct);
         return tickets.SingleOrDefault() ?? throw Fail("TICKET_NOT_FOUND", StatusCode.NotFound);
     }
+    private async Task<TicketMapping> GetTicketMapping(MockTicket ticket, CancellationToken ct)
+    {
+        if (options.TicketMappings.TryGetValue(ticket.TicketCode, out var configured) &&
+            !string.IsNullOrEmpty(configured.EventId) && !string.IsNullOrEmpty(configured.TierId)) return configured;
+
+        // Origin Store persists the organizer event slug and tier name on each issued ticket.
+        if (organizerDb != null)
+        {
+            var tiers = await organizerDb.TicketTiers.AsNoTracking()
+                .Where(t => t.EventId == ticket.EventName && t.TierName == ticket.SeatZone)
+                .Select(t => new TicketMapping { EventId = t.EventId, TierId = t.Id.ToString() })
+                .Take(2).ToListAsync(ct);
+            if (tiers.Count == 1) return tiers[0];
+        }
+        throw Fail("TICKET_MAPPING_NOT_CONFIGURED");
+    }
+
     private async Task Quota(string key, int max, CancellationToken ct, bool increment = true)
     {
         var q = await db.Read<Quota>(key, ct) ?? new Quota { Since = Now };
@@ -191,8 +208,7 @@ public sealed class OrganizerResaleGrpcService(
             if (!Guid.TryParse(request.Ticket.OrganizerId, out var requestedOrgId) || ticket.OrganizerId != requestedOrgId)
                 throw Fail("TICKET_NOT_FOUND", StatusCode.NotFound);
             if (ticket.Status != "VALID") throw Fail("TICKET_NOT_AVAILABLE");
-            if (!options.TicketMappings.TryGetValue(ticket.TicketCode, out var mapping) || string.IsNullOrEmpty(mapping.EventId) || string.IsNullOrEmpty(mapping.TierId))
-                mapping = new TicketMapping { EventId = "concert-2026", TierId = "vip-zone-a" };
+            await GetTicketMapping(ticket, ct);
             var currentLock = await db.Read<LockRecord>("current:" + Hash(ticket.TicketCode), ct);
             if (currentLock is not null && currentLock.ReleasedAt is null) throw Fail("TICKET_LOCKED");
             await Quota("request-ticket:" + Hash(ticket.TicketCode), options.RequestsPerTicketPerHour, ct);
@@ -279,8 +295,7 @@ public sealed class OrganizerResaleGrpcService(
             var t = await Ticket(s.TicketCode, ct);
             if (t.Status != "VALID" || Owner(t) != s.OwnerRevision) throw Fail("TICKET_CHANGED");
             if (t.OriginalPrice < 0 || t.OriginalPrice > 9_999_999_999_999m || decimal.Truncate(t.OriginalPrice) != t.OriginalPrice) throw Fail("INVALID_ORIGINAL_PRICE");
-            if (!options.TicketMappings.TryGetValue(t.TicketCode, out var mapping) || string.IsNullOrEmpty(mapping.EventId) || string.IsNullOrEmpty(mapping.TierId))
-                mapping = new TicketMapping { EventId = "concert-2026", TierId = "vip-zone-a" };
+            var mapping = await GetTicketMapping(t, ct);
             var current = await db.Read<LockRecord>("current:" + Hash(s.TicketCode), ct);
             if (current is not null && current.ReleasedAt is null) throw Fail("TICKET_LOCKED");
             var l = new LockRecord { Id = Guid.NewGuid().ToString("D"), SessionId = s.Id, Caller = Caller, Requester = s.Requester,
@@ -355,8 +370,7 @@ public sealed class OrganizerResaleGrpcService(
                     TicketSnapshot? existingSnapshot = null;
                     if (existingNewTicket != null)
                     {
-                        if (!options.TicketMappings.TryGetValue(existingNewTicket.TicketCode, out var m) || string.IsNullOrEmpty(m.EventId) || string.IsNullOrEmpty(m.TierId))
-                            m = new TicketMapping { EventId = "concert-2026", TierId = "vip-zone-a" };
+                        var m = await GetTicketMapping(existingNewTicket, ct);
 
                         existingSnapshot = new TicketSnapshot
                         {
@@ -414,18 +428,8 @@ public sealed class OrganizerResaleGrpcService(
 
             db.Tickets.Add(newTicket);
 
-            if (!options.TicketMappings.TryGetValue(newTicketCode, out var mapping) || string.IsNullOrEmpty(mapping.EventId) || string.IsNullOrEmpty(mapping.TierId))
-            {
-                if (options.TicketMappings.TryGetValue(oldTicket.TicketCode, out var oldMap))
-                {
-                    mapping = new TicketMapping { EventId = oldMap.EventId, TierId = oldMap.TierId };
-                }
-                else
-                {
-                    mapping = new TicketMapping { EventId = "concert-2026", TierId = "vip-zone-a" };
-                }
-                options.TicketMappings[newTicketCode] = mapping;
-            }
+            var mapping = await GetTicketMapping(oldTicket, ct);
+            options.TicketMappings[newTicketCode] = mapping;
 
             await db.Put(LockKey(l.Id), l, ct);
             await db.Put("current:" + Hash(l.TicketCode), l, ct);

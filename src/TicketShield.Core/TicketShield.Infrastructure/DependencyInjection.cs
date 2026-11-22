@@ -60,6 +60,10 @@ public static class DependencyInjection
 
         // Auto-Release Expired 10-Minute Listing Holds (BE-CORE-3.1.5 / BE-CORE-5.2.3)
         services.AddHostedService<Workers.ExpiredHoldReleaseWorker>();
+        if (configuration.GetValue<bool>("Refunds:SimulateQueuedRefunds"))
+        {
+            services.AddHostedService<Workers.SimulatedRefundWorker>();
+        }
 
         // GenAI Ticket Copilot (US-13.4, SCRUM-385..387)
         services.Configure<Services.Copilot.AiAssistantOptions>(

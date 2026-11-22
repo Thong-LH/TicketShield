@@ -14,4 +14,10 @@ public sealed record VerificationResult(
     Guid? ListingId,
     string? PrivateAccessToken = null,
     decimal? MarkupPercent = null,
-    long? PriceCeiling = null);
+    long? PriceCeiling = null,
+    string? EventName = null,
+    string? EventVenue = null,
+    DateTimeOffset? EventStartAt = null,
+    string? TierName = null,
+    string? SeatZone = null,
+    string? OrganizerName = null);
