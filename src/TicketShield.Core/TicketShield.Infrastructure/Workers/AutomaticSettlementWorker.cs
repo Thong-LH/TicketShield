@@ -26,17 +26,24 @@ public class AutomaticSettlementWorker : BackgroundService
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _logger.LogInformation("AutomaticSettlementWorker started with check interval {Interval} seconds.", _checkInterval.TotalSeconds);
-        using var timer = new PeriodicTimer(_checkInterval);
-        while (await timer.WaitForNextTickAsync(stoppingToken))
+        try
         {
-            try
+            using var timer = new PeriodicTimer(_checkInterval);
+            while (!stoppingToken.IsCancellationRequested && await timer.WaitForNextTickAsync(stoppingToken))
             {
-                await ProcessAutomaticPayoutsAsync(stoppingToken);
+                try
+                {
+                    await ProcessAutomaticPayoutsAsync(stoppingToken);
+                }
+                catch (Exception ex) when (!stoppingToken.IsCancellationRequested)
+                {
+                    _logger.LogError(ex, "An error occurred while executing automatic seller payout settlements.");
+                }
             }
-            catch (Exception ex) when (!stoppingToken.IsCancellationRequested)
-            {
-                _logger.LogError(ex, "An error occurred while executing automatic seller payout settlements.");
-            }
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            // Expected during graceful shutdown
         }
     }
 

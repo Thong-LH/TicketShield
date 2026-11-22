@@ -27,17 +27,24 @@ public class ExpiredHoldReleaseWorker : BackgroundService
     {
         _logger.LogInformation("ExpiredHoldReleaseWorker started with check interval {Interval} seconds.", _checkInterval.TotalSeconds);
 
-        using var timer = new PeriodicTimer(_checkInterval);
-        while (await timer.WaitForNextTickAsync(stoppingToken))
+        try
         {
-            try
+            using var timer = new PeriodicTimer(_checkInterval);
+            while (!stoppingToken.IsCancellationRequested && await timer.WaitForNextTickAsync(stoppingToken))
             {
-                await ReleaseExpiredHoldsAsync(stoppingToken);
+                try
+                {
+                    await ReleaseExpiredHoldsAsync(stoppingToken);
+                }
+                catch (Exception ex) when (!stoppingToken.IsCancellationRequested)
+                {
+                    _logger.LogError(ex, "An error occurred while releasing expired listing holds.");
+                }
             }
-            catch (Exception ex) when (!stoppingToken.IsCancellationRequested)
-            {
-                _logger.LogError(ex, "An error occurred while releasing expired listing holds.");
-            }
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            // Expected during graceful shutdown
         }
     }
 

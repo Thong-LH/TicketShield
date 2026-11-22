@@ -36,17 +36,24 @@ public class StuckSettlementWorker : BackgroundService
             "StuckSettlementWorker started. Interval {Interval} seconds, stuck age {Age} minutes.",
             _checkInterval.TotalSeconds,
             _stuckAge.TotalMinutes);
-        using var timer = new PeriodicTimer(_checkInterval);
-        while (await timer.WaitForNextTickAsync(stoppingToken))
+        try
         {
-            try
+            using var timer = new PeriodicTimer(_checkInterval);
+            while (!stoppingToken.IsCancellationRequested && await timer.WaitForNextTickAsync(stoppingToken))
             {
-                await ReconcileStuckReleasesAsync(stoppingToken);
+                try
+                {
+                    await ReconcileStuckReleasesAsync(stoppingToken);
+                }
+                catch (Exception ex) when (!stoppingToken.IsCancellationRequested)
+                {
+                    _logger.LogError(ex, "An error occurred while recovering escrows stuck in Releasing.");
+                }
             }
-            catch (Exception ex) when (!stoppingToken.IsCancellationRequested)
-            {
-                _logger.LogError(ex, "An error occurred while recovering escrows stuck in Releasing.");
-            }
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            // Expected during graceful shutdown
         }
     }
 

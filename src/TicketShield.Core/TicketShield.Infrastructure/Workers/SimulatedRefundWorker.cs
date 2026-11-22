@@ -11,18 +11,25 @@ public sealed class SimulatedRefundWorker(IServiceScopeFactory scopes, ILogger<S
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(30));
-        while (await timer.WaitForNextTickAsync(stoppingToken))
+        try
         {
-            try
+            using var timer = new PeriodicTimer(TimeSpan.FromSeconds(30));
+            while (!stoppingToken.IsCancellationRequested && await timer.WaitForNextTickAsync(stoppingToken))
             {
-                var count = await ProcessQueuedAsync(stoppingToken);
-                if (count > 0) logger.LogInformation("Simulated refunds for {Count} queued transactions.", count);
+                try
+                {
+                    var count = await ProcessQueuedAsync(stoppingToken);
+                    if (count > 0) logger.LogInformation("Simulated refunds for {Count} queued transactions.", count);
+                }
+                catch (Exception ex) when (!stoppingToken.IsCancellationRequested)
+                {
+                    logger.LogError(ex, "Could not process simulated refunds.");
+                }
             }
-            catch (Exception ex) when (!stoppingToken.IsCancellationRequested)
-            {
-                logger.LogError(ex, "Could not process simulated refunds.");
-            }
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            // Expected during graceful shutdown
         }
     }
 
