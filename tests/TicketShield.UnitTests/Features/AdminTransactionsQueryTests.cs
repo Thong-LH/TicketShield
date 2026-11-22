@@ -41,6 +41,9 @@ public class AdminTransactionsQueryTests
 
         // In dispute: escrow2 has an open dispute row but its status is still Locked, so nothing is Disputed
         Assert.Equal(0, result.Data.Summary.TotalDisputedCount);
+
+        // Net revenue: fees of the only Released escrow, escrow3 5_000 + 5_000
+        Assert.Equal(10_000m, result.Data.Summary.TotalNetRevenue);
     }
 
     [Fact]
@@ -61,6 +64,7 @@ public class AdminTransactionsQueryTests
         Assert.Equal(2, result.Data.Summary.TotalLockedCount);
         Assert.Equal(0m, result.Data.Summary.TotalPayoutCompletedAmount);
         Assert.Equal(0m, result.Data.Summary.TotalRefundedAmount);
+        Assert.Equal(0m, result.Data.Summary.TotalNetRevenue);
     }
 
     [Fact]
@@ -80,6 +84,7 @@ public class AdminTransactionsQueryTests
         Assert.Equal(0m, result.Data.Summary.TotalPayoutCompletedAmount);
         Assert.Equal(115_000m, result.Data.Summary.TotalRefundedAmount);
         Assert.Equal(115_000m, result.Data.Summary.TotalInflowAmount);
+        Assert.Equal(0m, result.Data.Summary.TotalNetRevenue);
     }
 
     [Fact]
@@ -114,8 +119,44 @@ public class AdminTransactionsQueryTests
         Assert.Equal(AdminMoneyTestData.ExpectedHeldCount, summary.TotalLockedCount);
         Assert.Equal(AdminMoneyTestData.ExpectedPaidOut, summary.TotalPayoutCompletedAmount);
         Assert.Equal(AdminMoneyTestData.ExpectedRefunded, summary.TotalRefundedAmount);
+        Assert.Equal(AdminMoneyTestData.ExpectedNetRevenue, summary.TotalNetRevenue);
         Assert.Equal(
-            AdminMoneyTestData.ExpectedNetRevenue,
+            summary.TotalNetRevenue,
+            summary.TotalInflowAmount - summary.TotalPayoutCompletedAmount - summary.TotalRefundedAmount - summary.TotalEscrowLockedAmount);
+    }
+
+    [Fact]
+    public async Task Handle_ReleasedWithoutSuccessPayout_NetRevenueAddsOnlyItsFees()
+    {
+        await using var db = CreateDb();
+        await AdminMoneyTestData.SeedAsync(db, DateTimeOffset.UtcNow.AddHours(-3));
+
+        // Like the two dev seed escrows: Released, but no payout row went through.
+        var anyListing = db.ResaleListings.First();
+        db.EscrowTransactions.Add(new EscrowTransaction
+        {
+            Id = Guid.NewGuid(),
+            ListingId = anyListing.Id,
+            BuyerId = db.ShadowUsers.First().Id,
+            SellerId = anyListing.SellerId,
+            OriginalTicketPrice = 48_000m,
+            BuyerFee = 2_000m,
+            SellerFee = 2_000m,
+            TotalBuyerPaid = 50_000m,
+            NetSellerPayout = 46_000m,
+            Status = EscrowStatus.Released,
+            PaymentReference = "PAY-RELEASED-NO-PAYOUT",
+            CreatedAt = DateTimeOffset.UtcNow.AddHours(-2)
+        });
+        await db.SaveChangesAsync();
+
+        var handler = new GetAdminTransactionsQueryHandler(db);
+        var summary = (await handler.Handle(new GetAdminTransactionsQuery(), CancellationToken.None)).Data!.Summary;
+
+        Assert.Equal(AdminMoneyTestData.ExpectedNetRevenue + 4_000m, summary.TotalNetRevenue);
+        // The subtraction would also count the 46_000 the seller never received.
+        Assert.Equal(
+            summary.TotalNetRevenue + 46_000m,
             summary.TotalInflowAmount - summary.TotalPayoutCompletedAmount - summary.TotalRefundedAmount - summary.TotalEscrowLockedAmount);
     }
 

@@ -170,6 +170,7 @@ public class AdminAnalyticsQueryTests
         Assert.Equal(summary.TotalEscrowLockedAmount, revenue.TotalHeldInEscrow);
         Assert.Equal(summary.TotalPayoutCompletedAmount, revenue.TotalPayout);
         Assert.Equal(summary.TotalRefundedAmount, revenue.TotalRefundedAmount);
+        Assert.Equal(summary.TotalNetRevenue, revenue.TotalNetRevenue);
     }
 
     [Fact]

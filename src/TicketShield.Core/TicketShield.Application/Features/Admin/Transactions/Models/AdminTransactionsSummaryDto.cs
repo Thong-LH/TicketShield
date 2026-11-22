@@ -14,6 +14,14 @@ public class AdminTransactionsSummaryDto
     public decimal TotalInflowAmount { get; set; }
 
     /// <summary>
+    /// Net revenue: buyer fee plus seller fee of the Released escrows that match the filters.
+    /// Same formula as <c>PlatformRevenueStatsDto.TotalNetRevenue</c> on the Admin Dashboard.
+    /// Summed from the fees, not from Inflow - Paid out - Refunded - Held, so a Released escrow
+    /// without a Success payout adds only its fees.
+    /// </summary>
+    public decimal TotalNetRevenue { get; set; }
+
+    /// <summary>
     /// Held in escrow: total paid by buyers on escrows the platform still holds
     /// (Locked, Releasing, Disputed, RefundQueued, TransferNeedsReview).
     /// Name kept from the all-time version so existing clients do not break.
