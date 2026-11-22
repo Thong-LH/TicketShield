@@ -36,6 +36,13 @@ public class GetAdminTransactionsQueryHandler : IRequestHandler<GetAdminTransact
             .Where(EscrowMoneyBuckets.IsInflow)
             .SumAsync(e => (decimal?)e.TotalBuyerPaid, cancellationToken) ?? 0m;
 
+        // Net revenue: fees of the Released escrows, same formula as the Admin Dashboard.
+        // Summed from the fees rather than subtracted from the other cards, so a Released escrow
+        // without a Success payout does not add the seller's money to it.
+        var totalNetRevenue = await query
+            .Where(e => e.Status == EscrowStatus.Released)
+            .SumAsync(e => (decimal?)(e.BuyerFee + e.SellerFee), cancellationToken) ?? 0m;
+
         var heldQuery = query.Where(EscrowMoneyBuckets.IsHeld);
         var totalEscrowLockedAmount = await heldQuery
             .SumAsync(e => (decimal?)e.TotalBuyerPaid, cancellationToken) ?? 0m;
@@ -125,6 +132,7 @@ public class GetAdminTransactionsQueryHandler : IRequestHandler<GetAdminTransact
             Summary = new AdminTransactionsSummaryDto
             {
                 TotalInflowAmount = totalInflowAmount,
+                TotalNetRevenue = totalNetRevenue,
                 TotalEscrowLockedAmount = totalEscrowLockedAmount,
                 TotalLockedCount = totalLockedCount,
                 TotalPayoutCompletedAmount = totalPayoutCompletedAmount,
