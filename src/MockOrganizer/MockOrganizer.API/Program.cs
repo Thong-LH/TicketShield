@@ -28,6 +28,9 @@ builder.Services.AddCors(options =>
         policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader();
     });
 });
+builder.Services.AddMemoryCache();
+builder.Services.AddHttpClient("captcha", client => client.Timeout = TimeSpan.FromSeconds(10));
+builder.Services.AddSingleton<TicketShield.AntiBot.Verification.ChallengeVerificationService>();
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {
@@ -71,6 +74,9 @@ builder.Services.AddSingleton<MockOrganizer.API.Services.IRedisSlidingWindowServ
 
 // SCRUM-247: Chặn replay checkout bằng nonce dùng một lần (Redis SET NX, fallback In-Memory)
 builder.Services.AddSingleton<MockOrganizer.API.Services.IReplayGuardService, MockOrganizer.API.Services.ReplayGuardService>();
+
+// SCRUM-403: Bộ đếm vi phạm thống nhất và thang Cooldown lũy tiến (Technical Memo v5)
+builder.Services.AddSingleton<MockOrganizer.API.Services.IAntiBotViolationTracker, MockOrganizer.API.Services.AntiBotViolationTracker>();
 
 builder.Services.AddScoped<MockOrganizer.API.Services.IServerTransactionTelemetryService, MockOrganizer.API.Services.ServerTransactionTelemetryService>();
 builder.Services.AddScoped<IAntiBotGuardService, AntiBotGuardService>();

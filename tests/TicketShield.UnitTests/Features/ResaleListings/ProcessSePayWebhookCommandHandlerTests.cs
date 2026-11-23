@@ -316,12 +316,14 @@ public class ProcessSePayWebhookCommandHandlerTests
         Assert.False((await context.EscrowTransactions.FindAsync(escrow.Id))!.InSettlementBuffer);
     }
 
-    [Fact]
-    public async Task Handle_WhenBuyerCancelledHold_ShouldQueueRefundWithoutLocking()
+    [Theory]
+    [InlineData(EscrowStatus.Cancelled)]
+    [InlineData(EscrowStatus.Expired)]
+    public async Task Handle_WhenHoldAlreadyClosed_ShouldQueueRefundWithoutLocking(EscrowStatus status)
     {
         var (context, listing, escrow) = CreateTestFixture();
         listing.ListingStatus = ListingStatus.Verified;
-        escrow.Status = EscrowStatus.Cancelled;
+        escrow.Status = status;
         escrow.UnlockAt = DateTimeOffset.UtcNow.AddMinutes(8);
         await context.SaveChangesAsync();
         var handler = new ProcessSePayWebhookCommandHandler(context);

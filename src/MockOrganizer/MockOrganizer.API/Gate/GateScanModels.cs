@@ -6,6 +6,7 @@ public static class GateScanResults
     public const string Duplicate = "DUPLICATE_ENTRY";
     public const string Invalid = "INVALID_TICKET";
     public const string Revoked = "REVOKED";
+    public const string WrongDate = "WRONG_DATE";
 }
 
 public sealed class GateScanRequest

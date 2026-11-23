@@ -5,19 +5,18 @@ namespace MockOrganizer.API.Data;
 
 public static class OrganizerDatabaseSeeder
 {
-    // Dispute evidence reads gate logs, so a plain restart keeps them. Only an explicit reset clears history.
+    // Dọn dẹp logs và các vé phụ để lượt quét cổng luôn làm mới theo ngày hôm đó
     public static async Task CleanGateHistoryAsync(
         OrganizerDbContext context,
         IReadOnlySet<Guid> seedIds,
         bool resetOperationalData)
     {
-        if (resetOperationalData)
-        {
-            context.GateAccessLogs.RemoveRange(await context.GateAccessLogs.ToListAsync());
-        }
+        // Mỗi lần khởi động đều quay về bộ dữ liệu demo xác định: xóa lịch sử
+        // quét và mọi vé phát sinh ngoài seed, rồi SeedOrganizerAsync nạp lại seed chuẩn.
+        context.GateAccessLogs.RemoveRange(await context.GateAccessLogs.ToListAsync());
 
         var extraTickets = await context.MockTickets
-            .Where(t => !seedIds.Contains(t.Id) && t.Status != "VALID" && (resetOperationalData || t.Status != "USED"))
+            .Where(t => !seedIds.Contains(t.Id))
             .ToListAsync();
         if (extraTickets.Any())
         {
@@ -30,6 +29,13 @@ public static class OrganizerDatabaseSeeder
         // 1. Auto-apply any pending migrations on startup (code-first auto-init)
         await context.Database.MigrateAsync();
 
+        var now = DateTimeOffset.UtcNow;
+        var vietnamNow = now.ToOffset(TimeSpan.FromHours(7));
+        var gateDemoEventStart = new DateTimeOffset(vietnamNow.Date.AddHours(22), vietnamNow.Offset).ToUniversalTime();
+        var atshEventStart = new DateTimeOffset(vietnamNow.Date.AddDays(1).AddHours(22), vietnamNow.Offset).ToUniversalTime();
+        var spaceSpeakersEventStart = now.AddDays(45);
+        var westlifeEventStart = now.AddDays(60);
+
         // 2. Seed & Deterministic Reset of Mock Tickets
         // --- VieON ticket IDs ---
         var ticket1Id = Guid.Parse("a0000000-0000-0000-0000-000000000001");
@@ -37,6 +43,9 @@ public static class OrganizerDatabaseSeeder
         var ticket3Id = Guid.Parse("a0000000-0000-0000-0000-000000000003");
         var ticket4Id = Guid.Parse("a0000000-0000-0000-0000-000000000004");
         var ticket5Id = Guid.Parse("a0000000-0000-0000-0000-000000000005");
+        // VieON Cặp 2 vé bán lẻ trên sàn
+        var ticketPair1Id = Guid.Parse("a0000000-0000-0000-0000-00000000000c");
+        var ticketPair2Id = Guid.Parse("a0000000-0000-0000-0000-00000000000d");
         // --- SpaceSpeakers ticket IDs ---
         var ticket6Id  = Guid.Parse("a0000000-0000-0000-0000-000000000006");
         var ticket7Id  = Guid.Parse("a0000000-0000-0000-0000-000000000007");
@@ -48,7 +57,8 @@ public static class OrganizerDatabaseSeeder
 
         var seedIds = new HashSet<Guid>
         {
-            ticket1Id, ticket2Id, ticket3Id, ticket4Id, ticket5Id,  // VieON
+            ticket1Id, ticket2Id, ticket3Id, ticket4Id, ticket5Id,  // VieON (Single + Combo 3)
+            ticketPair1Id, ticketPair2Id,                            // VieON (Cặp 2 vé bán lẻ)
             ticket6Id, ticket7Id, ticket8Id,                         // SpaceSpeakers
             ticket9Id, ticket10Id, ticket11Id                        // Live Nation VN
         };
@@ -75,8 +85,9 @@ public static class OrganizerDatabaseSeeder
         ticket1.OrganizerId = vieOnId;
         ticket1.TicketCode = "ATSH-VIP-888";
         ticket1.EventName = "Anh Trai Say Hi Concert 2026";
+        ticket1.EventStartAt = gateDemoEventStart;
         ticket1.SeatZone = "VIP Zone A - Row 1 Seat 12";
-        ticket1.OriginalPrice = 50000;
+        ticket1.OriginalPrice = 60000;
         ticket1.OwnerEmail = "linhtranlatao2004@gmail.com";
         ticket1.OwnerPhone = "0901234567";
         ticket1.OwnerName = "Nguyen Van Seller";
@@ -91,8 +102,9 @@ public static class OrganizerDatabaseSeeder
         ticket2.OrganizerId = vieOnId;
         ticket2.TicketCode = "ATSH-GA-999";
         ticket2.EventName = "Anh Trai Say Hi Concert 2026";
+        ticket2.EventStartAt = atshEventStart;
         ticket2.SeatZone = "GA Standing Zone 2";
-        ticket2.OriginalPrice = 50000;
+        ticket2.OriginalPrice = 60000;
         ticket2.OwnerEmail = "linhtranlatao2004@gmail.com";
         ticket2.OwnerPhone = "0901234567";
         ticket2.OwnerName = "Nguyen Van Seller";
@@ -107,8 +119,9 @@ public static class OrganizerDatabaseSeeder
         ticket3.OrganizerId = vieOnId;
         ticket3.TicketCode = "ATSH-USED-001";
         ticket3.EventName = "Anh Trai Say Hi Concert 2026";
+        ticket3.EventStartAt = atshEventStart;
         ticket3.SeatZone = "Standard Zone C";
-        ticket3.OriginalPrice = 800000;
+        ticket3.OriginalPrice = 60000;
         ticket3.OwnerEmail = "linhtranlatao2004@gmail.com";
         ticket3.OwnerPhone = "0901234567";
         ticket3.OwnerName = "Nguyen Van Seller";
@@ -123,8 +136,9 @@ public static class OrganizerDatabaseSeeder
         ticket4.OrganizerId = vieOnId;
         ticket4.TicketCode = "ATSH-VIP-887";
         ticket4.EventName = "Anh Trai Say Hi Concert 2026";
+        ticket4.EventStartAt = gateDemoEventStart;
         ticket4.SeatZone = "VIP Zone A - Row 2 Seat 08";
-        ticket4.OriginalPrice = 2500000;
+        ticket4.OriginalPrice = 60000;
         ticket4.OwnerEmail = "linhtranlatao2004@gmail.com";
         ticket4.OwnerPhone = "0901234567";
         ticket4.OwnerName = "Nguyen Van Seller";
@@ -139,12 +153,48 @@ public static class OrganizerDatabaseSeeder
         ticket5.OrganizerId = vieOnId;
         ticket5.TicketCode = "ATSH-VIP-886";
         ticket5.EventName = "Anh Trai Say Hi Concert 2026";
+        ticket5.EventStartAt = gateDemoEventStart;
         ticket5.SeatZone = "VIP Zone A - Row 2 Seat 09";
-        ticket5.OriginalPrice = 2500000;
+        ticket5.OriginalPrice = 60000;
         ticket5.OwnerEmail = "linhtranlatao2004@gmail.com";
         ticket5.OwnerPhone = "0901234567";
         ticket5.OwnerName = "Nguyen Van Seller";
         ticket5.Status = "VALID";
+
+        // VieON Cặp 2 vé bán lẻ trên sàn
+        var ticketPair1 = await context.MockTickets.FirstOrDefaultAsync(t => t.Id == ticketPair1Id);
+        if (ticketPair1 == null)
+        {
+            ticketPair1 = new MockTicket { Id = ticketPair1Id };
+            await context.MockTickets.AddAsync(ticketPair1);
+        }
+        ticketPair1.OrganizerId = vieOnId;
+        ticketPair1.TicketCode = "ATSH-GA-001";
+        ticketPair1.EventName = "Anh Trai Say Hi Concert 2026";
+        ticketPair1.EventStartAt = atshEventStart;
+        ticketPair1.SeatZone = "GA Standing Zone 1 - No. 01";
+        ticketPair1.OriginalPrice = 60000;
+        ticketPair1.OwnerEmail = "linhtranlatao2004@gmail.com";
+        ticketPair1.OwnerPhone = "0901234567";
+        ticketPair1.OwnerName = "Nguyen Van Seller";
+        ticketPair1.Status = "VALID";
+
+        var ticketPair2 = await context.MockTickets.FirstOrDefaultAsync(t => t.Id == ticketPair2Id);
+        if (ticketPair2 == null)
+        {
+            ticketPair2 = new MockTicket { Id = ticketPair2Id };
+            await context.MockTickets.AddAsync(ticketPair2);
+        }
+        ticketPair2.OrganizerId = vieOnId;
+        ticketPair2.TicketCode = "ATSH-GA-002";
+        ticketPair2.EventName = "Anh Trai Say Hi Concert 2026";
+        ticketPair2.EventStartAt = atshEventStart;
+        ticketPair2.SeatZone = "GA Standing Zone 1 - No. 02";
+        ticketPair2.OriginalPrice = 60000;
+        ticketPair2.OwnerEmail = "linhtranlatao2004@gmail.com";
+        ticketPair2.OwnerPhone = "0901234567";
+        ticketPair2.OwnerName = "Nguyen Van Seller";
+        ticketPair2.Status = "VALID";
 
         // =====================================================================
         // BTC 2: SpaceSpeakers — Mixtape Hanoi 2026
@@ -158,6 +208,7 @@ public static class OrganizerDatabaseSeeder
         ticket6.OrganizerId = spaceSpeakersId;
         ticket6.TicketCode = "SS-VIP-001";
         ticket6.EventName = "Mixtape Hanoi 2026";
+        ticket6.EventStartAt = spaceSpeakersEventStart;
         ticket6.SeatZone = "VIP Lounge A";
         ticket6.OriginalPrice = 3500000;
         ticket6.OwnerEmail = "linhtranlatao2004@gmail.com";
@@ -174,6 +225,7 @@ public static class OrganizerDatabaseSeeder
         ticket7.OrganizerId = spaceSpeakersId;
         ticket7.TicketCode = "SS-GA-001";
         ticket7.EventName = "Mixtape Hanoi 2026";
+        ticket7.EventStartAt = spaceSpeakersEventStart;
         ticket7.SeatZone = "GA Floor Zone";
         ticket7.OriginalPrice = 1200000;
         ticket7.OwnerEmail = "linhtranlatao2004@gmail.com";
@@ -190,6 +242,7 @@ public static class OrganizerDatabaseSeeder
         ticket8.OrganizerId = spaceSpeakersId;
         ticket8.TicketCode = "SS-USED-001";
         ticket8.EventName = "Mixtape Hanoi 2026";
+        ticket8.EventStartAt = spaceSpeakersEventStart;
         ticket8.SeatZone = "Standard Zone";
         ticket8.OriginalPrice = 800000;
         ticket8.OwnerEmail = "linhtranlatao2004@gmail.com";
@@ -209,6 +262,7 @@ public static class OrganizerDatabaseSeeder
         ticket9.OrganizerId = liveNationVnId;
         ticket9.TicketCode = "LN-VIP-001";
         ticket9.EventName = "Westlife Vietnam Tour 2026";
+        ticket9.EventStartAt = westlifeEventStart;
         ticket9.SeatZone = "VIP Platinum";
         ticket9.OriginalPrice = 5000000;
         ticket9.OwnerEmail = "linhtranlatao2004@gmail.com";
@@ -225,6 +279,7 @@ public static class OrganizerDatabaseSeeder
         ticket10.OrganizerId = liveNationVnId;
         ticket10.TicketCode = "LN-GA-001";
         ticket10.EventName = "Westlife Vietnam Tour 2026";
+        ticket10.EventStartAt = westlifeEventStart;
         ticket10.SeatZone = "GA Standing";
         ticket10.OriginalPrice = 1500000;
         ticket10.OwnerEmail = "linhtranlatao2004@gmail.com";
@@ -241,6 +296,7 @@ public static class OrganizerDatabaseSeeder
         ticket11.OrganizerId = liveNationVnId;
         ticket11.TicketCode = "LN-CANCEL-001";
         ticket11.EventName = "Westlife Vietnam Tour 2026";
+        ticket11.EventStartAt = westlifeEventStart;
         ticket11.SeatZone = "Standard Zone";
         ticket11.OriginalPrice = 900000;
         ticket11.OwnerEmail = "linhtranlatao2004@gmail.com";
@@ -260,12 +316,12 @@ public static class OrganizerDatabaseSeeder
             // ── VieON: Anh Trai Say Hi Concert 2026 ──────────────────────
             new { Id = Guid.Parse("c0000000-0000-0000-0000-000000000001"),
                   EventId = "atsh-2026",
-                  TierName = "VIP Zone A", Price = 2_500_000m,
+                  TierName = "VIP Zone A", Price = 60_000m,
                   Total = 100, Available = 47 },
 
             new { Id = Guid.Parse("c0000000-0000-0000-0000-000000000002"),
                   EventId = "atsh-2026",
-                  TierName = "GA Standing", Price = 1_200_000m,
+                  TierName = "GA Standing", Price = 60_000m,
                   Total = 500, Available = 312 },
 
             // ── SpaceSpeakers: Mixtape Hanoi 2026 ────────────────────────
@@ -293,7 +349,8 @@ public static class OrganizerDatabaseSeeder
 
         foreach (var t in tiers)
         {
-            if (!await context.TicketTiers.AnyAsync(x => x.Id == t.Id))
+            var existing = await context.TicketTiers.FirstOrDefaultAsync(x => x.Id == t.Id);
+            if (existing == null)
             {
                 await context.TicketTiers.AddAsync(new TicketTier
                 {
@@ -304,6 +361,12 @@ public static class OrganizerDatabaseSeeder
                     TotalQuantity     = t.Total,
                     AvailableQuantity = t.Available,
                 });
+            }
+            else
+            {
+                existing.Price             = t.Price;
+                existing.TotalQuantity     = t.Total;
+                existing.AvailableQuantity = t.Available;
             }
         }
     }

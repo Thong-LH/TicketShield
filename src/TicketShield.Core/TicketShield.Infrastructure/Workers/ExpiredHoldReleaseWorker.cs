@@ -27,17 +27,24 @@ public class ExpiredHoldReleaseWorker : BackgroundService
     {
         _logger.LogInformation("ExpiredHoldReleaseWorker started with check interval {Interval} seconds.", _checkInterval.TotalSeconds);
 
-        using var timer = new PeriodicTimer(_checkInterval);
-        while (await timer.WaitForNextTickAsync(stoppingToken))
+        try
         {
-            try
+            using var timer = new PeriodicTimer(_checkInterval);
+            while (!stoppingToken.IsCancellationRequested && await timer.WaitForNextTickAsync(stoppingToken))
             {
-                await ReleaseExpiredHoldsAsync(stoppingToken);
+                try
+                {
+                    await ReleaseExpiredHoldsAsync(stoppingToken);
+                }
+                catch (Exception ex) when (!stoppingToken.IsCancellationRequested)
+                {
+                    _logger.LogError(ex, "An error occurred while releasing expired listing holds.");
+                }
             }
-            catch (Exception ex) when (!stoppingToken.IsCancellationRequested)
-            {
-                _logger.LogError(ex, "An error occurred while releasing expired listing holds.");
-            }
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            // Expected during graceful shutdown
         }
     }
 
@@ -46,6 +53,10 @@ public class ExpiredHoldReleaseWorker : BackgroundService
         using var scope = _scopeFactory.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ITicketShieldDbContext>();
 
+        // If a webhook credits a scanned hold, retry the scan instead of overwriting RefundQueued.
+        await using var transaction = dbContext.Database.IsRelational()
+            ? await dbContext.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, ct)
+            : null;
         var now = DateTimeOffset.UtcNow;
 
         // Find all expired pending escrows (both single-listing and bundle)
@@ -143,6 +154,7 @@ public class ExpiredHoldReleaseWorker : BackgroundService
         }
 
         await dbContext.SaveChangesAsync(ct);
+        if (transaction != null) await transaction.CommitAsync(ct);
         return revertedCount;
     }
 }

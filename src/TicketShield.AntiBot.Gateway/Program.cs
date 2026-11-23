@@ -1,3 +1,4 @@
+using TicketShield.AntiBot.Verification;
 using Microsoft.AspNetCore.Mvc;
 using StackExchange.Redis;
 using TicketShield.AntiBot.Gateway.Middleware;
@@ -228,6 +229,9 @@ if (args.Contains("--test-shadow-components"))
 }
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Services.AddMemoryCache();
+builder.Services.AddHttpClient("captcha", client => client.Timeout = TimeSpan.FromSeconds(10));
+builder.Services.AddSingleton<ChallengeVerificationService>();
 
 var port = builder.Configuration.GetValue("HttpPort", 5006);
 builder.WebHost.ConfigureKestrel(options =>

@@ -30,6 +30,12 @@ public class AdminUsersController : ApiControllerBase
         return Ok(result);
     }
 
+    [HttpDelete("{id:guid}/suspension")]
+    public async Task<IActionResult> Reactivate(Guid id, CancellationToken cancellationToken)
+    {
+        return Ok(await Mediator.Send(new SuspendUserCommand(id, Reactivate: true), cancellationToken));
+    }
+
     [HttpPost("{id:guid}/suspension")]
     [ProducesResponseType(typeof(ApiResponse<AdminUserDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status401Unauthorized)]

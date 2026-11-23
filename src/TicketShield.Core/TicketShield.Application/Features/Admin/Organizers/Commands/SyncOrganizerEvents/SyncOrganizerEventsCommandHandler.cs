@@ -212,7 +212,10 @@ public class SyncOrganizerEventsCommandHandler(
             ];
         }
 
-        // Default: VieON Anh Trai Say Hi
+        // Default: VieON Anh Trai Say Hi. Keep the same future demo slot as
+        // DatabaseSeeder and MockOrganizer's catalog endpoint (tomorrow at 22:00 Vietnam time).
+        var vietnamNow = now.ToOffset(TimeSpan.FromHours(7));
+        var demoEventStart = new DateTimeOffset(vietnamNow.Date.AddDays(1).AddHours(22), vietnamNow.Offset).ToUniversalTime();
         return
         [
             new ExternalCatalogEventItem(
@@ -220,15 +223,15 @@ public class SyncOrganizerEventsCommandHandler(
                 "Anh Trai Say Hi Concert 2026",
                 "Anh Trai Say Hi All-Stars",
                 "CONCERT",
-                "Hà Nội",
-                "Sân vận động Quốc gia Mỹ Đình",
-                "Đêm nhạc quy tụ toàn bộ 30 Anh Trai với sân khấu hoành tráng hàng đầu Việt Nam.",
-                now.AddDays(30),
-                now.AddDays(30).AddHours(4),
-                now.AddDays(30).AddHours(-2),
+                "TP. Hồ Chí Minh",
+                "Van Hanh Mall Stadium, TP.HCM",
+                "Mega Concert Vietnam 2026 quy tụ dàn nghệ sĩ đỉnh cao",
+                demoEventStart,
+                demoEventStart.AddHours(4),
+                demoEventStart.AddHours(-2),
                 [
-                    new ExternalCatalogTierItem("VIP Zone A", 2500000m, "Khu vực VIP Zone A gần sân khấu"),
-                    new ExternalCatalogTierItem("GA Standing", 1200000m, "Khu vực đứng tự do")
+                    new ExternalCatalogTierItem("VIP Zone A", 60000m, "Khu vực VIP Zone A gần sân khấu"),
+                    new ExternalCatalogTierItem("GA Standing", 60000m, "Khu vực đứng tự do")
                 ]
             )
         ];

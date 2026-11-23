@@ -145,7 +145,16 @@ public sealed class ResaleFixture : IAsyncLifetime
         coreBuilder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
         Core = coreBuilder.Build();
         using (var scope = Core.Services.CreateScope()) {
-            await DatabaseSeeder.SeedTicketShieldAsync(scope.ServiceProvider.GetRequiredService<TicketShieldDbContext>());
+            var db = scope.ServiceProvider.GetRequiredService<TicketShieldDbContext>();
+            await DatabaseSeeder.SeedTicketShieldAsync(db);
+            var organizer = await db.Organizers.SingleAsync(o => o.Id == Guid.Parse(Organizer));
+            organizer.GrpcEndpoint = $"http://127.0.0.1:{mockGrpcPort}";
+            organizer.ApiBaseUrl = $"http://127.0.0.1:{mockHttpPort}";
+            var seller = await db.ShadowUsers.SingleAsync(u => u.Id == Guid.Parse(Seller));
+            seller.PayoutBankCode = "TEST";
+            seller.PayoutAccountNumber = "123456789";
+            seller.PayoutAccountName = "Test Seller";
+            await db.SaveChangesAsync();
         }
         Core.UseMiddleware<GlobalExceptionHandlingMiddleware>();
         Core.UseAuthentication(); Core.UseAuthorization(); Core.MapControllers(); await Core.StartAsync();
@@ -154,8 +163,8 @@ public sealed class ResaleFixture : IAsyncLifetime
     public async Task<string> Ticket(string status = "VALID", decimal price = 2500000m)
     {
         var code = "TEST-" + Guid.NewGuid().ToString("N");
-        await Sql(Database.MockConnection, "INSERT INTO mock_tickets (id,ticket_code,event_name,seat_zone,original_price,owner_email,status,created_at,updated_at) VALUES (@id,@code,'Test concert','VIP',@price,'seller@example.invalid',@status,now(),now())",
-            ("id", Guid.NewGuid()), ("code", code), ("price", price), ("status", status));
+        await Sql(Database.MockConnection, "INSERT INTO mock_tickets (organizer_id,id,ticket_code,event_name,seat_zone,original_price,owner_email,status,created_at,updated_at) VALUES (@org,@id,@code,'Test concert','VIP',@price,'seller@example.invalid',@status,now(),now())",
+            ("org", Guid.Parse(Organizer)), ("id", Guid.NewGuid()), ("code", code), ("price", price), ("status", status));
         Mock.Services.GetRequiredService<ResaleOptions>().TicketMappings[code] = new() { EventId = "concert", TierId = "vip" };
         return code;
     }
@@ -191,6 +200,7 @@ public sealed class ResaleFixture : IAsyncLifetime
     {
         ticket ??= await Ticket();
         var result = await Post("api/ticket-verifications", new { ticketCode = ticket });
+        Assert.True(result.Status == HttpStatusCode.OK, result.Body.ToString());
         var vId = result.Body.GetProperty("data").GetProperty("verificationId").GetString()!;
         string otp = "";
         for (int i = 0; i < 20; i++)

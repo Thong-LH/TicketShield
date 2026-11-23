@@ -51,18 +51,21 @@ public class SuspendUserCommandHandler : IRequestHandler<SuspendUserCommand, Api
             throw new ForbiddenAccessException("Only standard user accounts can be suspended.");
         }
 
-        user.IsActive = false;
-        user.TrustScore = 0;
+        user.IsActive = request.Reactivate;
         user.UpdatedAt = DateTimeOffset.UtcNow;
-
-        var activeTokens = await _context.RefreshTokens
-            .Where(r => r.UserId == user.Id && r.RevokedAt == null && r.ExpiresAt > DateTimeOffset.UtcNow)
-            .ToListAsync(cancellationToken);
-
-        foreach (var token in activeTokens)
+        if (!request.Reactivate)
         {
-            token.RevokedAt = DateTimeOffset.UtcNow;
-            token.RevokedByIp = "SuspendUser";
+            user.TrustScore = 0;
+
+            var activeTokens = await _context.RefreshTokens
+                .Where(r => r.UserId == user.Id && r.RevokedAt == null && r.ExpiresAt > DateTimeOffset.UtcNow)
+                .ToListAsync(cancellationToken);
+
+            foreach (var token in activeTokens)
+            {
+                token.RevokedAt = DateTimeOffset.UtcNow;
+                token.RevokedByIp = "SuspendUser";
+            }
         }
 
         await _publishEndpoint.Publish<IUserProfileUpdatedEvent>(new UserProfileUpdatedEvent(
@@ -76,6 +79,6 @@ public class SuspendUserCommandHandler : IRequestHandler<SuspendUserCommand, Api
 
         await _context.SaveChangesAsync(cancellationToken);
 
-        return ApiResponse<AdminUserDto>.SuccessResponse(AdminUserDto.FromUser(user), "User account suspended successfully.");
+        return ApiResponse<AdminUserDto>.SuccessResponse(AdminUserDto.FromUser(user), request.Reactivate ? "User account reactivated." : "User account suspended successfully.");
     }
 }

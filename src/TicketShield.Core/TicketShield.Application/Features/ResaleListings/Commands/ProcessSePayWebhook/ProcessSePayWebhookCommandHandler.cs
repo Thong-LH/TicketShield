@@ -141,7 +141,7 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
         // 5. Validate Listing & Escrow status.
         // Cancelled holds still accept a late SePay credit so money is queued for refund
         // instead of throwing (buyer may transfer after clicking cancel).
-        if (escrow.Status != EscrowStatus.Pending && escrow.Status != EscrowStatus.Cancelled)
+        if (escrow.Status != EscrowStatus.Pending && escrow.Status != EscrowStatus.Cancelled && escrow.Status != EscrowStatus.Expired)
         {
             throw new BusinessRuleViolationException($"Escrow transaction is currently in '{escrow.Status}' status and cannot be locked.");
         }
@@ -169,6 +169,7 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
 
         if (!holdStillValid)
         {
+            var pendingHold = escrow.Status == EscrowStatus.Pending;
             escrow.Status = EscrowStatus.RefundQueued;
             escrow.BankTransactionReference = bankTxRef;
             escrow.InSettlementBuffer = false;
@@ -178,7 +179,7 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
 
             var affectedListingIds = new List<Guid> { escrow.ListingId };
 
-            if (escrow.BundleId.HasValue)
+            if (pendingHold && escrow.BundleId.HasValue)
             {
                 var bundleListings = await _dbContext.ResaleListings
                     .Where(l => l.BundleId == escrow.BundleId && l.ListingStatus == ListingStatus.Transacting)
@@ -189,7 +190,7 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
                     if (!affectedListingIds.Contains(l.Id)) affectedListingIds.Add(l.Id);
                 }
             }
-            else if (escrow.Listing.ListingStatus == ListingStatus.Transacting)
+            else if (pendingHold && escrow.Listing.ListingStatus == ListingStatus.Transacting)
             {
                 escrow.Listing.ListingStatus = newStatus;
             }
@@ -200,7 +201,7 @@ public class ProcessSePayWebhookCommandHandler : IRequestHandler<ProcessSePayWeb
                 escrow.Id, bankTxRef, paymentReference);
             await TrySendLatePaymentEmailAsync(escrow, payload.TransferAmount, cancellationToken);
 
-            if (_paymentNotifier != null)
+            if (pendingHold && _paymentNotifier != null)
             {
                 foreach (var lId in affectedListingIds)
                 {

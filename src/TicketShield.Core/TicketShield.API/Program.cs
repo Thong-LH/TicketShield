@@ -33,6 +33,10 @@ builder.Services.AddCors(options =>
 });
 
 // Add services to the container.
+builder.Services.Configure<HostOptions>(options =>
+{
+    options.BackgroundServiceExceptionBehavior = BackgroundServiceExceptionBehavior.Ignore;
+});
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 

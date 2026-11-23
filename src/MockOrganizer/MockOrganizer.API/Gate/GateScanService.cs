@@ -12,6 +12,7 @@ public sealed class GateScanService(
     private const int MaxTicketCodeLength = 50;
     private const int MaxLabelLength = 100;
     private const string DefaultGateName = "Main Gate";
+    private static readonly TimeSpan VietnamUtcOffset = TimeSpan.FromHours(7);
 
     public static bool IsValid(GateScanRequest request)
     {
@@ -93,6 +94,23 @@ public sealed class GateScanService(
         DateTimeOffset scannedAt,
         CancellationToken cancellationToken)
     {
+        var ticket = await db.MockTickets.AsNoTracking()
+            .Where(row => row.TicketCode == ticketCode)
+            .Select(row => new { row.Status, row.EventStartAt })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (ticket is null)
+        {
+            return GateScanResults.Invalid;
+        }
+
+        if (ticket.EventStartAt.HasValue
+            && ticket.EventStartAt.Value.ToOffset(VietnamUtcOffset).Date
+                != scannedAt.ToOffset(VietnamUtcOffset).Date)
+        {
+            return GateScanResults.WrongDate;
+        }
+
         var claimed = await db.MockTickets
             .Where(ticket => ticket.TicketCode == ticketCode && ticket.Status == "VALID")
             .ExecuteUpdateAsync(
@@ -106,14 +124,13 @@ public sealed class GateScanService(
             return GateScanResults.Success;
         }
 
-        var status = await db.MockTickets.AsNoTracking()
-            .Where(ticket => ticket.TicketCode == ticketCode)
-            .Select(ticket => ticket.Status)
-            .FirstOrDefaultAsync(cancellationToken);
+        var currentStatus = await db.MockTickets.AsNoTracking()
+            .Where(row => row.TicketCode == ticketCode)
+            .Select(row => row.Status)
+            .FirstAsync(cancellationToken);
 
-        return status switch
+        return currentStatus switch
         {
-            null => GateScanResults.Invalid,
             "USED" => GateScanResults.Duplicate,
             _ => GateScanResults.Revoked
         };

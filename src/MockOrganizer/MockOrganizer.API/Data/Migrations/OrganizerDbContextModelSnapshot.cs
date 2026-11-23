@@ -196,6 +196,10 @@ namespace MockOrganizer.API.Data.Migrations
                         .HasColumnType("text")
                         .HasColumnName("event_name");
 
+                    b.Property<DateTimeOffset?>("EventStartAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("event_start_at");
+
                     b.Property<Guid>("OrganizerId")
                         .HasColumnType("uuid")
                         .HasColumnName("organizer_id");

@@ -4,4 +4,4 @@ using TicketShield.Identity.Application.Features.AdminUsers.Models;
 
 namespace TicketShield.Identity.Application.Features.AdminUsers.Commands.SuspendUser;
 
-public record SuspendUserCommand(Guid UserId) : IRequest<ApiResponse<AdminUserDto>>;
+public record SuspendUserCommand(Guid UserId, bool Reactivate = false) : IRequest<ApiResponse<AdminUserDto>>;
