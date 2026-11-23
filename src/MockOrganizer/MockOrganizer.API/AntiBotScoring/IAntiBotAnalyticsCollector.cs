@@ -14,6 +14,8 @@ public record AntiBotEvaluationLog
     public double LatencyMs { get; init; }
     public bool IsFailOpen { get; init; }
     public string Reason { get; init; } = string.Empty;
+    public BotRiskVector? Vector { get; init; }
+    public Dictionary<string, float>? Vector11D { get; init; }
 }
 
 /// <summary>

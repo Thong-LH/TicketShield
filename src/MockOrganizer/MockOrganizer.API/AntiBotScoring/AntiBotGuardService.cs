@@ -83,6 +83,21 @@ public class AntiBotGuardService(
 
     private void RecordAnalytics(AntiBotGuardResult result, CheckoutRequest request)
     {
+        var vector11D = result.Vector != null ? new Dictionary<string, float>
+        {
+            ["is_webdriver"] = result.Vector.IsWebDriver,
+            ["virtual_gpu_detected"] = -1.0f,
+            ["prototype_tampered"] = -1.0f,
+            ["canvas_tampered"] = -1.0f,
+            ["action_interval_std_dev"] = result.Vector.ActionIntervalStdDev,
+            ["ua_match_level"] = 0.0f,
+            ["network_inconsistency_score"] = 0.0f,
+            ["time_to_checkout"] = result.Vector.TimeToCheckout,
+            ["burst_rate_10s"] = result.Vector.BurstRate10s,
+            ["concurrent_hold"] = result.Vector.ConcurrentHold,
+            ["device_account_overlap"] = result.Vector.DeviceAccountOverlap
+        } : null;
+
         analyticsCollector?.RecordEvaluation(new AntiBotEvaluationLog
         {
             RequestId = request.SessionToken,
@@ -91,7 +106,9 @@ public class AntiBotGuardService(
             RiskScore = result.RiskScore,
             LatencyMs = result.ExecutionDurationMs,
             IsFailOpen = result.IsFailOpen,
-            Reason = result.Reason
+            Reason = result.Reason,
+            Vector = result.Vector,
+            Vector11D = vector11D
         });
     }
 

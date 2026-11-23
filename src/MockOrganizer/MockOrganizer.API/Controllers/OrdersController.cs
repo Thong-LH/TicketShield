@@ -22,7 +22,8 @@ public class OrdersController(
     ResaleOptions? resaleOptions = null,
     TimeProvider? clock = null,
     IAntiBotPolicyManager? policyManager = null,
-    TicketShield.AntiBot.Verification.ChallengeVerificationService? cartVerifier = null)
+    TicketShield.AntiBot.Verification.ChallengeVerificationService? cartVerifier = null,
+    IAntiBotViolationTracker? violationTracker = null)
     : ControllerBase
 {
     private const int MaxRetries = 3;
@@ -116,21 +117,56 @@ public class OrdersController(
         var clientIp = HttpContext?.Request?.Headers["X-Forwarded-For"].FirstOrDefault()
             ?? HttpContext?.Connection?.RemoteIpAddress?.ToString();
 
+        // SCRUM-403: Kiểm tra bộ đếm vi phạm và thời gian Cooldown trước khi xử lý (Technical Memo v5)
+        if (violationTracker != null)
+        {
+            var currentStatus = await violationTracker.GetViolationStatusAsync(
+                request.SessionToken, request.ResolvedDeviceFingerprint, clientIp, ct);
+
+            if (currentStatus.RetryAfterSeconds > 0)
+            {
+                Response.Headers["Retry-After"] = currentStatus.RetryAfterSeconds.ToString();
+                return StatusCode(StatusCodes.Status429TooManyRequests, new
+                {
+                    message = currentStatus.IsHardCutoff
+                        ? "Phiên mua vé bị hủy do vi phạm quá ngưỡng 5 điểm (Khóa 15 phút)."
+                        : $"Tạm thời khóa thử lại ({currentStatus.Score} điểm vi phạm). Vui lòng chờ {currentStatus.RetryAfterSeconds}s.",
+                    decision = "Block",
+                    violationScore = currentStatus.Score,
+                    cooldownSeconds = currentStatus.CooldownSeconds,
+                    retryAfterSeconds = currentStatus.RetryAfterSeconds,
+                    isHardCutoff = currentStatus.IsHardCutoff
+                });
+            }
+        }
+
         // BE-PIPE-8.2.3: Anti-Bot Guard check với SLA 20ms và cơ chế Fail-Open tự động TRƯỚC KHI xử lý DB
         var guardResult = await antiBotGuardService.EvaluateCheckoutGuardAsync(request, clientIp, ct);
 
-        // Tier 3: Block (RiskScore >= 0.75) -> Chặn ngay lập tức, tuyệt đối không chọc DB
+        // Tier 3: Block (RiskScore >= 0.75) -> Chặn ngay lập tức, ghi nhận +2 điểm vi phạm
         if (guardResult.Decision == AntiBotDecision.Block)
         {
+            var violationStatus = violationTracker != null
+                ? await violationTracker.RecordViolationAsync(request.SessionToken, request.ResolvedDeviceFingerprint, clientIp, 2, ct)
+                : new ViolationStatus { Score = 2, CooldownSeconds = 15, IsHardCutoff = false, RetryAfterSeconds = 15 };
+
+            Response.Headers["Retry-After"] = Math.Max(1, violationStatus.RetryAfterSeconds).ToString();
+
             logger.LogWarning(
-                "Checkout BLOCKED by AntiBotGuard. RiskScore={Score}, TimeToCheckout={Time}s, Burst10s={Burst}, IsWebdriver={Wd}, DeviceOverlap={Overlap}",
-                guardResult.RiskScore, guardResult.Vector.TimeToCheckout, guardResult.Vector.BurstRate10s, guardResult.Vector.IsWebDriver, guardResult.Vector.DeviceAccountOverlap);
+                "Checkout BLOCKED by AntiBotGuard. RiskScore={Score}, ViolationScore={VScore}, TimeToCheckout={Time}s, Burst10s={Burst}, IsWebdriver={Wd}, DeviceOverlap={Overlap}",
+                guardResult.RiskScore, violationStatus.Score, guardResult.Vector.TimeToCheckout, guardResult.Vector.BurstRate10s, guardResult.Vector.IsWebDriver, guardResult.Vector.DeviceAccountOverlap);
 
             return StatusCode(StatusCodes.Status429TooManyRequests, new
             {
-                message = "Suspicious automated activity detected. Checkout blocked.",
+                message = violationStatus.IsHardCutoff
+                    ? "Phiên mua vé bị hủy do vi phạm quá ngưỡng 5 điểm (Khóa 15 phút)."
+                    : "Suspicious automated activity detected. Checkout blocked.",
                 decision = "Block",
                 riskScore = guardResult.RiskScore,
+                violationScore = violationStatus.Score,
+                cooldownSeconds = violationStatus.CooldownSeconds,
+                retryAfterSeconds = violationStatus.RetryAfterSeconds,
+                isHardCutoff = violationStatus.IsHardCutoff,
                 executionDurationMs = guardResult.ExecutionDurationMs,
                 reason = guardResult.Reason,
                 telemetry = guardResult.Telemetry != null ? new
@@ -163,9 +199,23 @@ public class OrdersController(
 
                 if (error != null)
                 {
+                    var failStatus = violationTracker != null
+                        ? await violationTracker.RecordViolationAsync(request.SessionToken, request.ResolvedDeviceFingerprint, clientIp, 1, ct)
+                        : new ViolationStatus { Score = 1, CooldownSeconds = 5, IsHardCutoff = false, RetryAfterSeconds = 5 };
+
+                    Response.Headers["Retry-After"] = Math.Max(1, failStatus.RetryAfterSeconds).ToString();
+
                     var unavailable = error == "ChallengeVerificationUnavailable";
                     return StatusCode(unavailable ? StatusCodes.Status503ServiceUnavailable : StatusCodes.Status403Forbidden,
-                        new { code = error, message = isCart ? "Could not verify this cart. Please retry checkout." : (unavailable ? "Verification service unavailable. Please retry." : "Verification failed or expired. Please retry checkout.") });
+                        new
+                        {
+                            code = error,
+                            message = isCart ? "Could not verify this cart. Please retry checkout." : (unavailable ? "Verification service unavailable. Please retry." : "Verification failed or expired. Please retry checkout."),
+                            violationScore = failStatus.Score,
+                            cooldownSeconds = failStatus.CooldownSeconds,
+                            retryAfterSeconds = failStatus.RetryAfterSeconds,
+                            isHardCutoff = failStatus.IsHardCutoff
+                        });
                 }
 
                 isChallengeVerifiedByGateway = true;
