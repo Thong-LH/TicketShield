@@ -55,10 +55,53 @@ public class GetMarketplaceListingsQueryHandler : IRequestHandler<GetMarketplace
                 (l.Event != null && l.Event.Venue.ToLower().Contains(kw)));
         }
 
+        // TC-MKT-01 / TC-MKT-03: every filter and the sort run here, on all listings,
+        // so the total and each page are correct (the web used to filter one page only).
+        var category = request.Category?.Trim().ToUpperInvariant();
+        if (!string.IsNullOrEmpty(category) && category != "ALL")
+        {
+            query = query.Where(l => l.Event != null && l.Event.Category != null && l.Event.Category.ToUpper() == category);
+        }
+
+        query = (request.City?.Trim().ToUpperInvariant()) switch
+        {
+            "HN" => query.Where(l => l.Event != null && (
+                (l.Event.City != null && (l.Event.City.ToLower().Contains("hà nội") || l.Event.City.ToLower().Contains("ha noi") || l.Event.City.ToLower().Contains("hanoi"))) ||
+                l.Event.Venue.ToLower().Contains("hà nội") || l.Event.Venue.ToLower().Contains("hanoi"))),
+            "HCM" => query.Where(l => l.Event != null && (
+                (l.Event.City != null && (l.Event.City.ToLower().Contains("hồ chí minh") || l.Event.City.ToLower().Contains("ho chi minh") || l.Event.City.ToLower().Contains("hcm"))) ||
+                l.Event.Venue.ToLower().Contains("hồ chí minh") || l.Event.Venue.ToLower().Contains("tp.hcm"))),
+            "DN" => query.Where(l => l.Event != null && (
+                (l.Event.City != null && (l.Event.City.ToLower().Contains("đà nẵng") || l.Event.City.ToLower().Contains("da nang"))) ||
+                l.Event.Venue.ToLower().Contains("đà nẵng") || l.Event.Venue.ToLower().Contains("da nang"))),
+            _ => query
+        };
+
+        var vietnamNow = now.ToOffset(TimeSpan.FromHours(7));
+        switch (request.DateRange?.Trim().ToLowerInvariant())
+        {
+            case "upcoming":
+                var weekEnd = now.AddDays(7);
+                query = query.Where(l => l.Event != null && l.Event.EventStartAt <= weekEnd);
+                break;
+            case "this-month":
+                var monthStart = new DateTimeOffset(vietnamNow.Year, vietnamNow.Month, 1, 0, 0, 0, vietnamNow.Offset);
+                var monthEnd = monthStart.AddMonths(1);
+                query = query.Where(l => l.Event != null && l.Event.EventStartAt >= monthStart && l.Event.EventStartAt < monthEnd);
+                break;
+        }
+
         var totalCount = await query.CountAsync(cancellationToken);
 
-        var listings = await query
-            .OrderByDescending(l => l.CreatedAt)
+        IOrderedQueryable<TicketShield.Domain.Entities.ResaleListing> ordered = (request.SortBy?.Trim().ToLowerInvariant()) switch
+        {
+            "price-asc" => query.OrderBy(l => l.ResalePrice).ThenByDescending(l => l.CreatedAt),
+            "date-asc" => query.OrderBy(l => l.Event!.EventStartAt).ThenByDescending(l => l.CreatedAt),
+            _ => query.OrderByDescending(l => l.CreatedAt)
+        };
+
+        var listings = await ordered
+            .ThenBy(l => l.Id)
             .Skip((page - 1) * size)
             .Take(size)
             .ToListAsync(cancellationToken);

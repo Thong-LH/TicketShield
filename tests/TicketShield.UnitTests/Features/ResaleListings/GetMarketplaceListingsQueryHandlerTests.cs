@@ -259,6 +259,102 @@ public class GetMarketplaceListingsQueryHandlerTests
         Assert.Equal("Anh Trai Say Hi Concert 2026", result.Data.Items[0].EventName);
     }
 
+    // TC-MKT-01 / TC-MKT-03: filters, sort and the total must cover every listing, not only the current page.
+    private static (TicketShieldDbContext Context, Guid SportsListingId) CreateManyListingsAcrossPages()
+    {
+        var (context, testEvent, _) = CreateInMemoryDbContext();
+        var organizer = context.Organizers.Single();
+        var seller = context.ShadowUsers.Single();
+        var derby = new Event
+        {
+            Id = Guid.NewGuid(),
+            OrganizerId = organizer.Id,
+            Name = "Tran Derby: CLB Ha Noi vs CLB Viettel",
+            Venue = "San van dong Hang Day",
+            Category = "SPORTS",
+            City = "Hà Nội",
+            EventStartAt = DateTimeOffset.UtcNow.AddDays(3),
+            EventEndAt = DateTimeOffset.UtcNow.AddDays(3).AddHours(2),
+            ResaleDeadline = DateTimeOffset.UtcNow.AddDays(2),
+            Organizer = organizer
+        };
+        var derbyTier = new TicketTier { Id = Guid.NewGuid(), EventId = derby.Id, TierName = "Khan dai B", OriginalPrice = 200_000m, Event = derby };
+        context.Events.Add(derby);
+        context.TicketTiers.Add(derbyTier);
+        var tier = context.TicketTiers.Single(t => t.EventId == testEvent.Id);
+        for (var i = 0; i < 12; i++)
+        {
+            context.ResaleListings.Add(new ResaleListing
+            {
+                Id = Guid.NewGuid(), EventId = testEvent.Id, TierId = tier.Id, SellerId = seller.Id,
+                OriginalTicketCode = $"AT-PAGE-{i:00}", OriginalPrice = 1_500_000m, ResalePrice = 1_000_000m + i * 1_000m,
+                ListingStatus = ListingStatus.Verified, VerificationStatus = VerificationStatus.Verified,
+                CreatedAt = DateTimeOffset.UtcNow.AddMinutes(i), Event = testEvent, Tier = tier, Seller = seller
+            });
+        }
+        // The oldest listing, so it lands on the last page when sorted by "newest".
+        var sports = new ResaleListing
+        {
+            Id = Guid.NewGuid(), EventId = derby.Id, TierId = derbyTier.Id, SellerId = seller.Id,
+            OriginalTicketCode = "DERBY-001", OriginalPrice = 200_000m, ResalePrice = 150_000m,
+            ListingStatus = ListingStatus.Verified, VerificationStatus = VerificationStatus.Verified,
+            CreatedAt = DateTimeOffset.UtcNow.AddDays(-3), Event = derby, Tier = derbyTier, Seller = seller
+        };
+        context.ResaleListings.Add(sports);
+        context.SaveChanges();
+        return (context, sports.Id);
+    }
+
+    [Fact]
+    public async Task Handle_WithCategoryFilter_FindsListingsOutsideTheFirstPage()
+    {
+        var (context, sportsId) = CreateManyListingsAcrossPages();
+        var handler = new GetMarketplaceListingsQueryHandler(context);
+
+        var result = await handler.Handle(new GetMarketplaceListingsQuery(page: 1, size: 12) { Category = "SPORTS" }, CancellationToken.None);
+
+        var item = Assert.Single(result.Data!.Items);
+        Assert.Equal(sportsId, item.ListingId);
+        Assert.Equal(1, result.Data.TotalCount);
+    }
+
+    [Fact]
+    public async Task Handle_WithCityFilter_MatchesTheEventCityByCode()
+    {
+        var (context, sportsId) = CreateManyListingsAcrossPages();
+        var handler = new GetMarketplaceListingsQueryHandler(context);
+
+        var hanoi = await handler.Handle(new GetMarketplaceListingsQuery(page: 1, size: 12) { City = "HN" }, CancellationToken.None);
+        var daNang = await handler.Handle(new GetMarketplaceListingsQuery(page: 1, size: 12) { City = "DN" }, CancellationToken.None);
+
+        Assert.Equal(sportsId, Assert.Single(hanoi.Data!.Items).ListingId);
+        Assert.Empty(daNang.Data!.Items);
+    }
+
+    [Fact]
+    public async Task Handle_WithUpcomingDateRange_KeepsOnlyEventsInTheNextSevenDays()
+    {
+        var (context, sportsId) = CreateManyListingsAcrossPages();
+        var handler = new GetMarketplaceListingsQueryHandler(context);
+
+        var result = await handler.Handle(new GetMarketplaceListingsQuery(page: 1, size: 12) { DateRange = "upcoming" }, CancellationToken.None);
+
+        Assert.Equal(sportsId, Assert.Single(result.Data!.Items).ListingId);
+    }
+
+    [Fact]
+    public async Task Handle_SortedByPrice_StartsWithTheCheapestListingOfAllPages()
+    {
+        var (context, sportsId) = CreateManyListingsAcrossPages();
+        var handler = new GetMarketplaceListingsQueryHandler(context);
+
+        var result = await handler.Handle(new GetMarketplaceListingsQuery(page: 1, size: 12) { SortBy = "price-asc" }, CancellationToken.None);
+
+        Assert.Equal(sportsId, result.Data!.Items[0].ListingId);
+        Assert.Equal(result.Data.Items.Select(i => i.ResalePrice).OrderBy(p => p), result.Data.Items.Select(i => i.ResalePrice));
+        Assert.Equal(15, result.Data.TotalCount); // 2 base + 12 page listings + 1 sports
+    }
+
     [Fact]
     public async Task Handle_WithOrganizerIdFilter_ReturnsMatchingListingsAndOrganizerName()
     {

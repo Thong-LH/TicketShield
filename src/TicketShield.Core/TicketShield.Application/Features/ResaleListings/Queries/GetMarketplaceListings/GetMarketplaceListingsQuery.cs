@@ -11,6 +11,14 @@ public class GetMarketplaceListingsQuery : IRequest<ApiResponse<PaginatedList<Re
     public string? Keyword { get; set; }
     public Guid? EventId { get; set; }
     public Guid? OrganizerId { get; set; }
+    /// <summary>Event category: CONCERT, FESTIVAL, SPORTS, THEATER (ALL or empty = no filter).</summary>
+    public string? Category { get; set; }
+    /// <summary>City code used by the web filter: HN, HCM, DN (ALL or empty = no filter).</summary>
+    public string? City { get; set; }
+    /// <summary>upcoming (next 7 days) or this-month; anything else = no filter.</summary>
+    public string? DateRange { get; set; }
+    /// <summary>newest (default), price-asc or date-asc.</summary>
+    public string? SortBy { get; set; }
 
     public GetMarketplaceListingsQuery() { }
 

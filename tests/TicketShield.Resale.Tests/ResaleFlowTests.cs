@@ -47,7 +47,7 @@ public sealed class ResaleFlowTests(ResaleFixture f) : IClassFixture<ResaleFixtu
         var mockRows = (string)(await f.Sql(f.Database.MockConnection, "SELECT string_agg(\"Json\"::text, '') FROM organizer_resale_records"))!;
         Assert.DoesNotContain("\"otp\":", coreRows, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("\"otp\":", mockRows, StringComparison.OrdinalIgnoreCase);
-        var cancel = await f.Post($"api/ticket-verifications/{id}/cancel-listing", new { }); Assert.Equal(HttpStatusCode.OK, cancel.Status);
+        var cancel = await f.Post($"api/v1/resale-listings/{listing}/cancel", new { }); Assert.Equal(HttpStatusCode.OK, cancel.Status);
         Assert.Equal("VALID", await f.Sql(f.Database.MockConnection, "SELECT status FROM mock_tickets WHERE ticket_code=@code", ("code", ticket)));
         Assert.DoesNotContain(listing.ToString(), await f.Http.GetStringAsync("api/resale-listings"));
     }

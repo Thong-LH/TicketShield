@@ -104,9 +104,13 @@ public class GetResaleListingByPrivateTokenQueryHandlerTests
         Assert.NotEqual("TCK-SECRET-VIP-999", result.Data.MaskedTicketCode);
         Assert.Contains("*", result.Data.MaskedTicketCode);
 
+        // TC-MKT-07: after cancelling, the link still opens as Cancelled but the price is hidden
         privateListing.ListingStatus = ListingStatus.Cancelled;
         await dbContext.SaveChangesAsync();
-        await Assert.ThrowsAsync<NotFoundException>(() => handler.Handle(query, CancellationToken.None));
+        var cancelled = await handler.Handle(query, CancellationToken.None);
+        Assert.Equal("Cancelled", cancelled.Data!.ListingStatus);
+        Assert.Equal("V-Concert Hanoi 2026", cancelled.Data.EventName);
+        Assert.Equal(0m, cancelled.Data.ResalePrice);
     }
 
     [Fact]

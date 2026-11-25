@@ -151,6 +151,28 @@ public class PrivateShareTokenSecurityTests
         Assert.Equal("Cancelled", result.Data!.ListingStatus);
     }
 
+    [Fact]
+    public async Task PrivateLink_WhenListingWasCancelled_ShouldHidePriceSellerAndTicketCode()
+    {
+        // Arrange — TC-MKT-07: a cancelled link explains itself but no longer exposes the listing
+        var (db, _, _, _) = CreateDbWithPrivateListing(ListingStatus.Cancelled);
+        var handler = new GetResaleListingByPrivateTokenQueryHandler(db);
+
+        // Act
+        var data = (await handler.Handle(new GetResaleListingByPrivateTokenQuery(ShareToken), CancellationToken.None)).Data!;
+
+        // Assert
+        Assert.Equal(0m, data.ResalePrice);
+        Assert.Equal(0m, data.OriginalPrice);
+        Assert.Equal(0m, data.DiscountAmount);
+        Assert.Equal(Guid.Empty, data.SellerId);
+        Assert.Equal(string.Empty, data.SellerFullName);
+        Assert.Equal(string.Empty, data.MaskedTicketCode);
+        Assert.Null(data.SeatZone);
+        Assert.Null(data.PrivateAccessToken);
+        Assert.Null(data.BundleItems);
+    }
+
     // ───────────────────────── Cancel ─────────────────────────
 
     [Fact]

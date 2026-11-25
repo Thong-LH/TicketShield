@@ -42,4 +42,48 @@ public class SimulatedRefundTests(ResaleFixture fixture) : IClassFixture<ResaleF
         Assert.True(replay.Data!.IsIdempotentDuplicate);
         Assert.Equal("Refunded", replay.Data.EscrowStatus);
     }
+
+    [Fact]
+    public async Task SimulatedRefundEmailsTheBuyerExactlyOnce()
+    {
+        using var coreScope = fixture.Core.Services.CreateScope();
+        var options = coreScope.ServiceProvider.GetRequiredService<DbContextOptions<TicketShieldDbContext>>();
+        Guid escrowId;
+        await using (var db = new TicketShieldDbContext(options))
+        {
+            var escrow = await db.EscrowTransactions.OrderBy(e => e.CreatedAt).LastAsync();
+            escrow.Status = EscrowStatus.RefundQueued;
+            escrow.RecipientEmail = "refund-buyer@example.invalid";
+            escrow.PaymentReference = "TSREFUND01";
+            await db.SaveChangesAsync();
+            escrowId = escrow.Id;
+        }
+
+        var emails = new RecordingEmailService();
+        var services = new ServiceCollection();
+        services.AddScoped<TicketShield.Application.Common.Interfaces.ITicketShieldDbContext>(_ => new TicketShieldDbContext(options));
+        services.AddScoped<TicketShield.Application.Common.Interfaces.IEmailService>(_ => emails);
+        var worker = new SimulatedRefundWorker(
+            services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>(),
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<SimulatedRefundWorker>.Instance);
+
+        Assert.True(await worker.ProcessQueuedAsync(CancellationToken.None) >= 1);
+        Assert.Equal(0, await worker.ProcessQueuedAsync(CancellationToken.None));
+
+        var sent = Assert.Single(emails.Sent, m => m.To == "refund-buyer@example.invalid");
+        Assert.Contains("TSREFUND01", sent.Body);
+        await using var verify = new TicketShieldDbContext(options);
+        Assert.Equal(EscrowStatus.Refunded, (await verify.EscrowTransactions.SingleAsync(e => e.Id == escrowId)).Status);
+    }
+
+    private sealed class RecordingEmailService : TicketShield.Application.Common.Interfaces.IEmailService
+    {
+        public List<(string To, string Subject, string Body)> Sent { get; } = [];
+
+        public Task SendEmailAsync(string toEmail, string subject, string htmlBody, CancellationToken cancellationToken = default)
+        {
+            Sent.Add((toEmail, subject, htmlBody));
+            return Task.CompletedTask;
+        }
+    }
 }

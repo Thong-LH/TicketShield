@@ -88,6 +88,15 @@ builder.Services.Configure<TicketShield.Application.Common.Configurations.VietQr
     builder.Configuration.GetSection(TicketShield.Application.Common.Configurations.VietQrSettings.SectionName));
 builder.Services.Configure<TicketShield.Application.Common.Configurations.SmtpSettings>(
     builder.Configuration.GetSection(TicketShield.Application.Common.Configurations.SmtpSettings.SectionName));
+// The Gmail app password is a secret: keep it out of appsettings and read the shared
+// Doppler key SMTP__PASSWORD (the one Identity uses) when SmtpSettings:Password is empty.
+builder.Services.PostConfigure<TicketShield.Application.Common.Configurations.SmtpSettings>(smtp =>
+{
+    if (string.IsNullOrWhiteSpace(smtp.Password))
+    {
+        smtp.Password = builder.Configuration["Smtp:Password"] ?? string.Empty;
+    }
+});
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddCoreResale(builder.Configuration, builder.Environment);
@@ -135,8 +144,12 @@ using (var scope = app.Services.CreateScope())
     try
     {
         var dbContext = services.GetRequiredService<TicketShieldDbContext>();
-        await DatabaseSeeder.SeedTicketShieldAsync(dbContext);
-        logger.LogInformation("TicketShield database auto-migrated and verified successfully.");
+        // Startup:DataMode (env STARTUP__DATAMODE): Keep (default) keeps all data and only moves the
+        // demo dates; Reset restores the demo data set like before.
+        var keepExistingData = !string.Equals(app.Configuration["Startup:DataMode"], "Reset", StringComparison.OrdinalIgnoreCase);
+        await DatabaseSeeder.SeedTicketShieldAsync(dbContext, keepExistingData);
+        logger.LogInformation("TicketShield database auto-migrated and verified successfully (startup data mode: {Mode}).",
+            keepExistingData ? "Keep" : "Reset");
     }
     catch (Exception ex)
     {

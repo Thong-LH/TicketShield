@@ -6,7 +6,10 @@ namespace TicketShield.Identity.Infrastructure.Persistence;
 
 public static class IdentityDatabaseSeeder
 {
-    public static async Task SeedAsync(IdentityDbContext context)
+    // keepExistingData = true is the startup "Keep" mode (Startup:DataMode=Keep, the default): demo
+    // accounts that already exist keep their password, lock state and bank accounts; only missing
+    // accounts are created. false is the "Reset" mode (Startup:DataMode=Reset).
+    public static async Task SeedAsync(IdentityDbContext context, bool keepExistingData = false)
     {
         // Tự động tạo bảng & cấu trúc nếu chưa có
         await context.Database.EnsureCreatedAsync();
@@ -36,10 +39,11 @@ public static class IdentityDatabaseSeeder
         seller.PasswordHash = defaultPasswordHash;
         seller.Role = UserRole.User;
         seller.IsActive = true;
-        if (!seller.BankAccounts.Any())
+        if (!seller.BankAccounts.Any() && (!keepExistingData || context.Entry(seller).State == EntityState.Added))
         {
-            seller.BankAccounts.Add(new UserBankAccount
+            await context.UserBankAccounts.AddAsync(new UserBankAccount
             {
+                UserId = seller.Id,
                 BankCode = "MB",
                 BankAccountNumber = "0901234567",
                 AccountHolderName = "NGUYEN VAN SELLER",
@@ -60,10 +64,11 @@ public static class IdentityDatabaseSeeder
         buyer.PasswordHash = defaultPasswordHash;
         buyer.Role = UserRole.User;
         buyer.IsActive = true;
-        if (!buyer.BankAccounts.Any())
+        if (!buyer.BankAccounts.Any() && (!keepExistingData || context.Entry(buyer).State == EntityState.Added))
         {
-            buyer.BankAccounts.Add(new UserBankAccount
+            await context.UserBankAccounts.AddAsync(new UserBankAccount
             {
+                UserId = buyer.Id,
                 BankCode = "VCB",
                 BankAccountNumber = "0071009876543",
                 AccountHolderName = "TRAN THI BUYER",
@@ -116,10 +121,11 @@ public static class IdentityDatabaseSeeder
         organizer.PasswordHash = defaultPasswordHash;
         organizer.Role = UserRole.Organizer;
         organizer.IsActive = true;
-        if (!organizer.BankAccounts.Any())
+        if (!organizer.BankAccounts.Any() && (!keepExistingData || context.Entry(organizer).State == EntityState.Added))
         {
-            organizer.BankAccounts.Add(new UserBankAccount
+            await context.UserBankAccounts.AddAsync(new UserBankAccount
             {
+                UserId = organizer.Id,
                 BankCode = "VCB",
                 BankAccountNumber = "9988776655",
                 AccountHolderName = "CONG TY CP SKYMUSIC ENT",
@@ -142,10 +148,11 @@ public static class IdentityDatabaseSeeder
         trader.PasswordHash = defaultPasswordHash;
         trader.Role = UserRole.User;
         trader.IsActive = true;
-        if (!trader.BankAccounts.Any())
+        if (!trader.BankAccounts.Any() && (!keepExistingData || context.Entry(trader).State == EntityState.Added))
         {
-            trader.BankAccounts.Add(new UserBankAccount
+            await context.UserBankAccounts.AddAsync(new UserBankAccount
             {
+                UserId = trader.Id,
                 BankCode = "TCB",
                 BankAccountNumber = "19034567890123",
                 AccountHolderName = "HOANG VAN NAM",
@@ -168,6 +175,19 @@ public static class IdentityDatabaseSeeder
         suspended.Role = UserRole.User;
         suspended.IsActive = false;
         suspended.TrustScore = 0;
+
+        if (keepExistingData)
+        {
+            // The blocks above write every demo field; undo those writes on accounts that already existed.
+            foreach (var entry in context.ChangeTracker.Entries().Where(e => e.State == EntityState.Modified).ToList())
+            {
+                foreach (var property in entry.Properties.Where(p => p.IsModified).ToList())
+                {
+                    property.CurrentValue = property.OriginalValue;
+                    property.IsModified = false;
+                }
+            }
+        }
 
         await context.SaveChangesAsync();
     }

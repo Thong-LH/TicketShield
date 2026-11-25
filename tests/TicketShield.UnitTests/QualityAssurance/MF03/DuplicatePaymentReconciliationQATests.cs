@@ -294,7 +294,7 @@ public class DuplicatePaymentReconciliationQATests
         // Assert
         Assert.True(response.Success);
         Assert.Equal("RefundQueued", response.Data!.EscrowStatus);
-        Assert.Contains("hết hạn", response.Message);
+        Assert.Contains("hold expired", response.Message);
 
         db.ChangeTracker.Clear();
         var updatedEscrow = await db.EscrowTransactions.SingleAsync(e => e.Id == escrow.Id);
@@ -359,7 +359,7 @@ public class DuplicatePaymentReconciliationQATests
         // Act & Assert
         var ex = await Assert.ThrowsAsync<BusinessRuleViolationException>(() =>
             handler.Handle(new ProcessSePayWebhookCommand(payload), CancellationToken.None));
-        Assert.Contains("nhỏ hơn tổng số tiền cần trả", ex.Message);
+        Assert.Contains("is less than total required amount", ex.Message);
 
         db.ChangeTracker.Clear();
         var updatedEscrow = await db.EscrowTransactions.SingleAsync(e => e.Id == escrow.Id);
@@ -436,7 +436,7 @@ public class DuplicatePaymentReconciliationQATests
         // Act & Assert
         var ex = await Assert.ThrowsAsync<BusinessRuleViolationException>(() =>
             handler.Handle(new ProcessSePayWebhookCommand(payload), CancellationToken.None));
-        Assert.Contains("Không thể tìm thấy mã thanh toán hợp lệ", ex.Message);
+        Assert.Contains("Unable to find a valid payment reference", ex.Message);
     }
 
     [Fact]

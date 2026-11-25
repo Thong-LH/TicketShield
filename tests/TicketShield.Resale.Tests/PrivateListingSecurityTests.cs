@@ -21,6 +21,7 @@ namespace TicketShield.Resale.Tests;
 ///   • unknown token → 404; the ticket code is always masked before escrow payment
 ///   • a cancelled private listing still opens (200) and shows ListingStatus = "Cancelled"
 ///   • cancelling must unlock the original ticket at the organizer, otherwise nothing is cancelled
+///   • buying a cancelled listing, even with its share token, is rejected (422) and holds nothing
 /// </summary>
 public sealed class PrivateListingSecurityTests(ResaleFixture f) : IClassFixture<ResaleFixture>
 {
@@ -228,10 +229,30 @@ public sealed class PrivateListingSecurityTests(ResaleFixture f) : IClassFixture
         var (linkStatus, linkBody) = await SendAsync(HttpMethod.Get, $"api/v1/resale-listings/private/{listing.ShareToken}");
         Assert.Equal(HttpStatusCode.OK, linkStatus);
         Assert.Equal("Cancelled", Data(linkBody).GetProperty("listingStatus").GetString());
+        // TC-MKT-07: the cancelled link must not expose the price or the seller any more
+        Assert.Equal(0m, Data(linkBody).GetProperty("resalePrice").GetDecimal());
+        Assert.Equal(string.Empty, Data(linkBody).GetProperty("sellerFullName").GetString());
     }
 
-    [Fact(Skip = "Purchase/escrow API does not exist yet. Agreed with BE: buying a Cancelled listing must return 400. Write this test when the purchase endpoint is added.")]
-    public void Buying_a_cancelled_private_listing_is_rejected_with_400()
+    [Fact]
+    public async Task Buying_a_cancelled_private_listing_with_its_share_token_is_rejected_and_holds_nothing()
     {
+        var listing = await PublishListingAsync(isPrivate: true);
+        var cancel = await SendAsync(HttpMethod.Post, $"api/v1/resale-listings/{listing.Id}/cancel", ResaleFixture.Seller);
+        Assert.Equal(HttpStatusCode.OK, cancel.Status);
+
+        // The buyer still has the old link (share token), so the token check passes and the status rule decides.
+        var hold = await f.Post(
+            $"api/v1/resale-listings/{listing.Id}/hold",
+            new { privateAccessToken = listing.ShareToken },
+            seller: ResaleFixture.OtherSeller);
+
+        // Business rule violations are 422 across the API (same as buying an Expired listing).
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, hold.Status);
+        Assert.Contains("Cancelled", hold.Body.GetProperty("message").GetString());
+        Assert.Equal("Cancelled", await ListingStatusInDatabase(listing.Id));
+        Assert.Equal(0L, await f.Sql(f.Database.CoreConnection,
+            "SELECT count(*) FROM escrow_transactions WHERE listing_id = @id", ("id", listing.Id)));
+        Assert.Equal("VALID", await OrganizerTicketStatus(listing.TicketCode));
     }
 }

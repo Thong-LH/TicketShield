@@ -86,6 +86,9 @@ public class AdminSuspendUserTests
 
         var restored = await handler.Handle(new SuspendUserCommand(user.Id, Reactivate: true), CancellationToken.None);
         Assert.True(restored.Data!.IsActive);
+        // Team decision 23/11: reactivating clears the penalty and restores the default trust score
+        Assert.Equal(100, restored.Data.TrustScore);
+        Assert.Equal(100, (await db.Users.SingleAsync(u => u.Id == user.Id)).TrustScore);
         Assert.NotNull((await db.RefreshTokens.SingleAsync()).RevokedAt);
         var login = await new LoginCommandHandler(db, CreateTokenGen())
             .Handle(new LoginCommand(user.Email, "sample-password"), CancellationToken.None);

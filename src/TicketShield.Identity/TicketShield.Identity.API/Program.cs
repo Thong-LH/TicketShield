@@ -118,7 +118,10 @@ using (var scope = app.Services.CreateScope())
     try
     {
         var identityContext = services.GetRequiredService<IdentityDbContext>();
-        await IdentityDatabaseSeeder.SeedAsync(identityContext);
+        // Startup:DataMode (env STARTUP__DATAMODE): Keep (default) keeps the demo accounts as they are;
+        // Reset restores their password, lock state and bank accounts like before.
+        var keepExistingData = !string.Equals(app.Configuration["Startup:DataMode"], "Reset", StringComparison.OrdinalIgnoreCase);
+        await IdentityDatabaseSeeder.SeedAsync(identityContext, keepExistingData);
     }
     catch (Exception ex)
     {

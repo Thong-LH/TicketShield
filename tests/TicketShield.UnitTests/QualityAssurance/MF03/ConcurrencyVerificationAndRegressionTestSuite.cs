@@ -304,7 +304,7 @@ public class ConcurrencyVerificationAndRegressionTestSuite
         var ex = await Assert.ThrowsAsync<BusinessRuleViolationException>(() =>
             webhookHandler.Handle(new ProcessSePayWebhookCommand(underpaidPayload), CancellationToken.None));
 
-        Assert.Contains("nhỏ hơn tổng số tiền cần trả", ex.Message);
+        Assert.Contains("is less than total required amount", ex.Message);
 
         // XĂ¡c minh Escrow váº«n Pending, vĂ© váº«n Transacting, gRPC khĂ´ng Ä‘Æ°á»£c gá»i
         db.ChangeTracker.Clear();
@@ -455,7 +455,7 @@ public class ConcurrencyVerificationAndRegressionTestSuite
         // Táº¥t cáº£ request tháº¥t báº¡i Ä‘á»u nháº­n Ä‘Æ°á»£c thĂ´ng bĂ¡o rĂµ rĂ ng
         Assert.All(results.Where(r => !r.Success), r =>
         {
-            Assert.Contains("Vé này", r.Error!);
+            Assert.Contains("This ticket is currently reserved by another buyer", r.Error!);
         });
 
         // Kiá»ƒm tra CSDL: Sá»‘ lÆ°á»£ng Escrow Ä‘Æ°á»£c táº¡o ra cho listing nĂ y DUY NHáº¤T LĂ€ 1
@@ -735,10 +735,8 @@ public class ConcurrencyVerificationAndRegressionTestSuite
         var webhookHandler = new ProcessSePayWebhookCommandHandler(reqDb, null, null, null, mockVerification.Object);
         var payload = CreateSePayPayload(paymentRef, 2_100_000m);
 
-        // VĂ¬ Escrow Ä‘Ă£ Expired, Webhook tá»« chá»‘i khĂ³a
-        var ex = await Assert.ThrowsAsync<BusinessRuleViolationException>(() =>
-            webhookHandler.Handle(new ProcessSePayWebhookCommand(payload), CancellationToken.None));
-        Assert.Contains("Expired", ex.Message);
+        // The escrow is already Expired: the late money is recorded and queued for refund (TC-PAY-12)
+        await webhookHandler.Handle(new ProcessSePayWebhookCommand(payload), CancellationToken.None);
 
         // gRPC khĂ´ng bao giá» Ä‘Æ°á»£c gá»i
         mockVerification.Verify(s => s.TransferOwnershipByListingId(
@@ -746,6 +744,9 @@ public class ConcurrencyVerificationAndRegressionTestSuite
 
         using var verifyDb = new TicketShieldDbContext(options);
         var currentListing = await verifyDb.ResaleListings.SingleAsync(l => l.Id == listing.Id);
+        var refundedEscrow = await verifyDb.EscrowTransactions.SingleAsync(e => e.Id == escrow.Id);
+        Assert.Equal(EscrowStatus.RefundQueued, refundedEscrow.Status);
+        Assert.Null(refundedEscrow.NewTicketCode);
         Assert.Equal(ListingStatus.Verified, currentListing.ListingStatus); // ÄĂ£ sáºµn sĂ ng cho ngÆ°á»i mua khĂ¡c
     }
 
@@ -949,10 +950,8 @@ public class ConcurrencyVerificationAndRegressionTestSuite
             var lateWebhookHandler = new ProcessSePayWebhookCommandHandler(lateDb, null, null, null, mockVerification.Object);
             var payloadBuyer1 = CreateSePayPayload(buyer1PaymentRef, 2_100_000m, "FT_BUYER1_LATE");
 
-            // VĂ¬ Escrow 1 Ä‘Ă£ bá»‹ Worker Ä‘Ă¡nh dáº¥u Expired, há»‡ thá»‘ng tá»« chá»‘i khĂ³a
-            var ex = await Assert.ThrowsAsync<BusinessRuleViolationException>(() =>
-                lateWebhookHandler.Handle(new ProcessSePayWebhookCommand(payloadBuyer1), CancellationToken.None));
-            Assert.Contains("Expired", ex.Message);
+            // The late money is recorded and queued for refund instead of being rejected (TC-PAY-12)
+            await lateWebhookHandler.Handle(new ProcessSePayWebhookCommand(payloadBuyer1), CancellationToken.None);
         }
 
         // Verify Anti-Overselling:
@@ -963,7 +962,8 @@ public class ConcurrencyVerificationAndRegressionTestSuite
             var finalEscrow2 = await finalDb.EscrowTransactions.SingleAsync(e => e.Id == escrow2.Id);
 
             Assert.Equal(ListingStatus.Sold, finalListing.ListingStatus);
-            Assert.Equal(EscrowStatus.Expired, finalEscrow1.Status);
+            Assert.Equal(EscrowStatus.RefundQueued, finalEscrow1.Status);
+            Assert.Equal("FT_BUYER1_LATE", finalEscrow1.BankTransactionReference);
             Assert.Null(finalEscrow1.NewTicketCode); // Buyer 1 khĂ´ng bao giá» cĂ³ vĂ©
 
             Assert.Equal(EscrowStatus.Locked, finalEscrow2.Status);

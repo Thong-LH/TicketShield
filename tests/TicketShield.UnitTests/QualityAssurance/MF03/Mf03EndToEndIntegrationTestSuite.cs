@@ -674,7 +674,7 @@ public class Mf03EndToEndIntegrationTestSuite
         var holdHandler2 = new HoldListingForPurchaseCommandHandler(db, feeCalculator, new MockCurrentUserService(buyer2.Id), vietQrService);
         var exBlocked = await Assert.ThrowsAsync<BusinessRuleViolationException>(() =>
             holdHandler2.Handle(new HoldListingForPurchaseCommand(listing.Id), CancellationToken.None));
-        Assert.Contains("đang được giữ chỗ", exBlocked.Message);
+        Assert.Contains("currently reserved by another buyer", exBlocked.Message);
 
         // Step 3: Mô phỏng 10 phút trôi qua không ai thanh toán (UnlockAt đã qua)
         var escrow1 = await db.EscrowTransactions.SingleAsync(e => e.ListingId == listing.Id);
@@ -849,10 +849,8 @@ public class Mf03EndToEndIntegrationTestSuite
         var webhookHandler = new ProcessSePayWebhookCommandHandler(db, null, null, null, mockVerification.Object);
         var latePayload = CreateSePayPayload(buyer1PaymentRef, 1_575_000m, bankRef: "FT_LATE_BUYER1");
 
-        // Khi Escrow 1 đã ở trạng thái Expired, hệ thống từ chối khóa với BusinessRuleViolationException
-        var ex = await Assert.ThrowsAsync<BusinessRuleViolationException>(() =>
-            webhookHandler.Handle(new ProcessSePayWebhookCommand(latePayload), CancellationToken.None));
-        Assert.Contains("Expired", ex.Message);
+        // Escrow 1 đã Expired: tiền đến muộn được ghi nhận và đưa vào hàng chờ hoàn tiền (TC-PAY-12)
+        await webhookHandler.Handle(new ProcessSePayWebhookCommand(latePayload), CancellationToken.None);
 
         // Verify Anti-Overselling:
         db.ChangeTracker.Clear();
@@ -860,8 +858,9 @@ public class Mf03EndToEndIntegrationTestSuite
         var verifiedEscrow2 = await db.EscrowTransactions.SingleAsync(e => e.Id == escrow2.Id);
         var finalListing = await db.ResaleListings.SingleAsync(l => l.Id == listing.Id);
 
-        // Escrow 1 vẫn ở trạng thái Expired, không cấp vé mới
-        Assert.Equal(EscrowStatus.Expired, verifiedEscrow1.Status);
+        // Escrow 1 chuyển sang RefundQueued kèm mã giao dịch ngân hàng để hoàn tiền, không cấp vé mới
+        Assert.Equal(EscrowStatus.RefundQueued, verifiedEscrow1.Status);
+        Assert.Equal("FT_LATE_BUYER1", verifiedEscrow1.BankTransactionReference);
         Assert.Null(verifiedEscrow1.NewTicketCode);
 
         // Escrow 2 của Buyer 2 vẫn nguyên vẹn Pending
@@ -929,7 +928,7 @@ public class Mf03EndToEndIntegrationTestSuite
         Assert.False(response.Data!.IsIdempotentDuplicate);
         Assert.Equal(nameof(EscrowStatus.RefundQueued), response.Data.EscrowStatus);
         Assert.Equal(nameof(ListingStatus.Verified), response.Data.ListingStatus);
-        Assert.Contains("hàng đợi hoàn tiền", response.Message);
+        Assert.Contains("queued for refund", response.Message);
 
         db.ChangeTracker.Clear();
         var refreshedEscrow = await db.EscrowTransactions.SingleAsync(e => e.Id == escrow.Id);
