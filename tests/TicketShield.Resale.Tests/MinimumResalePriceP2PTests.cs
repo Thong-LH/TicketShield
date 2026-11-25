@@ -14,6 +14,10 @@ public sealed class MinimumResalePriceP2PTests(ResaleFixture f) : IClassFixture<
     [Fact]
     public async Task Price_below_minimum_seller_fee_is_rejected_and_cannot_be_held()
     {
+        // The demo seed turns the minimum seller fee off (0 VND), so this test sets the rule it checks.
+        await f.Sql(f.Database.CoreConnection,
+            "UPDATE system_settings SET setting_value = '5000' WHERE setting_key = 'ResaleFee_MinSellerFee'");
+
         var rejected = await PublishAsync(4000);
         Assert.Equal(HttpStatusCode.UnprocessableEntity, rejected.Status);
         Assert.Equal("PRICE_BELOW_MINIMUM_SELLER_FEE", rejected.Body.GetProperty("message").GetString());

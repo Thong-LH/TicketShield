@@ -198,8 +198,19 @@ public sealed class WorkerLockOnPostgresTests(WorkerDatabaseFixture f) : IClassF
     {
         var code = "WRK-" + Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
         var now = DateTimeOffset.UtcNow;
+        // US-12.3 (18/11): every listing must point at a real ticket row.
+        var ticket = new Ticket
+        {
+            Id = Guid.NewGuid(),
+            EventId = WorkerDatabaseFixture.Event,
+            TierId = WorkerDatabaseFixture.Tier,
+            CurrentOwnerId = WorkerDatabaseFixture.Seller,
+            TicketCode = code,
+            OriginalPrice = 2400000m
+        };
         var listing = new ResaleListing
         {
+            TicketId = ticket.Id,
             EventId = WorkerDatabaseFixture.Event,
             TierId = WorkerDatabaseFixture.Tier,
             SellerId = WorkerDatabaseFixture.Seller,
@@ -231,6 +242,7 @@ public sealed class WorkerLockOnPostgresTests(WorkerDatabaseFixture f) : IClassF
         configure?.Invoke(escrow);
 
         await using var db = f.NewContext();
+        db.Tickets.Add(ticket);
         db.ResaleListings.Add(listing);
         db.EscrowTransactions.Add(escrow);
         await db.SaveChangesAsync();

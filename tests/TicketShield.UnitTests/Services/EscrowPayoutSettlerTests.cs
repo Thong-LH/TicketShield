@@ -218,9 +218,20 @@ public class EscrowPayoutSettlerTests
             ResaleDeadline = DateTimeOffset.UtcNow.AddDays(9)
         };
         var tier = new TicketTier { Id = Guid.NewGuid(), EventId = concert.Id, TierName = "GA", OriginalPrice = 100_000m };
+        // US-12.3 (18/11): every listing must point at a real ticket row.
+        var ticket = new Ticket
+        {
+            Id = Guid.NewGuid(),
+            EventId = concert.Id,
+            TierId = tier.Id,
+            CurrentOwnerId = seller.Id,
+            TicketCode = $"TCK-{suffix}",
+            OriginalPrice = 100_000m
+        };
         var listing = new ResaleListing
         {
             Id = Guid.NewGuid(),
+            TicketId = ticket.Id,
             EventId = concert.Id,
             TierId = tier.Id,
             SellerId = seller.Id,
@@ -239,7 +250,7 @@ public class EscrowPayoutSettlerTests
             InSettlementBuffer = true,
             NetSellerPayout = netPayout
         };
-        db.AddRange(organizer, seller, buyer, concert, tier, listing, escrow);
+        db.AddRange(organizer, seller, buyer, concert, tier, ticket, listing, escrow);
         await db.SaveChangesAsync();
         db.ChangeTracker.Clear();
         return escrow.Id;

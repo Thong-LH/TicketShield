@@ -227,7 +227,7 @@ public class HoldTimeoutVietQrAutoReleaseTests
         // Act & Assert - Buyer 2 cannot steal hold during active 10-minute window
         var ex = await Assert.ThrowsAsync<BusinessRuleViolationException>(() =>
             handler.Handle(new HoldListingForPurchaseCommand { ListingId = listing.Id }, CancellationToken.None));
-        Assert.Contains("giữ chỗ bởi người mua khác", ex.Message);
+        Assert.Contains("reserved by another buyer", ex.Message);
     }
 
     [Fact]

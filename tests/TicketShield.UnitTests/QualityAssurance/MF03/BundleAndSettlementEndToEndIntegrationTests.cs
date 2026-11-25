@@ -624,7 +624,7 @@ public class BundleAndSettlementEndToEndIntegrationTests
     }
 
     [Fact]
-    public async Task EndToEnd_BundleGrpcFailure_CompensatesSagaAndRollbacksAllListings()
+    public async Task EndToEnd_BundleGrpcFailure_AfterPartialTransfer_HoldsBundleForReview()
     {
         // Arrange - Giả lập lỗi gRPC khi sang tên vé thứ 2 trong bundle 2 vé
         await using var db = CreateInMemoryCoreDb();
@@ -653,17 +653,17 @@ public class BundleAndSettlementEndToEndIntegrationTests
 
         Assert.NotNull(webhookResponse);
         Assert.True(webhookResponse.Success);
-        Assert.Equal(nameof(EscrowStatus.RefundQueued), webhookResponse.Data.EscrowStatus);
-        Assert.Equal(nameof(ListingStatus.Verified), webhookResponse.Data.ListingStatus);
+        // Vé 1 đã sang tên ở BTC nên từ US-12.3 (18/11) không rollback về Verified nữa (tránh bán hai lần):
+        // cả combo chờ đối soát, tiền giữ an toàn trong ký quỹ.
+        Assert.Equal(nameof(EscrowStatus.TransferNeedsReview), webhookResponse.Data.EscrowStatus);
 
-        // Xác minh Saga Compensation rollback an toàn 100%:
         db.ChangeTracker.Clear();
-        var rolledBackListings = await db.ResaleListings.Where(l => l.BundleId == bundleId).ToListAsync();
-        Assert.All(rolledBackListings, l => Assert.Equal(ListingStatus.Verified, l.ListingStatus));
+        var heldListings = await db.ResaleListings.Where(l => l.BundleId == bundleId).ToListAsync();
+        Assert.All(heldListings, l => Assert.NotEqual(ListingStatus.Verified, l.ListingStatus));
 
         var escrow = await db.EscrowTransactions.SingleAsync(e => e.BundleId == bundleId);
-        Assert.Equal(EscrowStatus.RefundQueued, escrow.Status);
-        Assert.Null(escrow.NewTicketCode);
+        Assert.Equal(EscrowStatus.TransferNeedsReview, escrow.Status);
+        Assert.Contains("NEW-1", escrow.NewTicketCode);
     }
 
     [Fact]

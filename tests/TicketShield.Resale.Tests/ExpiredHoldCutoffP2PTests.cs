@@ -43,11 +43,13 @@ public sealed class ExpiredHoldCutoffP2PTests(ResaleFixture f) : IClassFixture<R
     public async Task Hold_timeout_while_event_is_still_open_returns_listing_to_marketplace()
     {
         var listingId = await PublishPublicListingAsync();
+        // Both tests share one event, and the other test moves it inside the 2-hour
+        // purchase cut-off. Move it out first so this hold does not depend on test order.
+        await MoveEventDaysFromNowAsync(listingId, 15);
 
         var hold = await f.Post($"api/v1/resale-listings/{listingId}/hold", new { }, seller: Buyer);
         Assert.Equal(HttpStatusCode.OK, hold.Status);
 
-        await MoveEventDaysFromNowAsync(listingId, 15);
         await ExpireHoldWindowAsync(listingId);
         await RunHoldReleaseWorkerAsync();
 

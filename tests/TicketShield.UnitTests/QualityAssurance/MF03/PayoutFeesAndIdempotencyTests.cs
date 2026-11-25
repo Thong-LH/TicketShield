@@ -114,9 +114,20 @@ public class PayoutFeesAndIdempotencyTests
             ResaleDeadline = DateTimeOffset.UtcNow.AddDays(6)
         };
         var tier = new TicketTier { Id = Guid.NewGuid(), EventId = ev.Id, TierName = "VIP", OriginalPrice = resalePrice };
+        // US-12.3 (18/11): every listing must point at a real ticket row.
+        var ticket = new Ticket
+        {
+            Id = Guid.NewGuid(),
+            EventId = ev.Id,
+            TierId = tier.Id,
+            CurrentOwnerId = seller.Id,
+            TicketCode = $"TICK-{suffix}",
+            OriginalPrice = resalePrice
+        };
         var listing = new ResaleListing
         {
             Id = Guid.NewGuid(),
+            TicketId = ticket.Id,
             EventId = ev.Id,
             TierId = tier.Id,
             SellerId = seller.Id,
@@ -144,6 +155,7 @@ public class PayoutFeesAndIdempotencyTests
         db.ShadowUsers.AddRange(seller, buyer);
         db.Events.Add(ev);
         db.TicketTiers.Add(tier);
+        db.Tickets.Add(ticket);
         db.ResaleListings.Add(listing);
         db.EscrowTransactions.Add(escrow);
         await db.SaveChangesAsync();

@@ -150,7 +150,7 @@ public class GrpcErrorRecoveryQATests
     }
 
     [Fact]
-    public async Task SePayWebhook_WhenGrpcThrowsRpcExceptionDeadlineExceeded_TriggersSagaCompensation()
+    public async Task SePayWebhook_WhenGrpcThrowsRpcExceptionDeadlineExceeded_HoldsFundsForReview()
     {
         // Arrange
         var (db, listing, escrow) = CreateFixture();
@@ -174,17 +174,18 @@ public class GrpcErrorRecoveryQATests
         // Act
         var response = await handler.Handle(new ProcessSePayWebhookCommand(payload), CancellationToken.None);
 
-        // Assert
+        // Assert — a timeout is ambiguous (the organizer may have transferred the ticket), so since
+        // US-12.3 (18/11) the money is held for review instead of being refunded automatically.
         Assert.True(response.Success);
-        Assert.Equal("RefundQueued", response.Data!.EscrowStatus);
-        Assert.Equal("Verified", response.Data.ListingStatus);
+        Assert.Equal("TransferNeedsReview", response.Data!.EscrowStatus);
 
         db.ChangeTracker.Clear();
         var updatedListing = await db.ResaleListings.SingleAsync(l => l.Id == listing.Id);
         var updatedEscrow = await db.EscrowTransactions.SingleAsync(e => e.Id == escrow.Id);
 
-        Assert.Equal(ListingStatus.Verified, updatedListing.ListingStatus);
-        Assert.Equal(EscrowStatus.RefundQueued, updatedEscrow.Status);
+        Assert.Equal(ListingStatus.Transacting, updatedListing.ListingStatus);
+        Assert.Equal(EscrowStatus.TransferNeedsReview, updatedEscrow.Status);
+        Assert.Equal("FT_GRPC_TIMEOUT", updatedEscrow.BankTransactionReference);
     }
 
     [Fact]
@@ -268,7 +269,7 @@ public class GrpcErrorRecoveryQATests
     }
 
     [Fact]
-    public async Task SePayWebhook_BundleTransfer_WhenSecondTicketFails_RollsBackAllTicketsInBundle()
+    public async Task SePayWebhook_BundleTransfer_WhenSecondTicketFails_HoldsBundleForReview()
     {
         // Arrange - Bundle with 2 tickets
         var (db, listing1, escrow) = CreateFixture(totalBuyerPaid: 2_100_000m);
@@ -326,18 +327,19 @@ public class GrpcErrorRecoveryQATests
         // Act
         var response = await handler.Handle(new ProcessSePayWebhookCommand(payload), CancellationToken.None);
 
-        // Assert
+        // Assert — ticket 1 already changed owner at the organizer, so since US-12.3 (18/11) nothing is
+        // rolled back to Verified (that would let it be sold twice): the bundle waits for review.
         Assert.True(response.Success);
-        Assert.Equal("RefundQueued", response.Data!.EscrowStatus);
+        Assert.Equal("TransferNeedsReview", response.Data!.EscrowStatus);
 
-        // SAGA COMPENSATION: Both listings must be rolled back to Verified, NONE left as Sold
         db.ChangeTracker.Clear();
         var allBundleListings = await db.ResaleListings.Where(l => l.BundleId == bundleId).ToListAsync();
         Assert.Equal(2, allBundleListings.Count);
-        Assert.All(allBundleListings, l => Assert.Equal(ListingStatus.Verified, l.ListingStatus));
+        Assert.All(allBundleListings, l => Assert.NotEqual(ListingStatus.Verified, l.ListingStatus));
 
         var updatedEscrow = await db.EscrowTransactions.SingleAsync(e => e.Id == escrow.Id);
-        Assert.Equal(EscrowStatus.RefundQueued, updatedEscrow.Status);
+        Assert.Equal(EscrowStatus.TransferNeedsReview, updatedEscrow.Status);
+        Assert.Contains("TCK-NEW-001", updatedEscrow.NewTicketCode);
         Assert.False(updatedEscrow.InSettlementBuffer);
     }
 }
