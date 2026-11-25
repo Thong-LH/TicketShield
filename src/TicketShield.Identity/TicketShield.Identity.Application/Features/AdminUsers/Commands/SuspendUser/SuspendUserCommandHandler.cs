@@ -53,7 +53,12 @@ public class SuspendUserCommandHandler : IRequestHandler<SuspendUserCommand, Api
 
         user.IsActive = request.Reactivate;
         user.UpdatedAt = DateTimeOffset.UtcNow;
-        if (!request.Reactivate)
+        if (request.Reactivate)
+        {
+            // Reactivation clears the suspension penalty: back to the default trust score.
+            user.TrustScore = 100;
+        }
+        else
         {
             user.TrustScore = 0;
 
