@@ -101,7 +101,8 @@ public class AntiBotCheckoutGuardMiddleware(
         ISessionTokenService tokenService,
         INonceValidationService nonceService,
         IUserAgentCrossValidator uaValidator,
-        ChallengeVerificationService? challengeVerifier = null)
+        ChallengeVerificationService? challengeVerifier = null,
+        IHttpClientFactory? httpClientFactory = null)
     {
         var path = context.Request.Path.Value?.TrimEnd('/');
         var cartCheckout = string.Equals(path, "/api/organizer/orders/checkout/cart", StringComparison.OrdinalIgnoreCase);
@@ -634,6 +635,8 @@ public class AntiBotCheckoutGuardMiddleware(
                     "AntiBot Gateway: BLOCKED checkout attack. Score={Score}, Latency={Latency}ms, Reason={Reason}",
                     guardResult.RiskScore, guardResult.ExecutionDurationMs, guardResult.Reason);
 
+                ReportDecisionToOrganizer(httpClientFactory, logger, sessionToken, buyerEmail, guardResult, telemetryContext);
+
                 context.Response.StatusCode = StatusCodes.Status429TooManyRequests;
                 context.Response.ContentType = "application/json";
                 await context.Response.WriteAsJsonAsync(new
@@ -671,6 +674,8 @@ public class AntiBotCheckoutGuardMiddleware(
             }
             else if (guardResult.Decision == AntiBotDecision.Challenge)
             {
+                ReportDecisionToOrganizer(httpClientFactory, logger, sessionToken, buyerEmail, guardResult, telemetryContext);
+
                 context.Response.StatusCode = StatusCodes.Status403Forbidden;
                 await context.Response.WriteAsJsonAsync(new {
                     message = "Verification challenge required.", decision = "Challenge",
@@ -691,5 +696,62 @@ public class AntiBotCheckoutGuardMiddleware(
         }
 
         await next(context);
+    }
+
+    private static void ReportDecisionToOrganizer(
+        IHttpClientFactory? httpClientFactory,
+        ILogger<AntiBotCheckoutGuardMiddleware> logger,
+        string? sessionToken,
+        string? buyerEmail,
+        AntiBotGuardResult guardResult,
+        CheckoutTelemetryContext telemetryContext)
+    {
+        if (httpClientFactory == null) return;
+
+        var vector11D = new Dictionary<string, float>
+        {
+            ["is_webdriver"] = telemetryContext.IsWebDriver,
+            ["virtual_gpu_detected"] = telemetryContext.VirtualGpuDetected,
+            ["prototype_tampered"] = telemetryContext.PrototypeTampered,
+            ["canvas_tampered"] = telemetryContext.CanvasTampered,
+            ["action_interval_std_dev"] = telemetryContext.ActionIntervalStdDev,
+            ["ua_match_level"] = telemetryContext.UaMatchLevel,
+            ["network_inconsistency_score"] = telemetryContext.NetworkInconsistencyScore,
+            ["time_to_checkout"] = guardResult.Vector?.TimeToCheckout ?? -1.0f,
+            ["burst_rate_10s"] = guardResult.Vector?.BurstRate10s ?? 1.0f,
+            ["concurrent_hold"] = guardResult.Vector?.ConcurrentHold ?? 0.0f,
+            ["device_account_overlap"] = guardResult.Vector?.DeviceAccountOverlap ?? -1.0f
+        };
+
+        var payload = new
+        {
+            requestId = sessionToken ?? string.Empty,
+            timestampUtc = DateTime.UtcNow,
+            buyerEmail = buyerEmail ?? string.Empty,
+            decision = guardResult.Decision.ToString(),
+            riskScore = guardResult.RiskScore,
+            latencyMs = guardResult.ExecutionDurationMs,
+            isFailOpen = guardResult.IsFailOpen,
+            reason = guardResult.Reason,
+            vector = guardResult.Vector,
+            vector11D
+        };
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var client = httpClientFactory.CreateClient("organizer-analytics");
+                using var response = await client.PostAsJsonAsync("api/anti-bot/analytics/record", payload);
+                if (!response.IsSuccessStatusCode)
+                {
+                    logger.LogDebug("Failed to sync gateway analytics to MockOrganizer: HTTP {StatusCode}", response.StatusCode);
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.LogDebug(ex, "Error syncing gateway analytics to MockOrganizer.");
+            }
+        });
     }
 }

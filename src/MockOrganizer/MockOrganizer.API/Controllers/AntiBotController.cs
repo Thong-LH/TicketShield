@@ -135,6 +135,18 @@ public class AntiBotController : ControllerBase
     }
 
     /// <summary>
+    /// Tiếp nhận bản ghi đánh giá Anti-Bot từ Perimeter Gateway khi request bị chặn/thử thách
+    /// trước khi tới MockOrganizer (đảm bảo bộ đếm Traffic Monitoring chính xác).
+    /// </summary>
+    [HttpPost("analytics/record")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public IActionResult RecordAnalytics([FromBody] AntiBotEvaluationLog log)
+    {
+        _analyticsCollector.RecordEvaluation(log);
+        return Ok(new { recorded = true });
+    }
+
+    /// <summary>
     /// Đo đạc hiệu năng suy luận (Benchmark) p99 latency đáp ứng SLA US-8.3 (< 2ms).
     /// Chỉ khả dụng trong môi trường Development để đảm bảo an toàn.
     /// </summary>

@@ -10,7 +10,8 @@ public class ServerTransactionTelemetryService(
     ISessionTokenService sessionTokenService = null!,
     IRedisSlidingWindowService? slidingWindowService = null,
     TimeProvider? clock = null,
-    ILogger<ServerTransactionTelemetryService>? logger = null)
+    ILogger<ServerTransactionTelemetryService>? logger = null,
+    IServiceScopeFactory? scopeFactory = null)
     : IServerTransactionTelemetryService
 {
     private static readonly TimeSpan DefaultHoldWindow = TimeSpan.FromMinutes(10);
@@ -56,18 +57,24 @@ public class ServerTransactionTelemetryService(
         var concurrentHold = await holdTask;
         var redisTelemetry = await redisTelemetryTask;
 
-        // Fallback DB nếu Redis chưa có bản ghi (ví dụ test legacy seed DB trực tiếp)
-        if (concurrentHold == 0 && db != null && !string.IsNullOrWhiteSpace(buyerEmail))
+        // Fallback DB nếu Redis chưa có bản ghi (ví dụ test legacy seed DB trực tiếp).
+        // Luôn tạo scope riêng khi có scopeFactory để tránh dùng chung OrganizerDbContext
+        // với luồng Checkout khi AntiBotGuard vượt timeout 20ms và chạy ngầm.
+        if (concurrentHold == 0 && !string.IsNullOrWhiteSpace(buyerEmail) && (scopeFactory != null || db != null))
         {
             try
             {
                 var cutoff = now - DefaultHoldWindow;
-                concurrentHold = await db.MockOrders
-                    .AsNoTracking()
-                    .Where(o => o.BuyerEmail == buyerEmail
-                             && o.Status == "PENDING"
-                             && o.CreatedAt >= cutoff)
-                    .SumAsync(o => (int?)o.Quantity, ct) ?? 0;
+                if (scopeFactory != null)
+                {
+                    using var scope = scopeFactory.CreateScope();
+                    var scopedDb = scope.ServiceProvider.GetRequiredService<OrganizerDbContext>();
+                    concurrentHold = await QueryPendingHoldCountAsync(scopedDb, buyerEmail, cutoff, ct);
+                }
+                else if (db != null)
+                {
+                    concurrentHold = await QueryPendingHoldCountAsync(db, buyerEmail, cutoff, ct);
+                }
             }
             catch (Exception ex)
             {
@@ -89,5 +96,19 @@ public class ServerTransactionTelemetryService(
             DeviceAccountOverlap: redisTelemetry.DeviceAccountOverlap,
             RedisDurationMs: redisTelemetry.ExecutionDurationMs
         );
+    }
+
+    private static async Task<int> QueryPendingHoldCountAsync(
+        OrganizerDbContext context,
+        string buyerEmail,
+        DateTimeOffset cutoff,
+        CancellationToken ct)
+    {
+        return await context.MockOrders
+            .AsNoTracking()
+            .Where(o => o.BuyerEmail == buyerEmail
+                     && o.Status == "PENDING"
+                     && o.CreatedAt >= cutoff)
+            .SumAsync(o => (int?)o.Quantity, ct) ?? 0;
     }
 }

@@ -231,6 +231,13 @@ if (args.Contains("--test-shadow-components"))
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddMemoryCache();
 builder.Services.AddHttpClient("captcha", client => client.Timeout = TimeSpan.FromSeconds(10));
+var organizerBaseUrl = builder.Configuration["ReverseProxy:Clusters:organizer-cluster:Destinations:destination1:Address"]
+    ?? "http://localhost:5001";
+builder.Services.AddHttpClient("organizer-analytics", client =>
+{
+    client.BaseAddress = new Uri(organizerBaseUrl.TrimEnd('/') + "/");
+    client.Timeout = TimeSpan.FromSeconds(2);
+});
 builder.Services.AddSingleton<ChallengeVerificationService>();
 
 var port = builder.Configuration.GetValue("HttpPort", 5006);
