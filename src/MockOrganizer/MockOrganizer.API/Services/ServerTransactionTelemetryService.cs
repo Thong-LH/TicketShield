@@ -28,13 +28,16 @@ public class ServerTransactionTelemetryService(
         var sw = Stopwatch.StartNew();
         var now = _clock.GetUtcNow();
 
-        // 1. Đo time_to_checkout bằng Server Timestamp từ Session Token
-        var (isValid, issuedAt, _) = sessionTokenService.ValidateSessionToken(sessionToken);
+        // 1. Đo time_to_checkout bằng Server Timestamp bảo toàn SessionStart từ Session Token (US-14.1)
+        var validationResult = sessionTokenService.ValidateSessionTokenV2(sessionToken);
         double timeToCheckout;
 
-        if (isValid)
+        if (validationResult.IsValid)
         {
-            var deltaSeconds = (now - issuedAt).TotalSeconds;
+            var sessionStart = validationResult.SessionStart != DateTimeOffset.MinValue
+                ? validationResult.SessionStart
+                : validationResult.IssuedAt;
+            var deltaSeconds = (now - sessionStart).TotalSeconds;
             // Đảm bảo tối thiểu 0.01s để tránh giá trị 0 do độ phân giải đồng hồ
             timeToCheckout = Math.Max(0.01, Math.Round(deltaSeconds, 4));
         }
@@ -78,10 +81,10 @@ public class ServerTransactionTelemetryService(
         return new ServerTransactionTelemetryResult(
             TimeToCheckoutSeconds: timeToCheckout,
             ConcurrentHoldCount: concurrentHold,
-            IssuedAtUtc: isValid ? issuedAt : DateTimeOffset.MinValue,
+            IssuedAtUtc: validationResult.IsValid ? validationResult.IssuedAt : DateTimeOffset.MinValue,
             ReceivedAtUtc: now,
             ExecutionDurationMs: executionDurationMs,
-            IsSessionValid: isValid,
+            IsSessionValid: validationResult.IsValid,
             BurstRate10s: redisTelemetry.BurstRate10s,
             DeviceAccountOverlap: redisTelemetry.DeviceAccountOverlap,
             RedisDurationMs: redisTelemetry.ExecutionDurationMs

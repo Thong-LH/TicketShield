@@ -32,17 +32,31 @@ public class SessionTokenService : ISessionTokenService
         DateTimeOffset? issuedAt = null,
         int expiresInSeconds = 300)
     {
+        var (token, nonce, issued, _, expires) = GenerateSessionTokenV3(tierId, null, issuedAt, 0, expiresInSeconds);
+        return (token, nonce, issued, expires);
+    }
+
+    public (string Token, string Nonce, DateTimeOffset IssuedAt, DateTimeOffset SessionStart, int ExpiresInSeconds) GenerateSessionTokenV3(
+        Guid tierId,
+        DateTimeOffset? sessionStart = null,
+        DateTimeOffset? issuedAt = null,
+        int refreshCount = 0,
+        int expiresInSeconds = 300)
+    {
         var now = issuedAt ?? _clock.GetUtcNow();
+        var start = sessionStart ?? now;
         var epochMs = now.ToUnixTimeMilliseconds();
+        var sessionStartMs = start.ToUnixTimeMilliseconds();
         var sessionId = Guid.NewGuid();
 
         var nonceBytes = RandomNumberGenerator.GetBytes(16);
         var nonce = Convert.ToHexString(nonceBytes).ToLowerInvariant();
 
-        var payload = $"{sessionId:N}:{tierId:D}:{epochMs}:{nonce}";
+        // Token v3 (6 segments): sessionId:tierId:issuedAtMs:nonce:sessionStartMs:refreshCount
+        var payload = $"{sessionId:N}:{tierId:D}:{epochMs}:{nonce}:{sessionStartMs}:{refreshCount}";
         var token = SignPayload(payload);
 
-        return (token, nonce, now, expiresInSeconds);
+        return (token, nonce, now, start, expiresInSeconds);
     }
 
     private string SignPayload(string payload)
@@ -91,8 +105,8 @@ public class SessionTokenService : ISessionTokenService
             var payload = Encoding.UTF8.GetString(payloadBytes);
             var segments = payload.Split(':');
 
-            // Hỗ trợ cả v1 (3 segments) và v2 (4 segments kèm Nonce)
-            if (segments.Length != 3 && segments.Length != 4)
+            // Hỗ trợ v1 (3 segments), v2 (4 segments kèm Nonce), v3 (6 segments kèm SessionStart & RefreshCount)
+            if (segments.Length != 3 && segments.Length != 4 && segments.Length != 6)
                 return SessionTokenValidationResult.Failed($"Invalid payload segments count: {segments.Length}");
 
             if (!Guid.TryParse(segments[0], out _) ||
@@ -104,24 +118,48 @@ public class SessionTokenService : ISessionTokenService
 
             string? nonce = null;
             var tokenVersion = 1;
-            if (segments.Length == 4)
+            var issuedAt = DateTimeOffset.FromUnixTimeMilliseconds(epochMs);
+            var sessionStart = issuedAt;
+            var refreshCount = 0;
+
+            if (segments.Length >= 4)
             {
                 nonce = segments[3];
                 tokenVersion = 2;
             }
 
-            var issuedAt = DateTimeOffset.FromUnixTimeMilliseconds(epochMs);
+            if (segments.Length == 6)
+            {
+                if (long.TryParse(segments[4], out var startMs))
+                {
+                    sessionStart = DateTimeOffset.FromUnixTimeMilliseconds(startMs);
+                }
+                if (int.TryParse(segments[5], out var rCount))
+                {
+                    refreshCount = rCount;
+                }
+                tokenVersion = 3;
+            }
+
             var now = _clock.GetUtcNow();
 
-            // Dung sai lệch đồng hồ client-server (Clock skew tolerance 15 giây)
-            if (issuedAt > now.AddSeconds(15))
-                return SessionTokenValidationResult.Failed("Token issued in the future (clock skew exceeded 15s).");
+            // Dung sai lệch đồng hồ client-server (Clock skew tolerance 5 giây)
+            if (issuedAt > now.AddSeconds(5))
+                return SessionTokenValidationResult.Failed("Token issued in the future (clock skew exceeded 5s).");
 
-            var maxTtl = tokenVersion == 2 ? TimeSpan.FromSeconds(300) : TimeSpan.FromHours(2);
+            var maxTtl = tokenVersion >= 2 ? TimeSpan.FromSeconds(300) : TimeSpan.FromHours(2);
             if (now - issuedAt > maxTtl)
                 return SessionTokenValidationResult.Failed($"Token expired (exceeded max TTL of {maxTtl.TotalSeconds}s).");
 
-            return SessionTokenValidationResult.Success(issuedAt, tierId, nonce, tokenVersion);
+            // Ràng buộc an ninh v3: Trần tuổi phiên tối đa 15 phút (900s)
+            if (tokenVersion == 3 && now - sessionStart > TimeSpan.FromMinutes(15))
+                return SessionTokenValidationResult.Failed("Session lifetime exceeded maximum ceiling of 15 minutes.");
+
+            // Ràng buộc an ninh v3: Trần số lần refresh tối đa 3 lần
+            if (tokenVersion == 3 && refreshCount > 3)
+                return SessionTokenValidationResult.Failed("Session exceeded maximum refresh limit of 3.");
+
+            return SessionTokenValidationResult.Success(issuedAt, tierId, nonce, tokenVersion, sessionStart, refreshCount);
         }
         catch (Exception ex)
         {

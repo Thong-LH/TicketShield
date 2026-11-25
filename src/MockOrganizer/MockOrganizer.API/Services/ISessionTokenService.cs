@@ -18,6 +18,16 @@ public interface ISessionTokenService
         int expiresInSeconds = 300);
 
     /// <summary>
+    /// Phát hành SessionToken v3 bảo toàn session_start (Session Continuity) và giới hạn refresh (US-14.1).
+    /// </summary>
+    (string Token, string Nonce, DateTimeOffset IssuedAt, DateTimeOffset SessionStart, int ExpiresInSeconds) GenerateSessionTokenV3(
+        Guid tierId,
+        DateTimeOffset? sessionStart = null,
+        DateTimeOffset? issuedAt = null,
+        int refreshCount = 0,
+        int expiresInSeconds = 300);
+
+    /// <summary>
     /// Xác thực session token và trích xuất thời điểm cấp phát (issued_at) cùng tier_id (tương thích ngược).
     /// </summary>
     (bool IsValid, DateTimeOffset IssuedAt, Guid TierId) ValidateSessionToken(string? token);

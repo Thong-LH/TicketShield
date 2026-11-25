@@ -171,6 +171,72 @@ public sealed class ServerTransactionTelemetryServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task MeasureAsync_WithTokenV3_CalculatesTimeToCheckoutFromSessionStartNotIssuedAt()
+    {
+        var tierId = Guid.NewGuid();
+        var now = DateTimeOffset.UtcNow;
+        // Phiên khởi tạo 18 giây trước (Người thật thao tác)
+        var sessionStart = now.AddSeconds(-18.0);
+        // Token vừa được refresh 0.5 giây trước
+        var issuedAt = now.AddSeconds(-0.5);
+
+        var (token, _, _, _, _) = _sessionTokenService.GenerateSessionTokenV3(
+            tierId: tierId,
+            sessionStart: sessionStart,
+            issuedAt: issuedAt,
+            refreshCount: 1);
+
+        var sut = new ServerTransactionTelemetryService(_db, _sessionTokenService);
+        var result = await sut.MeasureAsync(token, "buyer_refresh@test.com");
+
+        Assert.True(result.IsSessionValid);
+        // TimeToCheckout phải xấp xỉ 18 giây (từ sessionStart), TUYỆT ĐỐI KHÔNG phải 0.5s (từ issuedAt)
+        Assert.InRange(result.TimeToCheckoutSeconds, 17.5, 19.5);
+    }
+
+    [Fact]
+    public void ValidateSessionTokenV3_WhenSessionLifetimeExceeds15Minutes_ReturnsInvalid()
+    {
+        var tierId = Guid.NewGuid();
+        var now = DateTimeOffset.UtcNow;
+        // Phiên đã tồn tại 16 phút (> 15 phút trần tối đa)
+        var sessionStart = now.AddMinutes(-16);
+        var issuedAt = now.AddSeconds(-10);
+
+        var (token, _, _, _, _) = _sessionTokenService.GenerateSessionTokenV3(
+            tierId: tierId,
+            sessionStart: sessionStart,
+            issuedAt: issuedAt,
+            refreshCount: 1);
+
+        var validationResult = _sessionTokenService.ValidateSessionTokenV2(token);
+
+        Assert.False(validationResult.IsValid);
+        Assert.Contains("Session lifetime exceeded maximum ceiling of 15 minutes", validationResult.FailureReason);
+    }
+
+    [Fact]
+    public void ValidateSessionTokenV3_WhenRefreshCountExceeds3_ReturnsInvalid()
+    {
+        var tierId = Guid.NewGuid();
+        var now = DateTimeOffset.UtcNow;
+        var sessionStart = now.AddMinutes(-5);
+        var issuedAt = now.AddSeconds(-10);
+
+        // Đã refresh lần thứ 4 (> trần 3 lần)
+        var (token, _, _, _, _) = _sessionTokenService.GenerateSessionTokenV3(
+            tierId: tierId,
+            sessionStart: sessionStart,
+            issuedAt: issuedAt,
+            refreshCount: 4);
+
+        var validationResult = _sessionTokenService.ValidateSessionTokenV2(token);
+
+        Assert.False(validationResult.IsValid);
+        Assert.Contains("Session exceeded maximum refresh limit of 3", validationResult.FailureReason);
+    }
+
+    [Fact]
     public async Task MeasureAsync_WithInvalidOrMissingToken_SetsTimeToCheckoutToNegativeOne()
     {
         var sut = new ServerTransactionTelemetryService(_db, _sessionTokenService);
