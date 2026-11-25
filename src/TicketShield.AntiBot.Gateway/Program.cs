@@ -236,7 +236,7 @@ var organizerBaseUrl = builder.Configuration["ReverseProxy:Clusters:organizer-cl
 builder.Services.AddHttpClient("organizer-analytics", client =>
 {
     client.BaseAddress = new Uri(organizerBaseUrl.TrimEnd('/') + "/");
-    client.Timeout = TimeSpan.FromSeconds(2);
+    client.Timeout = TimeSpan.FromSeconds(10);
 });
 builder.Services.AddSingleton<ChallengeVerificationService>();
 

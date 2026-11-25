@@ -733,24 +733,39 @@ public class AntiBotCheckoutGuardMiddleware(
             latencyMs = guardResult.ExecutionDurationMs,
             isFailOpen = guardResult.IsFailOpen,
             reason = guardResult.Reason,
-            vector = guardResult.Vector,
             vector11D
         };
 
         _ = Task.Run(async () =>
         {
-            try
+            const int maxAttempts = 2;
+            for (var attempt = 1; attempt <= maxAttempts; attempt++)
             {
-                var client = httpClientFactory.CreateClient("organizer-analytics");
-                using var response = await client.PostAsJsonAsync("api/anti-bot/analytics/record", payload);
-                if (!response.IsSuccessStatusCode)
+                try
                 {
-                    logger.LogDebug("Failed to sync gateway analytics to MockOrganizer: HTTP {StatusCode}", response.StatusCode);
+                    var client = httpClientFactory.CreateClient("organizer-analytics");
+                    using var response = await client.PostAsJsonAsync("api/anti-bot/analytics/record", payload);
+                    if (response.IsSuccessStatusCode)
+                    {
+                        return;
+                    }
+
+                    var errorBody = await response.Content.ReadAsStringAsync();
+                    logger.LogWarning(
+                        "Failed to sync gateway analytics to MockOrganizer (attempt {Attempt}/{MaxAttempts}): HTTP {StatusCode} - {Body}",
+                        attempt, maxAttempts, response.StatusCode, errorBody);
                 }
-            }
-            catch (Exception ex)
-            {
-                logger.LogDebug(ex, "Error syncing gateway analytics to MockOrganizer.");
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex,
+                        "Error syncing gateway analytics to MockOrganizer (attempt {Attempt}/{MaxAttempts}).",
+                        attempt, maxAttempts);
+                }
+
+                if (attempt < maxAttempts)
+                {
+                    await Task.Delay(250);
+                }
             }
         });
     }
