@@ -118,8 +118,12 @@ using (var scope = app.Services.CreateScope())
     try
     {
         var dbContext = services.GetRequiredService<OrganizerDbContext>();
-        await OrganizerDatabaseSeeder.SeedOrganizerAsync(dbContext);
-        logger.LogInformation("Organizer database auto-migrated and verified successfully.");
+        // Startup:DataMode (env STARTUP__DATAMODE): Keep (default) keeps all data and only moves the
+        // demo dates; Reset restores the demo data set like before.
+        var keepExistingData = !string.Equals(app.Configuration["Startup:DataMode"], "Reset", StringComparison.OrdinalIgnoreCase);
+        await OrganizerDatabaseSeeder.SeedOrganizerAsync(dbContext, keepExistingData: keepExistingData);
+        logger.LogInformation("Organizer database auto-migrated and verified successfully (startup data mode: {Mode}).",
+            keepExistingData ? "Keep" : "Reset");
     }
     catch (Exception ex)
     {

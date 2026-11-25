@@ -24,7 +24,13 @@ public static class OrganizerDatabaseSeeder
         }
     }
 
-    public static async Task SeedOrganizerAsync(OrganizerDbContext context, bool resetOperationalData = false)
+    // keepExistingData = true is the startup "Keep" mode (Startup:DataMode=Keep, the default): rows
+    // that already exist are neither deleted nor overwritten; only missing demo rows are added and the
+    // demo event dates move to today. false is the "Reset" mode below (Startup:DataMode=Reset, reset-all).
+    public static async Task SeedOrganizerAsync(
+        OrganizerDbContext context,
+        bool resetOperationalData = false,
+        bool keepExistingData = false)
     {
         // 1. Auto-apply any pending migrations on startup (code-first auto-init)
         await context.Database.MigrateAsync();
@@ -69,9 +75,12 @@ public static class OrganizerDatabaseSeeder
         var liveNationVnId  = Guid.Parse("b0000000-0000-0000-0000-000000000003"); // Live Nation VN
 
         // Clean OTPs and leftover resale locks so cancelled tickets can request OTP again
-        context.MockOtps.RemoveRange(await context.MockOtps.ToListAsync());
-        await context.Database.ExecuteSqlRawAsync("DELETE FROM organizer_resale_records");
-        await CleanGateHistoryAsync(context, seedIds, resetOperationalData);
+        if (!keepExistingData)
+        {
+            context.MockOtps.RemoveRange(await context.MockOtps.ToListAsync());
+            await context.Database.ExecuteSqlRawAsync("DELETE FROM organizer_resale_records");
+            await CleanGateHistoryAsync(context, seedIds, resetOperationalData);
+        }
 
         // =====================================================================
         // BTC 1: VieON — Anh Trai Say Hi Concert 2026
@@ -305,7 +314,35 @@ public static class OrganizerDatabaseSeeder
         ticket11.Status = "CANCELLED";
 
         await SeedTicketTiersAsync(context);
-        await context.SaveChangesAsync();
+        await SaveSeedAsync(context, keepExistingData);
+    }
+
+    // The seed blocks write every demo field. In Keep mode, undo those writes (and any delete) on
+    // rows that already existed, except the demo event date, so owners, statuses and stock stay
+    // as they were. Rows added because they were missing are saved as usual.
+    private static Task SaveSeedAsync(OrganizerDbContext context, bool keepExistingData)
+    {
+        if (keepExistingData)
+        {
+            foreach (var entry in context.ChangeTracker.Entries().ToList())
+            {
+                if (entry.State == EntityState.Deleted)
+                {
+                    entry.State = EntityState.Unchanged;
+                    continue;
+                }
+
+                if (entry.State != EntityState.Modified) continue;
+                foreach (var property in entry.Properties.Where(p => p.IsModified).ToList())
+                {
+                    if (entry.Entity is MockTicket && property.Metadata.Name == nameof(MockTicket.EventStartAt)) continue;
+                    property.CurrentValue = property.OriginalValue;
+                    property.IsModified = false;
+                }
+            }
+        }
+
+        return context.SaveChangesAsync();
     }
 
     private static async Task SeedTicketTiersAsync(OrganizerDbContext context)

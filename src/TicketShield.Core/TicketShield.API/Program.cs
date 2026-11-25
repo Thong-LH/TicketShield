@@ -144,8 +144,12 @@ using (var scope = app.Services.CreateScope())
     try
     {
         var dbContext = services.GetRequiredService<TicketShieldDbContext>();
-        await DatabaseSeeder.SeedTicketShieldAsync(dbContext);
-        logger.LogInformation("TicketShield database auto-migrated and verified successfully.");
+        // Startup:DataMode (env STARTUP__DATAMODE): Keep (default) keeps all data and only moves the
+        // demo dates; Reset restores the demo data set like before.
+        var keepExistingData = !string.Equals(app.Configuration["Startup:DataMode"], "Reset", StringComparison.OrdinalIgnoreCase);
+        await DatabaseSeeder.SeedTicketShieldAsync(dbContext, keepExistingData);
+        logger.LogInformation("TicketShield database auto-migrated and verified successfully (startup data mode: {Mode}).",
+            keepExistingData ? "Keep" : "Reset");
     }
     catch (Exception ex)
     {

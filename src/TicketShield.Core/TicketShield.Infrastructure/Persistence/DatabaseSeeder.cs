@@ -6,7 +6,10 @@ namespace TicketShield.Infrastructure.Persistence;
 
 public static class DatabaseSeeder
 {
-    public static async Task SeedTicketShieldAsync(TicketShieldDbContext context)
+    // keepExistingData = true is the startup "Keep" mode (Startup:DataMode=Keep, the default): rows
+    // that already exist are neither deleted nor overwritten; only missing demo rows are added and the
+    // demo event dates move to today/tomorrow. false is the "Reset" mode (Startup:DataMode=Reset).
+    public static async Task SeedTicketShieldAsync(TicketShieldDbContext context, bool keepExistingData = false)
     {
         // 1. Auto-apply any pending migrations
         await context.Database.MigrateAsync();
@@ -65,7 +68,7 @@ public static class DatabaseSeeder
         shadowModerator.Role = UserRole.Moderator;
         shadowModerator.IsActive = true;
 
-        await context.SaveChangesAsync();
+        await SaveSeedAsync(context, keepExistingData);
 
         // 3. Seed / Sync Organizer, Concert Events & Ticket Tiers
         var organizerId = Guid.Parse("e0000000-0000-0000-0000-000000000001");
@@ -304,7 +307,7 @@ public static class DatabaseSeeder
         tier4Ga.OriginalPrice = 200000m;
         tier4Ga.Description = "Ghế ngồi khán đài B";
 
-        await context.SaveChangesAsync();
+        await SaveSeedAsync(context, keepExistingData);
 
         // 4. Seed IDs cho các listing mẫu & 3 vé COMBO sạch
         var sampleListingId = Guid.Parse("44444444-4444-4444-4444-444444444444");
@@ -328,7 +331,10 @@ public static class DatabaseSeeder
         var seedEscrow2Id = Guid.Parse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeee02");
         var seedEscrow3Id = Guid.Parse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeee03");
 
-        // Dọn dẹp các tin đăng và giao dịch rác từ các lần test trước để dữ liệu luôn sạch
+        // Dọn dẹp các tin đăng và giao dịch rác từ các lần test trước để dữ liệu luôn sạch.
+        // Tin nào đã có lịch sử tiền (payout hoặc khiếu nại) thì giữ lại: xoá đi sẽ mất dấu vết
+        // tiền và vướng khoá ngoại, làm cả lượt seed hỏng giữa chừng.
+        // Ở chế độ Keep, SaveSeedAsync hoàn tác các lệnh xoá dưới đây.
         var seedCodes = new[] { "ATSH-VIP-888", "ATSH-VIP-887", "ATSH-VIP-886", "ATSH-GA-999", "ATSH-GA-001", "ATSH-GA-002" };
         var staleListings = await context.ResaleListings
             .Where(l => l.Id != sampleListingId &&
@@ -337,7 +343,10 @@ public static class DatabaseSeeder
                         l.Id != sellerPlaceholderListing3Id &&
                         l.Id != pairListing1Id &&
                         l.Id != pairListing2Id &&
-                        seedCodes.Contains(l.OriginalTicketCode))
+                        seedCodes.Contains(l.OriginalTicketCode) &&
+                        !context.EscrowTransactions.Any(e => e.ListingId == l.Id &&
+                            (context.PayoutTransactions.Any(p => p.EscrowId == e.Id) ||
+                             context.Disputes.Any(d => d.EscrowId == e.Id))))
             .ToListAsync();
         if (staleListings.Any())
         {
@@ -462,7 +471,7 @@ public static class DatabaseSeeder
         pairTicket2.OriginalPrice = 60000m;
         pairTicket2.Status = TicketStatus.LockedForResale;
 
-        await context.SaveChangesAsync();
+        await SaveSeedAsync(context, keepExistingData);
 
         // 5.1 Seed Sample Single Resale Listing (ATSH-GA-999) for marketplace demo
         var sampleListing = await context.ResaleListings.FirstOrDefaultAsync(l => l.Id == sampleListingId);
@@ -532,7 +541,7 @@ public static class DatabaseSeeder
         pairListing2.BundleTotalTickets = 2;
         pairListing2.IsBundleAllOrNothing = false;
 
-        await context.SaveChangesAsync();
+        await SaveSeedAsync(context, keepExistingData);
 
         // 5.2 Seed Mock Purchased EscrowTransactions for Seller account (3 vé sẵn sàng cho combo)
         // Purpose: Allow `linhtranlatao2004@gmail.com` (Seller) to see their tickets
@@ -593,7 +602,7 @@ public static class DatabaseSeeder
         spl3.ListingStatus = ListingStatus.Cancelled;
         spl3.SeatZone = "VIP Zone A - Row 2 Seat 09";
 
-        await context.SaveChangesAsync();
+        await SaveSeedAsync(context, keepExistingData);
 
         var seedEscrow1 = await context.EscrowTransactions.FirstOrDefaultAsync(e => e.Id == seedEscrow1Id);
         if (seedEscrow1 == null)
@@ -658,7 +667,7 @@ public static class DatabaseSeeder
         seedEscrow3.RecipientName = "Nguyen Van Seller";
         seedEscrow3.RecipientEmail = "linhtranlatao2004@gmail.com";
 
-        await context.SaveChangesAsync();
+        await SaveSeedAsync(context, keepExistingData);
 
         // Seed EscrowTransactionListings mappings
         var etl1 = await context.EscrowTransactionListings.FirstOrDefaultAsync(x => x.EscrowId == seedEscrow1Id && x.ListingId == sellerPlaceholderListing1Id);
@@ -677,7 +686,7 @@ public static class DatabaseSeeder
             await context.EscrowTransactionListings.AddAsync(new EscrowTransactionListing { EscrowId = seedEscrow3Id, ListingId = sellerPlaceholderListing3Id });
         }
 
-        await context.SaveChangesAsync();
+        await SaveSeedAsync(context, keepExistingData);
 
         // 6. Seed Default Resale Fee System Settings (BE-CORE-2.6.2 & Seller Fee 10%)
         var feeSettings = new[]
@@ -713,6 +722,38 @@ public static class DatabaseSeeder
             }
         }
 
-        await context.SaveChangesAsync();
+        await SaveSeedAsync(context, keepExistingData);
+    }
+
+    // The seed blocks write every demo field. In Keep mode, undo those writes (and the clean-up
+    // deletes) on rows that already existed, except the demo event dates, so listings, payments,
+    // users and admin settings stay as they were. Rows added because they were missing are saved.
+    private static Task SaveSeedAsync(TicketShieldDbContext context, bool keepExistingData)
+    {
+        if (keepExistingData)
+        {
+            foreach (var entry in context.ChangeTracker.Entries().ToList())
+            {
+                if (entry.State == EntityState.Deleted)
+                {
+                    entry.State = EntityState.Unchanged;
+                    continue;
+                }
+
+                if (entry.State != EntityState.Modified) continue;
+                foreach (var property in entry.Properties.Where(p => p.IsModified).ToList())
+                {
+                    if (entry.Entity is Event && property.Metadata.Name is nameof(Event.EventStartAt)
+                            or nameof(Event.EventEndAt) or nameof(Event.ResaleDeadline))
+                    {
+                        continue;
+                    }
+                    property.CurrentValue = property.OriginalValue;
+                    property.IsModified = false;
+                }
+            }
+        }
+
+        return context.SaveChangesAsync();
     }
 }
