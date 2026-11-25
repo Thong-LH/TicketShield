@@ -202,10 +202,83 @@ public class TicketVerificationService : ITicketVerificationService
             .FirstOrDefaultAsync(ct);
     }
 
+    private sealed record ResolvedTicketMapping(Guid EventId, Guid TierId);
+
+    /// <summary>
+    /// Finds the Core event and tier for an organizer ticket. A static mapping in configuration wins;
+    /// otherwise the organizer catalog synced into Core is used (external event id + tier name = seat zone),
+    /// which is how Origin Store tickets are resolved.
+    /// </summary>
+    private async Task<ResolvedTicketMapping?> ResolveMapping(VerificationReceipt receipt, CancellationToken ct)
+    {
+        var snapshot = receipt.Ticket;
+        var configured = _options.Mappings.Values
+            .Where(x => x.ExternalEventId == snapshot.ExternalEventId && x.ExternalTierId == snapshot.ExternalTierId)
+            .ToArray();
+        if (configured.Length == 1)
+        {
+            return new ResolvedTicketMapping(configured[0].EventId, configured[0].TierId);
+        }
+
+        if (configured.Length > 1 ||
+            string.IsNullOrWhiteSpace(snapshot.ExternalEventId) ||
+            string.IsNullOrWhiteSpace(snapshot.SeatZone))
+        {
+            return null;
+        }
+
+        Guid? organizerId = Guid.TryParse(snapshot.Ticket?.OrganizerId, out var parsedOrganizer) ? parsedOrganizer : null;
+        var externalEventId = snapshot.ExternalEventId;
+        var seatZone = snapshot.SeatZone.Trim().ToLower();
+        var tiers = await _db.TicketTiers.AsNoTracking()
+            .Where(t => t.Event.ExternalEventId == externalEventId &&
+                        (organizerId == null || t.Event.OrganizerId == organizerId) &&
+                        t.TierName.ToLower() == seatZone)
+            .Select(t => new ResolvedTicketMapping(t.EventId, t.Id))
+            .Take(2)
+            .ToListAsync(ct);
+
+        return tiers.Count == 1 ? tiers[0] : null;
+    }
+
+    private async Task<VerificationResult> WithEventDetails(
+        VerificationResult result,
+        VerificationReceipt receipt,
+        ResolvedTicketMapping? mapping,
+        CancellationToken ct)
+    {
+        var details = mapping is null
+            ? null
+            : await _db.TicketTiers.AsNoTracking()
+                .Where(t => t.Id == mapping.TierId && t.EventId == mapping.EventId)
+                .Select(t => new
+                {
+                    t.TierName,
+                    EventName = t.Event.Name,
+                    t.Event.Venue,
+                    t.Event.EventStartAt,
+                    OrganizerName = t.Event.Organizer.Name
+                })
+                .FirstOrDefaultAsync(ct);
+
+        var snapshot = receipt.Ticket;
+        return result with
+        {
+            EventName = details?.EventName ?? NullIfBlank(snapshot?.EventName),
+            EventVenue = details?.Venue,
+            EventStartAt = details?.EventStartAt,
+            TierName = details?.TierName,
+            SeatZone = NullIfBlank(snapshot?.SeatZone),
+            OrganizerName = details?.OrganizerName
+        };
+    }
+
+    private static string? NullIfBlank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
+
     private async Task<VerificationResult> ResultAsync(CoreSession s, CancellationToken ct)
     {
         var result = Result(s);
-        if (result.OriginalPrice is null or <= 0 || s.ReceiptJson is null)
+        if (s.ReceiptJson is null)
         {
             return result with
             {
@@ -214,16 +287,19 @@ public class TicketVerificationService : ITicketVerificationService
             };
         }
 
-        decimal markup = 0m;
         var receipt = Receipt(s);
-        var mappings = _options.Mappings.Values
-            .Where(x => x.ExternalEventId == receipt.Ticket.ExternalEventId && x.ExternalTierId == receipt.Ticket.ExternalTierId)
-            .ToArray();
-        if (mappings.Length == 1)
+        var mapping = await ResolveMapping(receipt, ct);
+        result = await WithEventDetails(result, receipt, mapping, ct);
+        if (result.OriginalPrice is null or <= 0)
         {
-            markup = await LoadEventMarkup(mappings[0].EventId, ct);
+            return result with
+            {
+                MarkupPercent = 0m,
+                PriceCeiling = result.OriginalPrice
+            };
         }
 
+        var markup = mapping is null ? 0m : await LoadEventMarkup(mapping.EventId, ct);
         var ceiling = (long)ResaleListing.ComputePriceCeiling(result.OriginalPrice.Value, markup);
         return result with { MarkupPercent = markup, PriceCeiling = ceiling };
     }
@@ -721,15 +797,7 @@ public class TicketVerificationService : ITicketVerificationService
         try
         {
             var receipt = Receipt(s);
-            var mappings = _options.Mappings.Values
-                .Where(x => x.ExternalEventId == receipt.Ticket.ExternalEventId && x.ExternalTierId == receipt.Ticket.ExternalTierId)
-                .ToArray();
-
-            if (mappings.Length != 1)
-            {
-                throw Error("TICKET_MAPPING_NOT_CONFIGURED");
-            }
-            var mapping = mappings[0];
+            var mapping = await ResolveMapping(receipt, ct) ?? throw Error("TICKET_MAPPING_NOT_CONFIGURED");
             var markup = await LoadEventMarkup(mapping.EventId, ct);
             var ceiling = (long)ResaleListing.ComputePriceCeiling(receipt.Ticket.OriginalPrice, markup);
             if (price <= 0 || price > ceiling)
