@@ -36,7 +36,7 @@ public sealed class ServerTransactionTelemetryIntegrationTests(ResaleFixture f) 
         Assert.Equal(tierId, result.TierId);
         Assert.False(string.IsNullOrWhiteSpace(result.SessionToken));
         Assert.Contains(".", result.SessionToken);
-        Assert.Equal(7200, result.ExpiresInSeconds);
+        Assert.Equal(300, result.ExpiresInSeconds);
     }
 
     [Fact]
@@ -103,7 +103,7 @@ public sealed class ServerTransactionTelemetryIntegrationTests(ResaleFixture f) 
         var tierId = await CreateTestTierAsync(initialAvailable: 20);
         var buyerEmail = $"hold_buyer_{Guid.NewGuid():N}@ticketshield.vn";
         var otherBuyer = $"other_{Guid.NewGuid():N}@ticketshield.vn";
-        var now = DateTimeOffset.UtcNow;
+        var now = f.Clock.GetUtcNow();
 
         // Chuẩn bị dữ liệu trong PostgreSQL DB
         using (var scope = f.Mock.Services.CreateScope())
@@ -188,12 +188,27 @@ public sealed class ServerTransactionTelemetryIntegrationTests(ResaleFixture f) 
             await db.SaveChangesAsync();
         }
 
+        // Lấy session token hợp lệ và giả lập thao tác người dùng bình thường
+        using var sessionResponse = await f.MockHttp.GetAsync($"{SessionEndpoint}?tierId={tierId}");
+        var session = await sessionResponse.Content.ReadFromJsonAsync<SessionTokenResponse>();
+        Assert.NotNull(session);
+
+        f.Clock.Advance(TimeSpan.FromSeconds(12));
+
         // Thực hiện Checkout
         var checkoutBody = new CheckoutRequest
         {
             TierId = tierId,
             Quantity = 1,
-            BuyerEmail = buyerEmail
+            BuyerEmail = buyerEmail,
+            SessionToken = session.SessionToken,
+            DeviceFingerprint = "fp-human-" + Guid.NewGuid().ToString("N"),
+            Telemetry = new ClientTelemetryDto
+            {
+                IsWebdriver = 0,
+                ActionIntervalStdDev = 195.0f,
+                DeviceFingerprint = "fp-human-device"
+            }
         };
 
         using var checkoutResponse = await f.MockHttp.PostAsJsonAsync(CheckoutEndpoint, checkoutBody);
