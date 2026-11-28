@@ -748,7 +748,7 @@ public static class DatabaseSeeder
                 foreach (var property in entry.Properties.Where(p => p.IsModified).ToList())
                 {
                     if (entry.Entity is Event && property.Metadata.Name is nameof(Event.EventStartAt)
-                            or nameof(Event.EventEndAt) or nameof(Event.ResaleDeadline))
+                            or nameof(Event.EventEndAt) or nameof(Event.ResaleDeadline) or nameof(Event.BannerUrl))
                     {
                         continue;
                     }

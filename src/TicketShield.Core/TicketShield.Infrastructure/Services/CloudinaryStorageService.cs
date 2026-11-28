@@ -72,7 +72,6 @@ public class CloudinaryStorageService : IStorageService
             {
                 File = new FileDescription(sourceUrl),
                 PublicId = publicId,
-                Folder = folder,
                 Overwrite = true,
                 Type = "upload"
             };
@@ -100,7 +99,6 @@ public class CloudinaryStorageService : IStorageService
             {
                 File = new FileDescription($"{sanitizedFileName}.jpg", stream),
                 PublicId = publicId,
-                Folder = folder,
                 Overwrite = true,
                 Type = "upload"
             };
@@ -137,7 +135,6 @@ public class CloudinaryStorageService : IStorageService
         {
             File = new FileDescription($"{fileName}.jpg", stream),
             PublicId = publicId,
-            Folder = folder,
             Overwrite = true,
             Type = "upload"
         };
