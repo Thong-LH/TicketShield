@@ -12,6 +12,7 @@ RUN dotnet restore "src/TicketShield.Identity/TicketShield.Identity.API/TicketSh
 COPY . .
 WORKDIR "/app/src/TicketShield.Identity/TicketShield.Identity.API"
 RUN dotnet publish "TicketShield.Identity.API.csproj" -c Release -o /app/publish /p:UseAppHost=false
+RUN rm -f /app/publish/appsettings.Development.json
 
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS final
 WORKDIR /app

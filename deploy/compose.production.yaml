@@ -1,0 +1,311 @@
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-app-defaults: &app-defaults
+  restart: unless-stopped
+  networks:
+    - backend
+  logging: *default-logging
+
+services:
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    environment:
+      API_DOMAIN: ${API_DOMAIN:?Set API_DOMAIN in deploy/.env}
+      ORGANIZER_API_DOMAIN: ${ORGANIZER_API_DOMAIN:?Set ORGANIZER_API_DOMAIN in deploy/.env}
+      ACME_EMAIL: ${ACME_EMAIL:?Set ACME_EMAIL in deploy/.env}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      gateway:
+        condition: service_started
+      anti-bot-gateway:
+        condition: service_started
+    networks:
+      - edge
+      - backend
+    logging: *default-logging
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-ticketshield}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in deploy/.env}
+      POSTGRES_DB: ticketshield_db
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-databases.sql:/docker-entrypoint-initdb.d/01-init-databases.sql:ro
+    shm_size: 256mb
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d ticketshield_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      - backend
+    logging: *default-logging
+
+  rabbitmq:
+    image: rabbitmq:3.13-alpine
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-ticketshield}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?Set RABBITMQ_PASSWORD in deploy/.env}
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    networks:
+      - backend
+    logging: *default-logging
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD in deploy/.env}
+    command: ["sh", "-c", "exec redis-server --appendonly yes --requirepass \"$${REDIS_PASSWORD}\""]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD}\" ping 2>/dev/null | grep PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - backend
+    logging: *default-logging
+
+  mock-organizer-api:
+    <<: *app-defaults
+    build:
+      context: ..
+      dockerfile: src/MockOrganizer/MockOrganizer.API/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      Kestrel__Endpoints__Http__Url: http://0.0.0.0:5001
+      Kestrel__Endpoints__Http__Protocols: Http1
+      Kestrel__Endpoints__Grpc__Url: http://0.0.0.0:5004
+      Kestrel__Endpoints__Grpc__Protocols: Http2
+      ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=organizer_db;Username=${POSTGRES_USER:-ticketshield};Password=${POSTGRES_PASSWORD}
+      Redis__ConnectionString: redis:6379,password=${REDIS_PASSWORD},abortConnect=false
+      Redis__Enabled: "true"
+      Redis__InstanceName: "ts:"
+      CoreWebhook__BaseUrl: http://core-api:5003
+      OrganizerResale__Enabled: "true"
+      OrganizerResale__ApiKey: ${ORGANIZER_API_KEY:?Set ORGANIZER_API_KEY in deploy/.env}
+      OrganizerResale__HmacKey: ${ORGANIZER_HMAC_KEY:?Set ORGANIZER_HMAC_KEY in deploy/.env}
+      OrganizerResale__Smtp__Host: ${SMTP_HOST:-}
+      OrganizerResale__Smtp__Port: ${SMTP_PORT:-587}
+      OrganizerResale__Smtp__EnableSsl: ${SMTP_ENABLE_SSL:-true}
+      OrganizerResale__Smtp__Sender: ${SMTP_SENDER:-no-reply@example.com}
+      OrganizerResale__Smtp__Username: ${SMTP_USERNAME:-}
+      OrganizerResale__Smtp__Password: ${SMTP_PASSWORD:-}
+      Cors__AllowedOrigins: ${CORS_ALLOWED_ORIGINS:?Set CORS_ALLOWED_ORIGINS in deploy/.env}
+    expose:
+      - "5001"
+      - "5004"
+    volumes:
+      - mock_organizer_dp_keys:/root/.aspnet/DataProtection-Keys
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  identity-api:
+    <<: *app-defaults
+    build:
+      context: ..
+      dockerfile: src/TicketShield.Identity/TicketShield.Identity.API/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__IdentityConnection: Host=postgres;Port=5432;Database=identity_db;Username=${POSTGRES_USER:-ticketshield};Password=${POSTGRES_PASSWORD}
+      ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=identity_db;Username=${POSTGRES_USER:-ticketshield};Password=${POSTGRES_PASSWORD}
+      RabbitMQ__Host: rabbitmq
+      RabbitMQ__Port: "5672"
+      RabbitMQ__Username: ${RABBITMQ_USER:-ticketshield}
+      RabbitMQ__Password: ${RABBITMQ_PASSWORD}
+      RabbitMQ__UseInMemory: "false"
+      JwtSettings__Secret: ${JWT_SECRET:?Set JWT_SECRET in deploy/.env}
+      JwtSettings__Issuer: ${JWT_ISSUER:-TicketShield}
+      JwtSettings__Audience: ${JWT_AUDIENCE:-TicketShieldApp}
+      GoogleAuth__ClientId: ${GOOGLE_CLIENT_ID:-}
+      Smtp__Host: ${SMTP_HOST:-}
+      Smtp__Port: ${SMTP_PORT:-587}
+      Smtp__EnableSsl: ${SMTP_ENABLE_SSL:-true}
+      Smtp__Sender: ${SMTP_SENDER:-no-reply@example.com}
+      Smtp__Username: ${SMTP_USERNAME:-}
+      Smtp__Password: ${SMTP_PASSWORD:-}
+      BankLookup__ApiKey: ${BANKLOOKUP_API_KEY:-}
+      BankLookup__ApiSecret: ${BANKLOOKUP_API_SECRET:-}
+      Cors__AllowedOrigins: ${CORS_ALLOWED_ORIGINS:?Set CORS_ALLOWED_ORIGINS in deploy/.env}
+    expose:
+      - "5002"
+    volumes:
+      - identity_dp_keys:/root/.aspnet/DataProtection-Keys
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  core-api:
+    <<: *app-defaults
+    build:
+      context: ..
+      dockerfile: src/TicketShield.Core/TicketShield.API/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=ticketshield_db;Username=${POSTGRES_USER:-ticketshield};Password=${POSTGRES_PASSWORD}
+      RabbitMQ__Host: rabbitmq
+      RabbitMQ__Port: "5672"
+      RabbitMQ__Username: ${RABBITMQ_USER:-ticketshield}
+      RabbitMQ__Password: ${RABBITMQ_PASSWORD}
+      RabbitMQ__UseInMemory: "false"
+      JwtSettings__Secret: ${JWT_SECRET:?Set JWT_SECRET in deploy/.env}
+      JwtSettings__Issuer: ${JWT_ISSUER:-TicketShield}
+      JwtSettings__Audience: ${JWT_AUDIENCE:-TicketShieldApp}
+      OrganizerGrpc__Enabled: "true"
+      OrganizerGrpc__Address: http://mock-organizer-api:5004
+      OrganizerGrpc__AllowUnencryptedHttp2: "true"
+      OrganizerGrpc__ApiKey: ${ORGANIZER_API_KEY:?Set ORGANIZER_API_KEY in deploy/.env}
+      OrganizerGrpc__HmacKey: ${ORGANIZER_HMAC_KEY:?Set ORGANIZER_HMAC_KEY in deploy/.env}
+      Organizer__BaseUrl: http://mock-organizer-api:5001
+      Settlement__BaseUrl: http://settlement-api:5005
+      Settlement__SharedSecret: ${SETTLEMENT_SHARED_SECRET:?Set SETTLEMENT_SHARED_SECRET in deploy/.env}
+      DisputeEvidence__StoragePath: /app/data/dispute-evidence
+      Cloudinary__CloudName: ${CLOUDINARY_CLOUD_NAME:-}
+      Cloudinary__ApiKey: ${CLOUDINARY_API_KEY:-}
+      Cloudinary__ApiSecret: ${CLOUDINARY_API_SECRET:-}
+      AiAssistant__Gemini__ApiKey: ${GEMINI_API_KEY:-}
+      VietQR__ApiKey: ${VIETQR_API_KEY:-}
+      VietQR__WebhookSecret: ${VIETQR_WEBHOOK_SECRET:-}
+      VietQR__BankBin: ${VIETQR_BANK_BIN:-}
+      VietQR__AccountNumber: ${VIETQR_ACCOUNT_NUMBER:-}
+      VietQR__AccountName: ${VIETQR_ACCOUNT_NAME:-}
+      SmtpSettings__Host: ${SMTP_HOST:-}
+      SmtpSettings__Port: ${SMTP_PORT:-587}
+      SmtpSettings__EnableSsl: ${SMTP_ENABLE_SSL:-true}
+      SmtpSettings__SenderEmail: ${SMTP_SENDER:-no-reply@example.com}
+      SmtpSettings__SenderName: ${SMTP_SENDER_NAME:-TicketShield}
+      SmtpSettings__Username: ${SMTP_USERNAME:-}
+      SmtpSettings__Password: ${SMTP_PASSWORD:-}
+      Cors__AllowedOrigins: ${CORS_ALLOWED_ORIGINS:?Set CORS_ALLOWED_ORIGINS in deploy/.env}
+    volumes:
+      - evidence_data:/app/data
+      - core_dp_keys:/root/.aspnet/DataProtection-Keys
+    expose:
+      - "5003"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      mock-organizer-api:
+        condition: service_started
+
+  settlement-api:
+    <<: *app-defaults
+    build:
+      context: ..
+      dockerfile: src/TicketShield.Settlement.API/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__Settlement: Host=postgres;Port=5432;Database=settlement_db;Username=${POSTGRES_USER:-ticketshield};Password=${POSTGRES_PASSWORD}
+      Settlement__SharedSecret: ${SETTLEMENT_SHARED_SECRET:?Set SETTLEMENT_SHARED_SECRET in deploy/.env}
+      Settlement__CoreBaseUrl: http://core-api:5003
+    expose:
+      - "5005"
+    volumes:
+      - settlement_dp_keys:/root/.aspnet/DataProtection-Keys
+    depends_on:
+      postgres:
+        condition: service_healthy
+      core-api:
+        condition: service_started
+
+  gateway:
+    <<: *app-defaults
+    build:
+      context: ..
+      dockerfile: src/TicketShield.Gateway/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ReverseProxy__Clusters__identity-cluster__Destinations__destination1__Address: http://identity-api:5002
+      ReverseProxy__Clusters__core-cluster__Destinations__destination1__Address: http://core-api:5003
+      Cors__AllowedOrigins: ${CORS_ALLOWED_ORIGINS:?Set CORS_ALLOWED_ORIGINS in deploy/.env}
+    expose:
+      - "5000"
+    volumes:
+      - gateway_dp_keys:/root/.aspnet/DataProtection-Keys
+    depends_on:
+      identity-api:
+        condition: service_started
+      core-api:
+        condition: service_started
+
+  anti-bot-gateway:
+    <<: *app-defaults
+    build:
+      context: ..
+      dockerfile: src/TicketShield.AntiBot.Gateway/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      HttpPort: "5006"
+      Redis__ConnectionString: redis:6379,password=${REDIS_PASSWORD},abortConnect=false
+      Redis__Enabled: "true"
+      Redis__InstanceName: "ts:gw:"
+      SessionToken__SecretKey: ${ANTIBOT_SESSION_SECRET:?Set ANTIBOT_SESSION_SECRET in deploy/.env}
+      AntiBotScoring__AdminApiKey: ${ANTIBOT_ADMIN_API_KEY:?Set ANTIBOT_ADMIN_API_KEY in deploy/.env}
+      ReverseProxy__Clusters__organizer-cluster__Destinations__destination1__Address: http://mock-organizer-api:5001
+      Cors__AllowedOrigins: ${CORS_ALLOWED_ORIGINS:?Set CORS_ALLOWED_ORIGINS in deploy/.env}
+    volumes:
+      - antibot_logs:/app/logs
+      - antibot_dp_keys:/root/.aspnet/DataProtection-Keys
+    expose:
+      - "5006"
+    depends_on:
+      redis:
+        condition: service_healthy
+      mock-organizer-api:
+        condition: service_started
+
+networks:
+  edge:
+  backend:
+    internal: true
+
+volumes:
+  postgres_data:
+  rabbitmq_data:
+  redis_data:
+  evidence_data:
+  antibot_logs:
+  mock_organizer_dp_keys:
+  identity_dp_keys:
+  core_dp_keys:
+  settlement_dp_keys:
+  gateway_dp_keys:
+  antibot_dp_keys:
+  caddy_data:
+  caddy_config:
+

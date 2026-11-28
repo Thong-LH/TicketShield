@@ -24,7 +24,7 @@
   </ItemGroup>
 
 
-  <Target Name="DopplerAutoSync" BeforeTargets="BeforeBuild">
+  <Target Name="DopplerAutoSync" BeforeTargets="BeforeBuild" Condition="'$(SkipDopplerAutoSync)' != 'true'">
     <Exec Command="python &quot;$(MSBuildThisFileDirectory)../../../scripts/doppler_sync.py&quot;" ContinueOnError="true" IgnoreExitCode="true" />
   </Target>
 

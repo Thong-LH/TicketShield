@@ -5,6 +5,7 @@ RUN dotnet restore "src/TicketShield.Settlement.API/TicketShield.Settlement.API.
 COPY . .
 WORKDIR "/app/src/TicketShield.Settlement.API"
 RUN dotnet publish "TicketShield.Settlement.API.csproj" -c Release -o /app/publish /p:UseAppHost=false
+RUN rm -f /app/publish/appsettings.Development.json
 
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS final
 WORKDIR /app

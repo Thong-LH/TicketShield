@@ -1,0 +1,36 @@
+{
+	email {$ACME_EMAIL}
+}
+
+{$API_DOMAIN} {
+	encode zstd gzip
+
+	header {
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	reverse_proxy gateway:5000
+
+	log {
+		output stdout
+		format console
+	}
+}
+{$ORGANIZER_API_DOMAIN} {
+	encode zstd gzip
+
+	header {
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	reverse_proxy anti-bot-gateway:5006
+
+	log {
+		output stdout
+		format console
+	}
+}

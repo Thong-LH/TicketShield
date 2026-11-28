@@ -231,6 +231,8 @@ if (args.Contains("--test-shadow-components"))
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddMemoryCache();
 builder.Services.AddHttpClient("captcha", client => client.Timeout = TimeSpan.FromSeconds(10));
+var allowedOrigins = (builder.Configuration["Cors:AllowedOrigins"] ?? "http://localhost:3000,http://localhost:5173")
+    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 var organizerBaseUrl = builder.Configuration["ReverseProxy:Clusters:organizer-cluster:Destinations:destination1:Address"]
     ?? "http://localhost:5001";
 builder.Services.AddHttpClient("organizer-analytics", client =>
@@ -243,7 +245,10 @@ builder.Services.AddSingleton<ChallengeVerificationService>();
 var port = builder.Configuration.GetValue("HttpPort", 5006);
 builder.WebHost.ConfigureKestrel(options =>
 {
-    options.Listen(System.Net.IPAddress.Loopback, port);
+    var listenAddress = builder.Environment.IsDevelopment()
+        ? System.Net.IPAddress.Loopback
+        : System.Net.IPAddress.Any;
+    options.Listen(listenAddress, port);
 });
 
 // 1. CORS
@@ -251,7 +256,7 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", policy =>
     {
-        policy.AllowAnyOrigin()
+        policy.WithOrigins(allowedOrigins)
               .AllowAnyMethod()
               .AllowAnyHeader();
     });

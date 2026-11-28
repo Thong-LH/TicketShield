@@ -7,6 +7,7 @@ public sealed class OrganizerConnectionOptions
 {
     public bool Enabled { get; set; }
     public string Address { get; set; } = string.Empty;
+    public bool AllowUnencryptedHttp2 { get; set; }
     public string ApiKey { get; set; } = string.Empty;
     public string HmacKey { get; set; } = string.Empty;
     public string OrganizerId { get; set; } = string.Empty;

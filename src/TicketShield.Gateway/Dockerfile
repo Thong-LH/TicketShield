@@ -7,6 +7,7 @@ RUN dotnet restore "src/TicketShield.Gateway/TicketShield.Gateway.csproj"
 COPY . .
 WORKDIR "/app/src/TicketShield.Gateway"
 RUN dotnet publish "TicketShield.Gateway.csproj" -c Release -o /app/publish /p:UseAppHost=false
+RUN rm -f /app/publish/appsettings.Development.json
 
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS final
 WORKDIR /app

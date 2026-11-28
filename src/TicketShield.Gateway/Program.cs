@@ -1,16 +1,15 @@
 var builder = WebApplication.CreateBuilder(args);
 
+var allowedOrigins = (builder.Configuration["Cors:AllowedOrigins"] ??
+        "http://localhost:3000,https://localhost:3000,http://localhost:5173,https://localhost:5173,http://localhost:4173")
+    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
 // Centralized CORS Policy for Frontend applications
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
     {
-        policy.WithOrigins(
-                "http://localhost:3000",
-                "https://localhost:3000",
-                "http://localhost:5173",
-                "https://localhost:5173",
-                "http://localhost:4173")
+        policy.WithOrigins(allowedOrigins)
               .AllowAnyHeader()
               .AllowAnyMethod()
               .AllowCredentials();

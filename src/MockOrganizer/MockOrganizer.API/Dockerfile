@@ -10,6 +10,7 @@ RUN dotnet restore "src/MockOrganizer/MockOrganizer.API/MockOrganizer.API.csproj
 COPY . .
 WORKDIR "/app/src/MockOrganizer/MockOrganizer.API"
 RUN dotnet publish "MockOrganizer.API.csproj" -c Release -o /app/publish /p:UseAppHost=false
+RUN rm -f /app/publish/appsettings.Development.json
 
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS final
 WORKDIR /app
