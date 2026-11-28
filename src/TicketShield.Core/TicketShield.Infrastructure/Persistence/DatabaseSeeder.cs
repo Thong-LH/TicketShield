@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using TicketShield.Application.Common.Interfaces;
 using TicketShield.Domain.Entities;
 using TicketShield.Domain.Enums;
 
@@ -9,7 +10,10 @@ public static class DatabaseSeeder
     // keepExistingData = true is the startup "Keep" mode (Startup:DataMode=Keep, the default): rows
     // that already exist are neither deleted nor overwritten; only missing demo rows are added and the
     // demo event dates move to today/tomorrow. false is the "Reset" mode (Startup:DataMode=Reset).
-    public static async Task SeedTicketShieldAsync(TicketShieldDbContext context, bool keepExistingData = false)
+    public static async Task SeedTicketShieldAsync(
+        TicketShieldDbContext context,
+        bool keepExistingData = false,
+        IStorageService? storageService = null)
     {
         // 1. Auto-apply any pending migrations
         await context.Database.MigrateAsync();
@@ -144,7 +148,7 @@ public static class DatabaseSeeder
         evToday.Artist = "Anh Trai Say Hi All-Stars";
         evToday.Category = "CONCERT";
         evToday.City = "TP. Hồ Chí Minh";
-        evToday.BannerUrl = "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?auto=format&fit=crop&w=1400&q=80";
+        evToday.BannerUrl = await ResolveBannerUrlAsync(storageService, "https://salt.tkbcdn.com/ts/ds/b8/98/52/da316543950a9543d5b87c71b48838bf.png", "atsh-today-banner", "events/atsh-2026");
         evToday.Description = "Mega Concert Vietnam 2026 quy tụ dàn nghệ sĩ đỉnh cao";
         evToday.Venue = "Van Hanh Mall Stadium, TP.HCM";
         evToday.EventStartAt = gateDemoEventStart;
@@ -177,7 +181,7 @@ public static class DatabaseSeeder
         ev.Artist = "Anh Trai Say Hi All-Stars";
         ev.Category = "CONCERT";
         ev.City = "TP. Hồ Chí Minh";
-        ev.BannerUrl = "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?auto=format&fit=crop&w=1400&q=80";
+        ev.BannerUrl = await ResolveBannerUrlAsync(storageService, "https://salt.tkbcdn.com/ts/ds/b8/98/52/da316543950a9543d5b87c71b48838bf.png", "atsh-tomorrow-banner", "events/atsh-2026");
         ev.Description = "Mega Concert Vietnam 2026 quy tụ dàn nghệ sĩ đỉnh cao";
         ev.Venue = "Van Hanh Mall Stadium, TP.HCM";
         ev.EventStartAt = demoEventStart;
@@ -221,7 +225,7 @@ public static class DatabaseSeeder
         ev2.Artist = "Mỹ Tâm";
         ev2.Category = "CONCERT";
         ev2.City = "Hà Nội";
-        ev2.BannerUrl = "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=1400&q=80";
+        ev2.BannerUrl = await ResolveBannerUrlAsync(storageService, "https://thegioidienanh.vn/stores/news_dataimages/2024/082024/21/17/mytam-ta-poster-preoder20240821174657.jpg?rt=20240821174754", "tri-am-my-tam-banner", "events/tri-am-my-tam");
         ev2.Description = "Live Concert âm nhạc kỷ niệm đặc biệt tại thủ đô";
         ev2.Venue = "Sân vận động Mỹ Đình, Hà Nội";
         ev2.EventStartAt = DateTimeOffset.UtcNow.AddDays(15);
@@ -254,7 +258,7 @@ public static class DatabaseSeeder
         ev3.Artist = "International DJ Lineup";
         ev3.Category = "FESTIVAL";
         ev3.City = "TP. Hồ Chí Minh";
-        ev3.BannerUrl = "https://images.unsplash.com/photo-1501386761578-eac5c94b800a?auto=format&fit=crop&w=1400&q=80";
+        ev3.BannerUrl = await ResolveBannerUrlAsync(storageService, "https://images.tkbcdn.com/1/1560/600/Upload/eventcover/2023/11/16/247724.jpg", "ravolution-festival-banner", "events/ravolution-2026");
         ev3.Description = "Lễ hội âm nhạc điện tử ngoài trời lớn nhất năm";
         ev3.Venue = "SECC Quận 7, TP.HCM";
         ev3.EventStartAt = DateTimeOffset.UtcNow.AddDays(20);
@@ -287,7 +291,7 @@ public static class DatabaseSeeder
         ev4.Artist = "V-League 2026";
         ev4.Category = "SPORTS";
         ev4.City = "Hà Nội";
-        ev4.BannerUrl = "https://images.unsplash.com/photo-1508098682722-e99c43a406b2?auto=format&fit=crop&w=1400&q=80";
+        ev4.BannerUrl = await ResolveBannerUrlAsync(storageService, "https://cdn2.tuoitre.vn/zoom/480_300/2021/4/8/vong-8-2021-4-7-ha-noi-fc-viettel-37-1617826566630375221370-crop-1617827799760931067405.jpg", "vleague-derby-banner", "events/vleague-derby-2026");
         ev4.Description = "Trận cầu đinh giải vô địch bóng đá quốc gia";
         ev4.Venue = "Sân vận động Hàng Đẫy, Hà Nội";
         ev4.EventStartAt = DateTimeOffset.UtcNow.AddDays(7);
@@ -755,5 +759,26 @@ public static class DatabaseSeeder
         }
 
         return context.SaveChangesAsync();
+    }
+
+    private static async Task<string> ResolveBannerUrlAsync(
+        IStorageService? storageService,
+        string sourceUrl,
+        string fileName,
+        string subFolder)
+    {
+        if (storageService == null)
+        {
+            return sourceUrl;
+        }
+
+        try
+        {
+            return await storageService.UploadAsync(sourceUrl, fileName, subFolder);
+        }
+        catch
+        {
+            return sourceUrl;
+        }
     }
 }

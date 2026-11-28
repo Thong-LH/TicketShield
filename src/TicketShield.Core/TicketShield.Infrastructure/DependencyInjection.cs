@@ -40,6 +40,16 @@ public static class DependencyInjection
         services.AddScoped<IEscrowPayoutSettler, Services.EscrowPayoutSettler>();
         services.AddScoped<IPayoutReportApplier, Services.PayoutReportApplier>();
         services.AddDisputeEvidenceStore(configuration);
+
+        // Media Storage Service (Cloudinary - Epic 15)
+        var cloudinaryOpts = configuration.GetSection(Services.CloudinaryOptions.SectionName).Get<Services.CloudinaryOptions>()
+            ?? new Services.CloudinaryOptions();
+        services.AddSingleton(cloudinaryOpts);
+        services.AddHttpClient(Services.CloudinaryStorageService.HttpClientName, client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(30);
+        });
+        services.AddScoped<IStorageService, Services.CloudinaryStorageService>();
         services.AddHttpClient<ISettlementClient, Services.HttpSettlementClient>(client =>
         {
             var baseUrl = configuration["Settlement:BaseUrl"] ?? "http://localhost:5005";

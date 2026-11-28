@@ -145,7 +145,8 @@ using (var scope = app.Services.CreateScope())
         // Startup:DataMode (env STARTUP__DATAMODE): Keep (default) keeps all data and only moves the
         // demo dates; Reset restores the demo data set like before.
         var keepExistingData = !string.Equals(app.Configuration["Startup:DataMode"], "Reset", StringComparison.OrdinalIgnoreCase);
-        await DatabaseSeeder.SeedTicketShieldAsync(dbContext, keepExistingData);
+        var storageService = services.GetService<IStorageService>();
+        await DatabaseSeeder.SeedTicketShieldAsync(dbContext, keepExistingData, storageService);
         logger.LogInformation("TicketShield database auto-migrated and verified successfully (startup data mode: {Mode}).",
             keepExistingData ? "Keep" : "Reset");
     }
