@@ -4,6 +4,7 @@ using System.Text.Json;
 using Google.Protobuf;
 using Grpc.Core;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Hosting;
 using Npgsql;
 using TicketShield.Application.Common.Interfaces;
 using TicketShield.Application.Common.Helpers;
@@ -29,19 +30,22 @@ public class TicketVerificationService : ITicketVerificationService
     private readonly OrganizerConnectionOptions _options;
     private readonly TimeProvider _clock;
     private readonly ISystemSettingRepository _settingRepository;
+    private readonly bool _allowDevelopmentProfileSync;
 
     public TicketVerificationService(
         TicketShieldDbContext db,
         IOrganizerGateway gateway,
         OrganizerConnectionOptions options,
         TimeProvider clock,
-        ISystemSettingRepository settingRepository)
+        ISystemSettingRepository settingRepository,
+        IHostEnvironment hostEnvironment)
     {
         _db = db;
         _gateway = gateway;
         _options = options;
         _clock = clock;
         _settingRepository = settingRepository;
+        _allowDevelopmentProfileSync = hostEnvironment.IsDevelopment();
     }
 
     private static ResaleWorkflowException Error(string code, int status = 409) => new(code, status);
@@ -342,10 +346,15 @@ public class TicketVerificationService : ITicketVerificationService
             }
 
             var sellerId = Guid.Parse(seller);
-            var isActive = await _db.ShadowUsers
-                .AnyAsync(u => u.Id == sellerId && u.IsActive, ct);
+            var sellerProfile = await _db.ShadowUsers
+                .SingleOrDefaultAsync(u => u.Id == sellerId, ct);
 
-            if (!isActive)
+            if (sellerProfile == null && _allowDevelopmentProfileSync)
+            {
+                sellerProfile = await IdentityDevelopmentProfileSyncHelper.TryCreateShadowUserAsync(_db, sellerId, ct);
+            }
+
+            if (sellerProfile == null || !sellerProfile.IsActive)
             {
                 throw Error("SELLER_NOT_ACTIVE", 403);
             }
@@ -834,7 +843,7 @@ public class TicketVerificationService : ITicketVerificationService
                 var now = _clock.GetUtcNow();
 
                 var eventAvailable = await _db.TicketTiers
-                    .Where(t => t.Id == mapping.TierId 
+                    .Where(t => t.Id == mapping.TierId
                              && t.EventId == mapping.EventId 
                              && t.Event.OrganizerId == organizer 
                              && t.Event.ResaleDeadline > now 
