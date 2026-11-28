@@ -148,6 +148,45 @@ docker compose --env-file deploy/.env -f deploy/compose.production.yaml ps
 
 Do not run `docker compose down -v`; `-v` deletes database and queue volumes.
 
+## 8. Automated VPS scripts
+
+The Windows launcher uses an SSH key, so the current root password is entered
+only once while installing the public key and is never saved in this repository.
+
+From PowerShell on the development machine:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File deploy/scripts/setup-ssh-key.ps1
+powershell -ExecutionPolicy Bypass -File deploy/scripts/vps.ps1 -Action Bootstrap
+```
+
+The bootstrap action installs Docker Engine, Docker Compose, Git, UFW and the
+Doppler CLI, clones `deploy/production-vps`, asks once for a production Doppler
+service token, and starts the stack. It does not change SSH password settings.
+
+Deploy later backend changes:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File deploy/scripts/vps.ps1 -Action Deploy
+```
+
+Inspect the stack or recent logs:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File deploy/scripts/vps.ps1 -Action Status
+powershell -ExecutionPolicy Bypass -File deploy/scripts/vps.ps1 -Action Logs
+```
+
+Reset all PostgreSQL databases only after an explicit destructive confirmation:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File deploy/scripts/vps.ps1 -Action ResetDatabase -ConfirmReset
+```
+
+The reset action first creates a compressed PostgreSQL backup, stops the stack,
+removes only the named PostgreSQL volume, and starts the stack again. It does not
+delete Redis, RabbitMQ, Caddy, evidence, logs, or Data Protection key volumes.
+
 ## Security checklist
 
 - Use SSH keys and disable password-based SSH after confirming key access.
