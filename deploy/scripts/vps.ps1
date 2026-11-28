@@ -20,7 +20,7 @@ $sshArgs = @('-t', '-i', $KeyPath, $sshTarget)
 switch ($Action) {
     'Bootstrap' {
         $bootstrapUrl = 'https://raw.githubusercontent.com/Thong-LH/TicketShield/refs/heads/deploy/production-vps/deploy/scripts/bootstrap-vps.sh'
-        $remoteCommand = "set -Eeuo pipefail; tmp_file=`$(mktemp); trap 'rm -f `"`$tmp_file`"' EXIT; curl -fsSL '$bootstrapUrl' -o `"`$tmp_file`"; bash `"`$tmp_file`""
+        $remoteCommand = "set -Eeuo pipefail; if ! command -v curl >/dev/null 2>&1; then apt-get update && apt-get install -y curl; fi; tmp_file=`$(mktemp); trap 'rm -f `"`$tmp_file`"' EXIT; curl -fsSL '$bootstrapUrl' -o `"`$tmp_file`"; bash `"`$tmp_file`""
     }
     'Deploy' {
         $remoteCommand = "sudo -u ticketshield-deploy -H bash /opt/ticketshield/repo/deploy/scripts/deploy-vps.sh"
