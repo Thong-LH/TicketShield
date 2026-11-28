@@ -52,6 +52,7 @@ public static class ResaleListingExtensions
             OrganizerName = listing.Event?.Organizer?.Name,
             EventName = listing.Event?.Name ?? string.Empty,
             EventVenue = listing.Event?.Venue ?? string.Empty,
+            EventBannerUrl = listing.Event?.BannerUrl,
             EventStartAt = listing.Event?.EventStartAt ?? default,
             TierId = listing.TierId,
             TierName = listing.Tier?.TierName ?? string.Empty,

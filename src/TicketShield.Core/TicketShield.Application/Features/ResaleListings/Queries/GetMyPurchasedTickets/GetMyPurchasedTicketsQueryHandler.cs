@@ -210,6 +210,7 @@ public class GetMyPurchasedTicketsQueryHandler : IRequestHandler<GetMyPurchasedT
                 EventId = e.Listing?.EventId ?? Guid.Empty,
                 EventName = eventName,
                 EventVenue = eventVenue,
+                EventBannerUrl = e.Listing?.Event?.BannerUrl,
                 EventStartAt = eventStart,
                 TierName = tierName,
                 SeatZone = bundleItems.Count > 0 ? bundleItems[0].SeatZone : rawSeatZone,

@@ -8,6 +8,7 @@ public class ResaleListingDetailDto
     public string? OrganizerName { get; set; }
     public string EventName { get; set; } = string.Empty;
     public string EventVenue { get; set; } = string.Empty;
+    public string? EventBannerUrl { get; set; }
     public DateTimeOffset EventStartAt { get; set; }
     public Guid TierId { get; set; }
     public string TierName { get; set; } = string.Empty;
